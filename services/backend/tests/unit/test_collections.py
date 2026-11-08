@@ -231,3 +231,57 @@ class TestIndependenceRule:
 
         names = {c.name for c in CollectionProfile.__table__.constraints if c.name}
         assert "uq_collection_profile_user_role" in names
+
+
+class TestProjectImages:
+    """Photographs are what a raise is first judged on, so they have rules."""
+
+    def test_an_image_is_recorded_by_url_not_uploaded_here(self):
+        """The bytes go through the media endpoint the marketplace uses.
+
+        Two upload paths would mean two places where a size limit, a content
+        type check and a storage bucket could drift apart.
+        """
+        from app.schemas.collection_schema import ImageCreate
+
+        image = ImageCreate(image_url="https://cdn.example/site.jpg")
+        assert image.image_url.startswith("https://")
+        assert image.position == 0
+
+    def test_an_empty_url_is_refused(self):
+        from app.schemas.collection_schema import ImageCreate
+
+        with pytest.raises(ValidationError):
+            ImageCreate(image_url="")
+
+    def test_images_can_be_added_after_a_raise_is_open(self):
+        """Unlike the terms, which freeze once people commit.
+
+        A photograph of the site as it stands is a progress report, not a
+        term, and the holders watching a building go up are who it is for.
+        So the image route uses the ownership check alone, with none of the
+        draft-only guard that update_project carries.
+        """
+        import inspect
+        from app.routers import collections
+
+        source = inspect.getsource(collections.add_image)
+        assert "_owned_project" in source
+        assert "RaiseStatusEnum.draft" not in source
+
+    def test_a_raise_cannot_carry_unlimited_images(self):
+        from app.routers import collections
+
+        assert collections.MAX_PROJECT_IMAGES == 10
+
+    def test_listing_images_needs_no_token(self):
+        """The photographs are public, like the rest of a published raise."""
+        from app.routers import collections
+
+        route = next(
+            r
+            for r in collections.router.routes
+            if r.path == "/collections/projects/{slug}/images" and "GET" in r.methods
+        )
+        names = {d.call.__name__ for d in route.dependant.dependencies if d.call}
+        assert not any("current" in n or "active" in n for n in names), names

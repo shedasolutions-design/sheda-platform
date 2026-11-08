@@ -134,6 +134,19 @@ class DirectoryEntryOut(_Base):
 # ---- documents, phases, units ---------------------------------------------
 
 
+class ImageOut(_Base):
+    id: int
+    image_url: str
+    position: int
+
+
+class ImageCreate(BaseModel):
+    #: Already uploaded through the media endpoint. This records where it
+    #: ended up; the bytes never pass through here.
+    image_url: str = Field(min_length=1, max_length=500)
+    position: int = Field(default=0, ge=0, le=99)
+
+
 class DocumentOut(_Base):
     id: int
     label: str
