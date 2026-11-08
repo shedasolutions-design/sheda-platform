@@ -2,7 +2,14 @@
 
 A property marketplace on NEAR, and **Sheda Collections**: fractional ownership of a single flat, funded before it is built.
 
-Someone who cannot buy a ₦18,000,000 apartment can own 1.39% of one, and receive 1.39% of its rent for as long as they hold it.
+Someone who cannot buy an ₦18,000,000 apartment can own 1.39% of one, and receive 1.39% of its rent for as long as they hold it.
+
+**Live:** https://sheda-solution-mobile--sheda-tt.expo.app · **Network:** NEAR testnet
+
+<p align="left">
+  <img src="docs/screenshots/welcome.png" width="260" alt="Sheda welcome screen" />
+  <img src="docs/screenshots/register-as-builder.png" width="260" alt="Registering as a builder" />
+</p>
 
 ---
 
@@ -14,19 +21,49 @@ Collections does the opposite. You buy shares in **one specific flat**. The rent
 
 ---
 
+## The NFT is the flat. The shares are a fungible token.
+
+This is the design decision the whole system rests on, and it is worth stating before any code.
+
+A property is an NEP-171 NFT, because a flat is a *specific* flat: unit 1B on the third floor, with its own address, its own tenant and its own rent. That identity cannot be divided without destroying what makes it an asset.
+
+The claims on it are an NEP-141 fungible token, because ten people splitting a flat do not own ten distinguishable things. They own ten identical claims, and the point is that those claims divide again, add together, and sell in part. A tenth of the rent is a tenth of the rent.
+
+The alternative, numbered sub-NFTs, means writing division, merging and partial transfer by hand, and every one of those is a place to get arithmetic wrong with other people's money.
+
+**What this buys:** the marketplace knows one thing about ownership, that a property NFT has an owner account which lists it, accepts bids and gets paid. It never asks whether that account belongs to a person. A vault *is* an account. It holds the NFT, so it is the landlord, and **the marketplace needs no change at all** for a flat owned by three hundred people to be rented exactly like a flat owned by one.
+
+```
+NEP-171 NFT  ──owned by──>  Vault account  ──shares──>  NEP-141 FT
+  the flat                   the landlord                the holders
+```
+
+---
+
 ## How it fits together
 
 ```
-apps/mobile          Expo app. The marketplace, and Collections inside it.
-services/backend     FastAPI. Everything a contract is the wrong place for.
-contracts/           NEAR. Everything that has to be true without trusting us.
+sheda-platform/
+├── apps/mobile/          Expo app. The marketplace, and Collections inside it.
+│   ├── app/collections/      the Collections screens
+│   ├── services/collections/ money, chain reads, the ranking
+│   └── contracts config      config/collections.ts
+├── services/backend/     FastAPI. What a contract is the wrong place for.
+│   ├── app/routers/collections.py
+│   ├── app/models/collection.py
+│   └── alembic/              migrations
+├── contracts/            NEAR. What has to be true without trusting us.
+│   ├── vault/                one flat, its shares, its rent
+│   ├── raise/                escrow, phases, refunds, opt-outs
+│   └── stake-registry/       builder and manager stake
+└── docs/ARCHITECTURE.md
 ```
 
-The line between the last two is the whole design, and it is worth stating before reading any code.
+One rule decides every placement:
 
 **The chain holds anything that decides ownership.** Share balances, escrow, the stake behind a builder's promises, which phase has been released. These cannot be edited by anyone with database access, including us.
 
-**The backend holds what a contract is the wrong place for.** The prose, the photographs, the title documents, the phase names, and a cache of chain events so a directory can be sorted without every client replaying the chain.
+**The backend holds what a contract is the wrong place for.** Prose, photographs, title documents, phase names, and a cache of chain events so a directory can be sorted without every client replaying the chain.
 
 **No figure appears in both.** A second copy of a number that decides who owns what is a second answer waiting to contradict the first.
 
@@ -47,6 +84,8 @@ Delivery        41.7 of 50    2 on time, 1 late, 0 abandoned, of 3 finished
 Cover posted    18.2 of 25    18.2% of everything raised is backed by their own stake
 Integrity         25 of 25    No stake has ever been slashed
 ```
+
+A late job counts for half, because the building did get built. An abandoned one counts against, because otherwise a builder dilutes a walk-away by opening more raises.
 
 And below a minimum history there is no score at all. A builder with one finished job is not excellent and is not poor. Those profiles read **"Not rated yet"**, sit under their own heading, and carry no rank number, because a position at the bottom of a single list would read as "worst" when what is true is that nobody knows yet.
 
@@ -72,7 +111,7 @@ If the build stalls, the builder's posted stake is what investors recover. A gua
 
 ## Deployed
 
-NEAR testnet. Built by CI and deployed from that wasm.
+NEAR testnet. Built by CI and deployed from that wasm, so the binary is one anyone can reproduce.
 
 | Contract | Account |
 | --- | --- |
@@ -99,7 +138,7 @@ cargo clippy --all-targets -- -D warnings
 cargo build --workspace --target wasm32-unknown-unknown --release
 ```
 
-71 unit tests. They run in `near_sdk`'s mock environment, where a cross-contract call is built and then not executed, so the arithmetic and the access rules are proven and the transfers are not. That gap is tracked, not hidden.
+71 unit tests across the three crates.
 
 ### Backend
 
@@ -131,11 +170,13 @@ npm start                   # a for Android, i for iOS, w for web
 
 **Money never goes through a JavaScript number.** Every amount is an integer string handled as `BigInt`. A unit price sits inside what a double holds exactly, but the vault's income accumulator is scaled by 1e18 and passes 1e25 in ordinary use, and a holder's claim is `balance * acc_per_share` before it is divided back down. One rule for every amount is cheaper than remembering which ones happen to be safe.
 
-**Nobody is paid when rent arrives.** The obvious implementation loops over holders and pays each, and stops working past a few dozen of them because a transaction has a gas ceiling. It would pass every test and fail once the product succeeded. Instead one number moves: `acc_per_share += income / total_shares`, and holders pull what they are owed. Crediting costs the same for ten holders and ten thousand.
+**Nobody is paid when rent arrives.** The obvious implementation loops over holders and pays each, and stops working past a few dozen of them because a transaction has a gas ceiling. It would pass every test and fail once the product succeeded. Instead one number moves, `acc_per_share += income / total_shares`, and holders pull what they are owed. Crediting costs the same for ten holders and ten thousand.
 
 **A balance may not move until both sides are settled.** Without that, someone buying shares on Monday collects rent that accrued in March. A silent bug, favouring whoever trades most, found by the person it robbed.
 
 **The marketplace pays landlords with a plain `ft_transfer`,** which notifies nobody. This was checked by reading the deployed bytecode rather than assumed. So money lands in a vault silently and `sync_income()` goes and looks, comparing the token balance against what was last accounted for.
+
+**A share claim is derived, never requested.** An earlier version let the caller name their own share count and their own vault, which would have let anyone who committed the smallest amount mint as many shares as they liked. Both now come from contract state.
 
 **Two backends share one database.** Reads fail over between them; writes never do. A write that failed at the transport layer may still have been applied, and retrying it elsewhere writes to the same database, so the buyer gets two bids.
 
@@ -145,11 +186,26 @@ npm start                   # a for Android, i for iOS, w for web
 
 Stated plainly, because a submission that claims to be complete is easy to disprove.
 
-- **Vaults are not deployed per unit yet.** The raise contract records where a flat's vault lives and mints against it; nothing creates the account.
-- **No cross-contract tests.** Every transfer path is unproven, including the failure paths that assume a failed transfer means the money never left.
-- **The manager side of the app has no screens.** A manager can register and then cannot attest a phase, which is the step the release schedule turns on.
-- **No indexer.** Nothing populates the chain counts the ranking reads, so every profile currently reads "Not rated yet".
-- **Not audited.** See above.
+| | Status |
+| --- | --- |
+| Marketplace: listing, bidding, escrow, leases | Working, in production use |
+| Collections: browse, rank, register, open a raise | Working |
+| Contracts: vault, raise, stake registry | Deployed to testnet, 71 tests |
+| Per-unit vault deployment | **Not built.** The raise records where a vault lives and mints against it; nothing creates the account. |
+| Cross-contract tests | **None.** Every transfer path is unproven, including the failure paths that assume a failed transfer means the money never left. |
+| Manager screens | **None.** A manager can register and then cannot attest a phase, which is the step the release schedule turns on. |
+| Chain-event indexer | **Not built.** Nothing populates the counts the ranking reads, so every profile currently reads "Not rated yet". |
+| Security audit | **Not done.** |
+
+---
+
+## Where development happens
+
+This repository is a snapshot, assembled so the whole system can be read in one place. Work continues in the three repositories it was built from:
+
+- `shedasolutions-design/sheda-solution-mobile`
+- `shedasolutions-design/Sheda-Backend`
+- `shedasolutions-design/sheda-collection-app-contract`
 
 ---
 
