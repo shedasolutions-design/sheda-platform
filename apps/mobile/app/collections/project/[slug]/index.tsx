@@ -1,0 +1,308 @@
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, View } from "react-native";
+import { Stack, router, useLocalSearchParams } from "expo-router";
+import InterMedium from "@/components/Text/InterMedium";
+import InterRegular from "@/components/Text/InterRegular";
+import InterSemiBold from "@/components/Text/InterSemiBold";
+import { TierBadge } from "@/components/collections/Score";
+import {
+  Avatar,
+  Badge,
+  C,
+  Card,
+  Chevron,
+  CollectionsButton,
+  Divider,
+  Empty,
+  ListRow,
+  Meter,
+  Note,
+  Screen,
+  Section,
+  StatRow,
+  StatTile,
+  TYPE,
+} from "@/components/collections/ui";
+import { useCollections } from "@/hooks/useCollections";
+import { scoreFor } from "@/services/collections/ranking";
+import type {
+  CollectionDocumentStatus,
+  CollectionPhase,
+  CollectionProfile,
+  CollectionProjectDetail,
+} from "@/services/api";
+
+/**
+ * Everything someone needs before committing money.
+ *
+ * Under an open market model the investor carries the judgement, so this
+ * screen owes them the material to make it: who is asking, what has been
+ * checked, what has not, and what they have delivered before. An
+ * unverified document is shown as loudly as a verified one, because a
+ * blank where a document belongs reads as approval.
+ */
+export default function ProjectDetail() {
+  const { slug } = useLocalSearchParams<{ slug: string }>();
+  const { getProject, loading, error } = useCollections();
+  const [project, setProject] = useState<CollectionProjectDetail | null>(null);
+
+  const load = useCallback(async () => {
+    const result = await getProject(String(slug));
+    if (result) setProject(result);
+  }, [getProject, slug]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (loading && !project) {
+    return (
+      <>
+        <Stack.Screen options={{ title: "Project" }} />
+        <Screen>
+          <View style={{ paddingVertical: 48, alignItems: "center" }}>
+            <ActivityIndicator color={C.primary} />
+          </View>
+        </Screen>
+      </>
+    );
+  }
+
+  if (!project) {
+    return (
+      <>
+        <Stack.Screen options={{ title: "Project" }} />
+        <Screen>
+          <Empty
+            title="We could not find that project"
+            body={error ?? "It may have closed. Go back and pick another."}
+          />
+        </Screen>
+      </>
+    );
+  }
+
+  const released = project.phases_released_bps;
+
+  return (
+    <>
+      <Stack.Screen options={{ title: "Project" }} />
+      <Screen>
+        <View style={{ gap: 9 }}>
+          <InterSemiBold style={{ ...TYPE.display, color: C.text }}>{project.name}</InterSemiBold>
+          <InterRegular style={{ ...TYPE.label, color: C.textSecondary }}>
+            {project.location} · {project.units} units
+          </InterRegular>
+          {project.description ? (
+            <InterRegular style={{ ...TYPE.body, color: C.text }}>
+              {project.description}
+            </InterRegular>
+          ) : null}
+        </View>
+
+        <Card>
+          <View style={{ gap: 13 }}>
+            <StatRow>
+              <StatTile
+                label="Estimated return"
+                value={
+                  project.estimated_return_pct != null
+                    ? `${project.estimated_return_pct}% a year`
+                    : "Not stated"
+                }
+                note="the builder's figure"
+              />
+              <StatTile
+                label="Released so far"
+                value={`${(released / 100).toFixed(0)}%`}
+                tone={released > 0 ? "positive" : "plain"}
+                note="of the raise"
+              />
+            </StatRow>
+
+            <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
+              The return is the builder&apos;s own estimate. Sheda does not verify it and does not
+              guarantee it. What the raise is worth and what it has collected are held on chain,
+              not here.
+            </InterRegular>
+          </View>
+        </Card>
+
+        <Section title="Who is behind this">
+          {project.builder ? <PersonRow profile={project.builder} role="Builder" /> : null}
+          {project.manager ? (
+            <PersonRow profile={project.manager} role="Property manager" />
+          ) : null}
+          {sameGroup(project) ? (
+            <Note>
+              The manager is part of the builder&apos;s own group, so they may not sign off these
+              construction phases. An independent reviewer is required before any money is
+              released.
+            </Note>
+          ) : null}
+        </Section>
+
+        {project.documents.length > 0 ? (
+          <Section title="Documents">
+            <Card>
+              <View style={{ gap: 13 }}>
+                {project.documents.map((doc, i) => (
+                  <View key={doc.id} style={{ gap: 13 }}>
+                    {i > 0 ? <Divider /> : null}
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                      }}
+                    >
+                      <InterMedium style={{ ...TYPE.body, color: C.text, flexShrink: 1 }}>
+                        {doc.label}
+                      </InterMedium>
+                      <Badge label={DOC_LABEL[doc.status]} tone={DOC_TONE[doc.status]} />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </Card>
+          </Section>
+        ) : null}
+
+        {project.phases.length > 0 ? (
+          <Section title="How the money is released">
+            <Card>
+              <View style={{ gap: 14 }}>
+                {project.phases.map((phase) => (
+                  <PhaseRow key={phase.id} phase={phase} />
+                ))}
+              </View>
+            </Card>
+            <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
+              Each phase is inspected and signed off before its money is released. Holders have
+              seven days to object, and a quarter of them objecting holds the payment.
+            </InterRegular>
+          </Section>
+        ) : null}
+
+        {project.unit_list.length > 0 ? (
+          <CollectionsButton
+            label="Choose a unit"
+            onPress={() => router.push(`/collections/project/${project.slug}/units`)}
+          />
+        ) : (
+          <Empty
+            title="No units listed yet"
+            body="The builder has not published the flats this raise divides into."
+          />
+        )}
+      </Screen>
+    </>
+  );
+}
+
+/** R2. A manager inside the builder's own group may not inspect its work. */
+function sameGroup(project: CollectionProjectDetail): boolean {
+  const group = project.manager?.part_of_group?.trim().toLowerCase();
+  const builder = project.builder?.display_name.trim().toLowerCase();
+  return Boolean(group && builder && group === builder);
+}
+
+function PersonRow({ profile, role }: { profile: CollectionProfile; role: string }) {
+  const score = scoreFor(profile);
+
+  return (
+    <ListRow
+      leading={<Avatar name={profile.display_name} size={40} />}
+      title={profile.display_name}
+      subtitle={`${role}${profile.location ? ` · ${profile.location}` : ""}`}
+      onPress={() => router.push(`/collections/person/${profile.id}`)}
+      right={
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <View style={{ alignItems: "flex-end", gap: 3 }}>
+            {score.tier === "unrated" ? (
+              <TierBadge tier="unrated" />
+            ) : (
+              <>
+                <InterSemiBold style={{ ...TYPE.heading, color: C.text }}>
+                  {score.total}
+                </InterSemiBold>
+                <TierBadge tier={score.tier} />
+              </>
+            )}
+          </View>
+          <Chevron />
+        </View>
+      }
+    />
+  );
+}
+
+const DOC_LABEL: Record<CollectionDocumentStatus, string> = {
+  verified: "Verified by Sheda",
+  uploaded: "Uploaded, not verified",
+  missing: "Not provided",
+};
+
+const DOC_TONE = {
+  verified: "positive",
+  uploaded: "caution",
+  missing: "critical",
+} as const;
+
+const PHASE_LABEL: Record<CollectionPhase["state"], string> = {
+  locked: "Not started",
+  building: "Building",
+  awaiting_inspection: "Waiting on inspection",
+  objection_window: "Holders may object",
+  held: "Payment held",
+  released: "Released",
+};
+
+const PHASE_TONE = {
+  locked: C.textMuted,
+  building: C.primary,
+  awaiting_inspection: C.caution,
+  objection_window: C.caution,
+  held: C.critical,
+  released: C.positive,
+} as const;
+
+function PhaseRow({ phase }: { phase: CollectionPhase }) {
+  const done = phase.state === "released";
+  const colour = PHASE_TONE[phase.state];
+
+  return (
+    <View style={{ flexDirection: "row", gap: 11, alignItems: "flex-start" }}>
+      <View
+        style={{
+          width: 21,
+          height: 21,
+          borderRadius: 11,
+          backgroundColor: done ? C.positiveLight : C.surface,
+          alignItems: "center",
+          justifyContent: "center",
+          marginTop: 1,
+        }}
+      >
+        <InterSemiBold style={{ ...TYPE.micro, color: colour }}>
+          {done ? "✓" : String(phase.position + 1)}
+        </InterSemiBold>
+      </View>
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        <InterMedium style={{ ...TYPE.body, color: C.text }}>{phase.name}</InterMedium>
+        <InterRegular style={{ ...TYPE.label, lineHeight: 16, color: C.textSecondary }}>
+          {(phase.tranche_bps / 100).toFixed(0)}% of the raise · {PHASE_LABEL[phase.state]}
+        </InterRegular>
+        {phase.state === "objection_window" ? (
+          <View style={{ marginTop: 4, gap: 4 }}>
+            <Meter pct={100} tone="caution" height={4} />
+            <InterRegular style={{ ...TYPE.micro, color: C.caution }}>
+              Holders can object to this release until the window closes.
+            </InterRegular>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}

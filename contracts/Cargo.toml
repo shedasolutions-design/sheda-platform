@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = ["contracts/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/Entechnologuehamadex/sheda-collection-app-contract"
+
+[workspace.dependencies]
+# `legacy` carries near_sdk::collections. The newer `store` collections buffer
+# writes and hand back references rather than values, which changes every call
+# site; migrating is its own deliberate change, not a side effect of a bump.
+near-sdk = { version = "5.5", features = ["legacy"] }
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+overflow-checks = true

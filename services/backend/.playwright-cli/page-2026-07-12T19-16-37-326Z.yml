@@ -1,0 +1,118 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - button [ref=e5] [cursor=pointer]
+      - heading [level=1] [ref=e7]:
+        - link [ref=e8] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/
+          - img [ref=e9]
+      - link "Open user menu" [ref=e12] [cursor=pointer]:
+        - /url: "#"
+  - generic [ref=e14]:
+    - generic [ref=e17]:
+      - heading "Admins" [level=1] [ref=e18]
+      - list [ref=e19]:
+        - listitem [ref=e20]:
+          - link "Admin" [ref=e21] [cursor=pointer]:
+            - /url: http://localhost:8000/sheda-backend/
+        - listitem [ref=e22]: / Admins
+    - generic [ref=e29]:
+      - generic [ref=e30]:
+        - generic [ref=e32]:
+          - button " Export" [ref=e34] [cursor=pointer]:
+            - generic [ref=e35]:
+              - generic [ref=e36]: 
+              - text: Export
+          - button " Show/Hide columns" [ref=e38] [cursor=pointer]:
+            - generic [ref=e39]:
+              - generic [ref=e40]: 
+              - text: Show/Hide columns
+          - button " Filter" [ref=e41] [cursor=pointer]:
+            - generic [ref=e42]:
+              - generic [ref=e43]: 
+              - text: Filter
+        - link "+ New Admin" [ref=e46] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/admin/create
+          - generic [ref=e47]: +
+          - text: New Admin
+      - generic [ref=e49]:
+        - button "Show 10 rows" [ref=e53] [cursor=pointer]:
+          - generic [ref=e54]: Show 10 rows
+        - generic [ref=e57]:
+          - generic:
+            - img
+          - searchbox "Search in list" [ref=e58]
+      - generic [ref=e59]:
+        - table [ref=e61]:
+          - rowgroup [ref=e62]:
+            - 'row "Id: activate to sort column descending Username: activate to sort column ascending Email: activate to sort column ascending Avatar url Fullname: activate to sort column ascending Phone number: activate to sort column ascending Location: activate to sort column ascending Account type: activate to sort column ascending Kyc status: activate to sort column ascending Role: activate to sort column ascending Is active: activate to sort column ascending Verified: activate to sort column ascending Created at: activate to sort column ascending Updated at: activate to sort column ascending" [ref=e63]':
+              - columnheader [ref=e64] [cursor=pointer]:
+                - checkbox [ref=e65]
+              - columnheader [ref=e66]
+              - 'columnheader "Id: activate to sort column descending" [ref=e67] [cursor=pointer]': ▲ Id ▼
+              - 'columnheader "Username: activate to sort column ascending" [ref=e68] [cursor=pointer]': ▲ Username ▼
+              - 'columnheader "Email: activate to sort column ascending" [ref=e69] [cursor=pointer]': ▲ Email ▼
+              - columnheader "Avatar url" [ref=e70]
+              - 'columnheader "Fullname: activate to sort column ascending" [ref=e71] [cursor=pointer]': ▲ Fullname ▼
+              - 'columnheader "Phone number: activate to sort column ascending" [ref=e72] [cursor=pointer]': ▲ Phone number ▼
+              - 'columnheader "Location: activate to sort column ascending" [ref=e73] [cursor=pointer]': ▲ Location ▼
+              - 'columnheader "Account type: activate to sort column ascending" [ref=e74] [cursor=pointer]': ▲ Account type ▼
+              - 'columnheader "Kyc status: activate to sort column ascending" [ref=e75] [cursor=pointer]': ▲ Kyc status ▼
+              - 'columnheader "Role: activate to sort column ascending" [ref=e76] [cursor=pointer]': ▲ Role ▼
+              - 'columnheader "Is active: activate to sort column ascending" [ref=e77] [cursor=pointer]': ▲ Is active ▼
+              - 'columnheader "Verified: activate to sort column ascending" [ref=e78] [cursor=pointer]': ▲ Verified ▼
+              - 'columnheader "Created at: activate to sort column ascending" [ref=e79] [cursor=pointer]': ▲ Created at ▼
+              - 'columnheader "Updated at: activate to sort column ascending" [ref=e80] [cursor=pointer]': ▲ Updated at ▼
+          - rowgroup [ref=e81]:
+            - row "   2 Penivera penivera655@gmail.com -null- -null- -null- -null- admin pending USER   Jul 10, 2026, 12:01:09 PM Jul 12, 2026, 7:14:29 PM" [ref=e82] [cursor=pointer]:
+              - cell [ref=e83]:
+                - checkbox [ref=e84]
+              - cell "  " [ref=e85]:
+                - generic [ref=e87]:
+                  - link "" [ref=e88]:
+                    - /url: http://localhost:8000/sheda-backend/admin/detail/2
+                    - generic [ref=e90]: 
+                  - link "" [ref=e91]:
+                    - /url: http://localhost:8000/sheda-backend/admin/edit/2
+                    - generic [ref=e93]: 
+                  - link "" [ref=e94]:
+                    - /url: "#"
+                    - generic [ref=e96]: 
+              - cell "2" [ref=e97]:
+                - generic "2" [ref=e98]
+              - cell "Penivera" [ref=e99]:
+                - generic "Penivera" [ref=e100]
+              - cell "penivera655@gmail.com" [ref=e101]:
+                - generic "penivera655@gmail.com" [ref=e102]
+              - cell "-null-" [ref=e103]
+              - cell "-null-" [ref=e104]
+              - cell "-null-" [ref=e105]
+              - cell "-null-" [ref=e106]
+              - cell "admin" [ref=e107]:
+                - generic "admin" [ref=e108]
+              - cell "pending" [ref=e109]:
+                - generic "pending" [ref=e110]
+              - cell "USER" [ref=e111]:
+                - generic "USER" [ref=e112]
+              - cell "" [ref=e113]:
+                - generic [ref=e117]: 
+              - cell "" [ref=e118]:
+                - generic [ref=e122]: 
+              - cell "Jul 10, 2026, 12:01:09 PM" [ref=e123]:
+                - generic "Jul 10, 2026, 12:01:09 PM" [ref=e124]
+              - cell "Jul 12, 2026, 7:14:29 PM" [ref=e125]:
+                - generic "Jul 12, 2026, 7:14:29 PM" [ref=e126]
+        - generic [ref=e127]:
+          - status [ref=e129]: Showing 1 to 1 of 1 entries
+          - list [ref=e132]:
+            - listitem [ref=e133]:
+              - generic: First
+            - listitem [ref=e134]:
+              - generic: Previous
+            - listitem [ref=e135]:
+              - link "1" [ref=e136] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=e137]:
+              - generic: Next
+            - listitem [ref=e138]:
+              - generic: Last

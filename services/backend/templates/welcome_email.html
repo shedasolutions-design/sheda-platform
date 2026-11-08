@@ -1,0 +1,96 @@
+{% extends "email_base.html" %}
+
+{% block title %}Welcome to Sheda Solutions{% endblock %}
+
+{% block extra_styles %}
+.welcome-banner {
+background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+color: white;
+padding: 30px;
+border-radius: 8px;
+text-align: center;
+margin: 20px 0;
+}
+
+.welcome-banner h2 {
+font-size: 28px;
+margin: 0 0 10px 0;
+}
+
+.feature-list {
+list-style: none;
+padding: 0;
+margin: 30px 0;
+}
+
+.feature-list li {
+padding: 12px 0;
+border-bottom: 1px solid #f0f0f0;
+display: flex;
+align-items: center;
+}
+
+.feature-list li:last-child {
+border-bottom: none;
+}
+
+.feature-list li::before {
+content: "✓";
+display: inline-block;
+width: 24px;
+height: 24px;
+background-color: #667eea;
+color: white;
+border-radius: 50%;
+text-align: center;
+line-height: 24px;
+margin-right: 12px;
+font-weight: bold;
+}
+
+.cta-button {
+display: inline-block;
+padding: 14px 40px;
+background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+color: white;
+text-decoration: none;
+border-radius: 8px;
+font-weight: 600;
+margin: 20px 0;
+text-align: center;
+}
+{% endblock %}
+
+{% block content %}
+<div class="welcome-banner">
+    <h2>🎉 Welcome to Sheda Solutions!</h2>
+    <p>Your journey to seamless real estate transactions begins here</p>
+</div>
+
+<div class="greeting">Hello {{ fullname or 'there' }},</div>
+
+<div class="message">
+    Welcome to Sheda Solutions! We're thrilled to have you join our community as
+    <strong>{{ account_type|title if account_type else 'a valued member' }}</strong>.
+</div>
+
+<div class="message">
+    With Sheda, you can:
+</div>
+
+<ul class="feature-list">
+    <li>Browse and list properties on the blockchain</li>
+    <li>Connect with verified agents and clients</li>
+    <li>Complete secure transactions with smart contracts</li>
+    <li>Track all your activities in real-time</li>
+</ul>
+
+<div style="text-align: center;">
+    <a href="https://sheda.app/dashboard" class="cta-button">Get Started</a>
+</div>
+
+<div class="success">
+    <strong>✨ Pro Tip:</strong> Complete your profile and KYC verification to unlock all features and gain the trust of
+    other users in the platform.
+</div>
+{% endblock %}

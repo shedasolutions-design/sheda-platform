@@ -1,0 +1,9 @@
+- complementary [ref=e3]:
+  - generic [ref=e4]:
+    - button [ref=e5] [cursor=pointer]
+    - heading [level=1] [ref=e7]:
+      - link [ref=e8] [cursor=pointer]:
+        - /url: http://localhost:8000/sheda-backend/
+        - img [ref=e9]
+    - link "Open user menu" [ref=e12] [cursor=pointer]:
+      - /url: "#"

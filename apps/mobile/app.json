@@ -1,0 +1,70 @@
+{
+  "expo": {
+    "name": "sheda-solution-mobile",
+    "slug": "sheda-solution-mobile",
+    "owner": "shedasolutionss-team",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "sheda",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.shedasolutions.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.shedasolutions.mobile",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/sheda-logo.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/sheda-splash.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you post houses and profile photos"
+        }
+      ],
+      "expo-font",
+      "expo-local-authentication",
+      "expo-image",
+      "expo-status-bar",
+      "expo-web-browser",
+      "expo-notifications"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "apiUrl": "https://sheda.peni.dev",
+      "apiUrlFallback": "https://sheda-backend-1.onrender.com",
+      "nearContractId": "shedasolution.testnet",
+      "nearNetwork": "testnet",
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "6a730ae7-ba56-4de1-b6b2-497077cfa8b2"
+      }
+    }
+  }
+}

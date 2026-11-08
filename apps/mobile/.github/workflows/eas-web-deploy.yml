@@ -1,0 +1,169 @@
+name: EAS Web Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      alias:
+        description: "Deployment alias (leave blank for a fresh preview URL)"
+        required: false
+        type: string
+      backend:
+        # Which deployment the app prefers. The other one is kept as a live
+        # fallback, not dropped — see services/apiEndpoints.ts.
+        #
+        # The two share a database, so moving between them is a change of
+        # route and not a change of data: the same account sees the same
+        # listings either way. Cloudflare is the default because it is
+        # consistently faster and does not cold start.
+        description: "Preferred backend (the other stays as fallback)"
+        required: false
+        default: cloudflare
+        type: choice
+        options:
+          - cloudflare
+          - render
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_URL: >-
+        ${{ inputs.backend == 'render'
+            && 'https://sheda-backend-1.onrender.com'
+            || 'https://sheda.peni.dev' }}
+      BACKEND_FALLBACK_URL: >-
+        ${{ inputs.backend == 'render'
+            && 'https://sheda.peni.dev'
+            || 'https://sheda-backend-1.onrender.com' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Refuse to ship a build against a backend that cannot serve it.
+      #
+      # BOTH are checked, because either can answer: the app falls back to the
+      # other when the preferred one is unreachable, so a fallback missing
+      # these endpoints is a fallback that breaks the moment it is needed.
+      #
+      # These three carry the appointment phase — the stage of a deal where
+      # the buyer's escrow is already locked. They were missing from the
+      # Cloudflare deployment once already, and a build shipped without them
+      # fails only when someone tries to book a viewing, which is the worst
+      # possible moment to find out.
+      - name: Check both backends can serve this app
+        run: |
+          check() {
+            local base="$1" label="$2" missing=0
+            echo "── $label: $base"
+
+            # Render's free tier sleeps when idle and can take the better
+            # part of a minute to wake. Asleep is not the same as broken, so
+            # retry rather than blocking a deploy on a cold start.
+            local spec=""
+            for attempt in 1 2 3; do
+              spec=$(curl -fsS --max-time 90 "$base/openapi.json") && break
+              echo "   (attempt $attempt could not reach $base — retrying)"
+              spec=""
+              sleep 15
+            done
+            if [ -z "$spec" ]; then
+              echo "::error::Could not read $base/openapi.json after 3 attempts"
+              return 1
+            fi
+
+            for path in \
+              "/api/v1/user/appointment-stage/{bid_id}" \
+              "/api/v1/user/appointment-outcome/{appointment_id}" \
+              "/api/v1/user/delete-schedule/{schedule_id}"; do
+              if printf '%s' "$spec" | grep -qF "\"$path\""; then
+                echo "   ok   $path"
+              else
+                echo "::error::$base is missing $path"
+                missing=1
+              fi
+            done
+
+            # Booking has to accept bid_id, or appointments are never linked
+            # to a deal and the stage endpoint answers 404 for everything
+            # while looking perfectly healthy.
+            printf '%s' "$spec" > /tmp/spec.json
+            if python3 -c 'import json,sys; s=json.load(open("/tmp/spec.json")); sys.exit(0 if "bid_id" in s.get("components",{}).get("schemas",{}).get("AppointmentSchema",{}).get("properties",{}) else 1)'; then
+              echo "   ok   AppointmentSchema.bid_id"
+            else
+              echo "::error::$base AppointmentSchema has no bid_id — appointments would never link to a bid"
+              missing=1
+            fi
+
+            return "$missing"
+          }
+
+          rc=0
+          check "$BACKEND_URL" "preferred" || rc=1
+          check "$BACKEND_FALLBACK_URL" "fallback" || rc=1
+          [ "$rc" -eq 0 ] || exit 1
+          echo "OK — both backends serve the appointment flow."
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Export web build
+        env:
+          EXPO_PUBLIC_API_URL: ${{ env.BACKEND_URL }}
+          EXPO_PUBLIC_API_URL_FALLBACK: ${{ env.BACKEND_FALLBACK_URL }}
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 333938897540-tt7udprd6mf22erf0go6nfonkn7hqkit.apps.googleusercontent.com
+
+
+          # ── Encrypted cloud backup (Firebase) ────────────────────────────
+          # Public by design: a Firebase web API key identifies a project, it
+          # does not authorise anything. Access is enforced by the Firestore
+          # rules in NEAR_WALLET_README.md, which scope every document to
+          # request.auth.uid. Until these repo secrets exist they resolve to
+          # empty, isFirebaseConfigured() returns false, and the backup UI is
+          # hidden rather than broken.
+          EXPO_PUBLIC_FIREBASE_API_KEY: ${{ secrets.EXPO_PUBLIC_FIREBASE_API_KEY }}
+          EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+          EXPO_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.EXPO_PUBLIC_FIREBASE_PROJECT_ID }}
+          EXPO_PUBLIC_FIREBASE_APP_ID: ${{ secrets.EXPO_PUBLIC_FIREBASE_APP_ID }}
+
+          # ── Testnet funding key ──────────────────────────────────────────
+          # ⚠️ THIS KEY BECOMES PUBLIC. app.config.ts copies it into Expo's
+          # `extra`, which is serialised into the web bundle — anyone can read
+          # it with view-source on the deployed site. It is wired up anyway
+          # because without it "Create new wallet" cannot fund a new account
+          # and simply fails, and because testnet NEAR is disposable: the
+          # worst case is that sheda.testnet gets drained and is refilled from
+          # a faucet.
+          #
+          # Treat the account behind this key as compromised-by-design:
+          #   - fund it only with what a demo needs
+          #   - never reuse this keypair anywhere else
+          #   - rotate it if it is ever used for anything that matters
+          NEAR_TESTNET_FUNDING_PRIVATE_KEY: ${{ secrets.NEAR_TESTNET_FUNDING_PRIVATE_KEY }}
+
+          # ── Mainnet funding key: DELIBERATELY NOT SET ────────────────────
+          # Do NOT add NEAR_MAINNET_FUNDING_PRIVATE_KEY here. The exposure
+          # above is tolerable only because testnet funds are worthless; the
+          # identical mechanism would publish a key controlling real NEAR to
+          # anyone who opens devtools. Mainnet account creation has to move
+          # behind a backend endpoint that signs server-side before it can
+          # ship at all — the backend currently exposes
+          # /api/v1/users/wallets/register (registers an EXISTING wallet) but
+          # nothing that creates or funds one.
+        run: npx expo export --platform web
+
+      - name: Deploy to EAS Hosting
+        run: |
+          if [ -n "${{ inputs.alias }}" ]; then
+            eas deploy --non-interactive --alias "${{ inputs.alias }}"
+          else
+            eas deploy --non-interactive
+          fi

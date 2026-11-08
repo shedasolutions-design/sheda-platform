@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "near-intents": {
+      "source": "SurgeCode/near-intents-skill",
+      "sourceType": "github",
+      "computedHash": "1f2a823969756d4117d5099ca1d134b259bd98ee0cc186b281f172eee57ced56"
+    }
+  }
+}

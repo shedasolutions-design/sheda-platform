@@ -1,0 +1,34 @@
+- generic [ref=e2]:
+  - link "Sheda Solutions" [ref=e4] [cursor=pointer]:
+    - /url: https://sheda.app
+    - img "Sheda Solutions" [ref=e5]
+  - generic [ref=e7]:
+    - link [ref=e9] [cursor=pointer]:
+      - /url: .
+    - generic [ref=e11]:
+      - heading "Login to your account" [level=2] [ref=e12]
+      - generic [ref=e13]:
+        - text: Username
+        - textbox "Username" [ref=e14]
+      - generic [ref=e15]:
+        - text: Password
+        - textbox "Password" [ref=e16]
+      - generic [ref=e18]:
+        - checkbox "Remember me" [ref=e19]
+        - text: Remember me
+      - button "Sign in" [ref=e21]
+  - generic [ref=e22]:
+    - generic [ref=e23]:
+      - link "Twitter" [ref=e24] [cursor=pointer]:
+        - /url: https://x.com/Shedasolutions
+      - text: "|"
+      - link "Telegram" [ref=e25] [cursor=pointer]:
+        - /url: https://t.me/shedasolutions
+    - paragraph [ref=e26]:
+      - text: Best regards,
+      - strong [ref=e27]: Sheda Solutions Team
+    - paragraph [ref=e28]:
+      - text: Need help? Contact us at
+      - link "support@sheda.app" [ref=e29] [cursor=pointer]:
+        - /url: mailto:support@sheda.app
+    - generic [ref=e30]: © 2025 Sheda Solutions. All rights reserved.

@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Declaring any permissions block zeroes every permission not listed, so the
+# read on contents has to be spelled out even though it is the only one.
+permissions:
+  contents: read
+
+jobs:
+  # Each job is filtered to its own directory, so a change to the app does
+  # not spend ten minutes compiling Rust to tell you nothing.
+  contracts:
+    name: Contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changed
+        with:
+          filters: |
+            contracts:
+              - 'contracts/**'
+              - '.github/workflows/ci.yml'
+
+      - name: Install Rust
+        if: steps.changed.outputs.contracts == 'true'
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup component add rustfmt clippy
+          rustup target add wasm32-unknown-unknown
+
+      - name: Formatting
+        if: steps.changed.outputs.contracts == 'true'
+        working-directory: contracts
+        run: cargo fmt --all -- --check
+
+      - name: Lint
+        if: steps.changed.outputs.contracts == 'true'
+        working-directory: contracts
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Unit tests
+        if: steps.changed.outputs.contracts == 'true'
+        working-directory: contracts
+        run: cargo test --workspace --lib -- --nocapture
+
+      - name: Build wasm
+        if: steps.changed.outputs.contracts == 'true'
+        working-directory: contracts
+        run: cargo build --workspace --target wasm32-unknown-unknown --release
+
+      # The binaries leave the runner, because a deploy should come from a
+      # build anyone can reproduce rather than from somebody's laptop.
+      - name: Keep the wasm
+        if: steps.changed.outputs.contracts == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm
+          path: contracts/target/wasm32-unknown-unknown/release/*.wasm
+          if-no-files-found: error
+          retention-days: 30
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changed
+        with:
+          filters: |
+            backend:
+              - 'services/backend/**'
+              - '.github/workflows/ci.yml'
+
+      - uses: actions/setup-python@v5
+        if: steps.changed.outputs.backend == 'true'
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install
+        if: steps.changed.outputs.backend == 'true'
+        working-directory: services/backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Unit tests
+        if: steps.changed.outputs.backend == 'true'
+        working-directory: services/backend
+        run: python -m pytest tests/unit -q
+
+  mobile:
+    name: Mobile app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changed
+        with:
+          filters: |
+            mobile:
+              - 'apps/mobile/**'
+              - '.github/workflows/ci.yml'
+
+      - uses: actions/setup-node@v4
+        if: steps.changed.outputs.mobile == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install
+        if: steps.changed.outputs.mobile == 'true'
+        working-directory: apps/mobile
+        run: npm ci
+
+      - name: Typecheck
+        if: steps.changed.outputs.mobile == 'true'
+        working-directory: apps/mobile
+        run: npx tsc --noEmit
+
+      - name: Tests
+        if: steps.changed.outputs.mobile == 'true'
+        working-directory: apps/mobile
+        run: npx jest --watchAll=false

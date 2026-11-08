@@ -1,0 +1,27 @@
+rules_version = '2';
+
+// Sheda wallet backups.
+//
+// These rules are the ONLY server-side thing standing between one user's
+// encrypted wallet and another user's. The backup blobs are AES-256-GCM
+// ciphertext and Sheda cannot decrypt them, but ciphertext handed to the wrong
+// person is still an offline brute-force target against their passphrase — so
+// "it's encrypted anyway" is not a reason to be loose here.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // walletBackups/{uid}/items/{accountId}
+    //
+    // The {uid} path segment must equal the caller's authenticated UID. Keyed
+    // by accountId so re-backing-up the same wallet overwrites in place rather
+    // than accumulating copies of the same seed.
+    match /walletBackups/{uid}/items/{document} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Deny by default. Anything not matched above is unreachable.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

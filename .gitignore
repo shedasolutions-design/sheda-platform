@@ -1,0 +1,33 @@
+# Secrets. Every part of this repository keeps real values out of git and
+# ships a .env.example instead.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+**/credentials*.json
+
+# Mobile app
+node_modules/
+apps/mobile/dist/
+apps/mobile/.expo/
+apps/mobile/web-build/
+*.tsbuildinfo
+
+# Backend
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.sqlite
+dump.rdb
+
+# Contracts
+contracts/target/
+
+# Editors and OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

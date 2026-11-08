@@ -1,0 +1,82 @@
+- complementary [ref=e3]:
+  - generic [ref=e4]:
+    - button [expanded] [active] [ref=e5] [cursor=pointer]
+    - heading [level=1] [ref=e7]:
+      - link [ref=e8] [cursor=pointer]:
+        - /url: http://localhost:8000/sheda-backend/
+        - img [ref=e9]
+    - link "Open user menu" [ref=e12] [cursor=pointer]:
+      - /url: "#"
+    - list [ref=e19]:
+      - listitem [ref=e20]:
+        - link "Base Users" [ref=e21] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/base-user/list
+          - generic [ref=e22]: Base Users
+      - listitem [ref=e23]:
+        - link "Clients" [ref=e24] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/client/list
+          - generic [ref=e25]: Clients
+      - listitem [ref=e26]:
+        - link "Agents" [ref=e27] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/agent/list
+          - generic [ref=e28]: Agents
+      - listitem [ref=e29]:
+        - link "Admins" [ref=e30] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/admin/list
+          - generic [ref=e31]: Admins
+      - listitem [ref=e32]:
+        - link "Properties" [ref=e33] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/property/list
+          - generic [ref=e34]: Properties
+      - listitem [ref=e35]:
+        - link "Property Images" [ref=e36] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/property-image/list
+          - generic [ref=e37]: Property Images
+      - listitem [ref=e38]:
+        - link "Appointments" [ref=e39] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/appointment/list
+          - generic [ref=e40]: Appointments
+      - listitem [ref=e41]:
+        - link "Agent Availabilitys" [ref=e42] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/agent-availability/list
+          - generic [ref=e43]: Agent Availabilitys
+      - listitem [ref=e44]:
+        - link "Contracts" [ref=e45] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/contract/list
+          - generic [ref=e46]: Contracts
+      - listitem [ref=e47]:
+        - link "Account Infos" [ref=e48] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/account-info/list
+          - generic [ref=e49]: Account Infos
+      - listitem [ref=e50]:
+        - link "Payment Confirmations" [ref=e51] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/payment-confirmation/list
+          - generic [ref=e52]: Payment Confirmations
+      - listitem [ref=e53]:
+        - link "Chat Messages" [ref=e54] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/chat-message/list
+          - generic [ref=e55]: Chat Messages
+      - listitem [ref=e56]:
+        - link "Wallet Mappings" [ref=e57] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/wallet-mapping/list
+          - generic [ref=e58]: Wallet Mappings
+      - listitem [ref=e59]:
+        - link "Device Tokens" [ref=e60] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/device-token/list
+          - generic [ref=e61]: Device Tokens
+      - listitem [ref=e62]:
+        - link "Transaction Records" [ref=e63] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/transaction-record/list
+          - generic [ref=e64]: Transaction Records
+      - listitem [ref=e65]:
+        - link "Transaction Notifications" [ref=e66] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/transaction-notification/list
+          - generic [ref=e67]: Transaction Notifications
+      - listitem [ref=e68]:
+        - link "Transaction Audit Logs" [ref=e69] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/transaction-audit-log/list
+          - generic [ref=e70]: Transaction Audit Logs
+      - listitem [ref=e71]:
+        - link "Minted Property Drafts" [ref=e72] [cursor=pointer]:
+          - /url: http://localhost:8000/sheda-backend/minted-property-draft/list
+          - generic [ref=e73]: Minted Property Drafts

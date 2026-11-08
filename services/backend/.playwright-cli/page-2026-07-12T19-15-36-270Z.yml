@@ -1,0 +1,19 @@
+- generic [ref=e2]:
+  - link "Sheda Solutions" [ref=e4] [cursor=pointer]:
+    - /url: https://sheda.app
+    - img "Sheda Solutions" [ref=e5]
+  - generic [ref=e7]:
+    - generic [ref=e8]:
+      - link "Twitter" [ref=e9] [cursor=pointer]:
+        - /url: https://x.com/Shedasolutions
+      - text: "|"
+      - link "Telegram" [ref=e10] [cursor=pointer]:
+        - /url: https://t.me/shedasolutions
+    - paragraph [ref=e11]:
+      - text: Best regards,
+      - strong [ref=e12]: Sheda Solutions Team
+    - paragraph [ref=e13]:
+      - text: Need help? Contact us at
+      - link "support@sheda.app" [ref=e14] [cursor=pointer]:
+        - /url: mailto:support@sheda.app
+    - generic [ref=e15]: © 2025 Sheda Solutions. All rights reserved.
