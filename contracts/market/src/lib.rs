@@ -17,7 +17,7 @@ use crate::{internal::*, models::Action};
 #[allow(unused_imports)]
 use near_contract_standards::non_fungible_token::{
     approval::NonFungibleTokenApproval,
-    core::NonFungibleTokenCore,
+    core::{NonFungibleTokenCore, NonFungibleTokenResolver},
     enumeration::NonFungibleTokenEnumeration,
     metadata::NonFungibleTokenMetadataProvider,
     metadata::{NFTContractMetadata, TokenMetadata},
@@ -164,8 +164,12 @@ impl NonFungibleTokenCore for ShedaContract {
                 env::panic_str("Cannot transfer property while it is on an active lease");
             }
         }
+        let receiver = receiver_id.clone();
         self.tokens
             .nft_transfer(receiver_id, token_id, approval_id, memo);
+        // A plain transfer moves the token, not the property record. Keep the
+        // two agreeing, or the new owner cannot list or accept bids.
+        sync_property_owner(self, property_id, &receiver);
     }
 
     #[payable]
@@ -187,12 +191,60 @@ impl NonFungibleTokenCore for ShedaContract {
                 env::panic_str("Cannot transfer property while it is on an active lease");
             }
         }
-        self.tokens
-            .nft_transfer_call(receiver_id, token_id, approval_id, memo, msg)
+        let receiver = receiver_id.clone();
+        let result = self
+            .tokens
+            .nft_transfer_call(receiver_id, token_id, approval_id, memo, msg);
+        // The standard call moves the token before asking the receiver what to
+        // do with it. Follow it now; `nft_resolve_transfer` moves the record
+        // back if the receiver decides to return the token.
+        sync_property_owner(self, property_id, &receiver);
+        result
     }
 
     fn nft_token(&self, token_id: TokenId) -> Option<Token> {
         self.tokens.nft_token(token_id)
+    }
+}
+
+/// Finish the `nft_transfer_call` promise chain.
+///
+/// The standard `nft_transfer_call` transfers the token, asks the receiver
+/// what to do with it, and then schedules this method on the contract that
+/// owns the token to either keep or revert the transfer. Implementing
+/// `nft_transfer_call` without it leaves that callback pointing at a method
+/// that does not exist: the token moves, but the transaction reports a
+/// failed receipt with `MethodNotFound` every time.
+///
+/// `#[private]` enforces the NEP-171 rule that only the contract itself may
+/// call this. Anyone else could otherwise revert a completed transfer.
+#[near]
+impl NonFungibleTokenResolver for ShedaContract {
+    #[private]
+    fn nft_resolve_transfer(
+        &mut self,
+        previous_owner_id: AccountId,
+        receiver_id: AccountId,
+        token_id: TokenId,
+        approved_account_ids: Option<std::collections::HashMap<AccountId, u64>>,
+    ) -> bool {
+        let kept = self.tokens.nft_resolve_transfer(
+            previous_owner_id,
+            receiver_id,
+            token_id.clone(),
+            approved_account_ids,
+        );
+
+        // The resolver has either kept the token with the receiver or returned
+        // it to the previous owner. Read where it actually ended up and align
+        // the property record with it.
+        if let Ok(property_id) = token_id.parse::<u64>() {
+            if let Some(owner) = self.tokens.nft_token(token_id).map(|token| token.owner_id) {
+                sync_property_owner(self, property_id, &owner);
+            }
+        }
+
+        kept
     }
 }
 

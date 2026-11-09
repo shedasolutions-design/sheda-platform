@@ -1993,42 +1993,20 @@ pub fn assert_no_blocking_bids(contract: &ShedaContract, property_id: u64, actio
     ));
 }
 
-/// Hand a property over to its new owner, keeping `Property.owner_id` and the
-/// `property_per_owner` index in step with the NEP-171 token.
+/// Point the marketplace's record of a property at whoever now holds its
+/// NFT.
 ///
-/// The NFT was already being transferred on a completed purchase, but neither
-/// of those two were updated alongside it, so the token said the buyer owned
-/// the property while the contract's own records still said the seller did.
-/// That left a purchased property permanently stuck: the seller couldn't act
-/// on it (`delete_property`/`delist_property` both refused once `sold` was
-/// set) and the buyer couldn't either (they weren't `owner_id`), and it never
-/// appeared in the buyer's portfolio, since `get_property_by_owner` reads
-/// `property_per_owner`.
+/// The token and the `Property` record are two representations of the same
+/// ownership. NEP-171's `nft_transfer` and `nft_transfer_call` move only the
+/// token, so without this the record — and every method that authorises by
+/// it — stays with the seller. That is exactly what happens when a unit is
+/// handed to a vault: the vault owns the NFT, but `update_listing` compares
+/// against `Property.owner_id` and refuses it.
 ///
-/// The property is left unlisted so the new owner can do whatever they like
-/// with it — relist it for sale, put it up for lease, or transfer it on.
-///
-/// `sold` is kept, as a permanent record of the sale. It used to be cleared
-/// right here, because leaving it set re-tripped those delist/delete guards.
-/// The guards were the actual mistake: `sold` describes how the *current*
-/// owner came by the property, so refusing their own delist or delete on the
-/// strength of it is backwards. They are gone, which lets the record stay —
-/// and it has to stay, because `claim_lost_bid` reads it to decide whether a
-/// losing purchase bid may be withdrawn, and `SoldView` reports it to clients.
-/// Clearing it is what made both of those dead.
-///
-/// Call this immediately after `tokens.internal_transfer`, so the token and
-/// these records can never drift apart again.
-///
-/// Purchases only. A lease deliberately leaves `owner_id` alone — the
-/// landlord stays the owner for the duration, and `internal_expire_lease`
-/// hands the token back when it ends. `sale_amount` is the winning bid.
-pub fn transfer_property_ownership(
-    contract: &mut ShedaContract,
-    property_id: u64,
-    new_owner: &AccountId,
-    sale_amount: u128,
-) {
+/// This is not a sale. `transfer_property_ownership` is for that and also
+/// records `Sold` and unlists; a custody transfer must keep the listing terms,
+/// because the new owner (a vault) is about to let the unit under them.
+pub fn sync_property_owner(contract: &mut ShedaContract, property_id: u64, new_owner: &AccountId) {
     let mut property = contract
         .properties
         .get(&property_id)
@@ -2071,6 +2049,62 @@ pub fn transfer_property_ownership(
         .insert(new_owner.clone(), new_owner_properties);
 
     property.owner_id = new_owner.clone();
+    contract.properties.insert(property_id, property);
+}
+
+/// Hand a property over to its new owner, keeping `Property.owner_id` and the
+/// `property_per_owner` index in step with the NEP-171 token.
+///
+/// The NFT was already being transferred on a completed purchase, but neither
+/// of those two were updated alongside it, so the token said the buyer owned
+/// the property while the contract's own records still said the seller did.
+/// That left a purchased property permanently stuck: the seller couldn't act
+/// on it (`delete_property`/`delist_property` both refused once `sold` was
+/// set) and the buyer couldn't either (they weren't `owner_id`), and it never
+/// appeared in the buyer's portfolio, since `get_property_by_owner` reads
+/// `property_per_owner`.
+///
+/// The property is left unlisted so the new owner can do whatever they like
+/// with it — relist it for sale, put it up for lease, or transfer it on.
+///
+/// `sold` is kept, as a permanent record of the sale. It used to be cleared
+/// right here, because leaving it set re-tripped those delist/delete guards.
+/// The guards were the actual mistake: `sold` describes how the *current*
+/// owner came by the property, so refusing their own delist or delete on the
+/// strength of it is backwards. They are gone, which lets the record stay —
+/// and it has to stay, because `claim_lost_bid` reads it to decide whether a
+/// losing purchase bid may be withdrawn, and `SoldView` reports it to clients.
+/// Clearing it is what made both of those dead.
+///
+/// Call this immediately after `tokens.internal_transfer`, so the token and
+/// these records can never drift apart again.
+///
+/// Purchases only. A lease deliberately leaves `owner_id` alone — the
+/// landlord stays the owner for the duration, and `internal_expire_lease`
+/// hands the token back when it ends. `sale_amount` is the winning bid.
+pub fn transfer_property_ownership(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    new_owner: &AccountId,
+    sale_amount: u128,
+) {
+    let previous_owner = contract
+        .properties
+        .get(&property_id)
+        .expect("Property not found")
+        .owner_id
+        .clone();
+    if previous_owner == *new_owner {
+        return;
+    }
+
+    sync_property_owner(contract, property_id, new_owner);
+
+    let mut property = contract
+        .properties
+        .get(&property_id)
+        .expect("Property not found")
+        .clone();
 
     // Record the sale rather than discarding it.
     //
@@ -2093,7 +2127,7 @@ pub fn transfer_property_ownership(
         property_id,
         buyer_id: new_owner.clone(),
         amount: sale_amount,
-        previous_owner_id: previous_owner.clone(),
+        previous_owner_id: previous_owner,
         sold_at: env::block_timestamp(),
     });
 
