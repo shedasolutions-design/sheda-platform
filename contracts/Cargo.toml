@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["contracts/*"]
+members = ["raise", "stake-registry", "vault", "market"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-repository = "https://github.com/Entechnologuehamadex/sheda-collection-app-contract"
+repository = "https://github.com/shedasolutions-design/sheda-platform"
 
 [workspace.dependencies]
 # `legacy` carries near_sdk::collections. The newer `store` collections buffer

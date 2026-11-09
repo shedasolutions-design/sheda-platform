@@ -1,5 +1,7 @@
 from sqlalchemy.future import select
 from sqlalchemy.engine import Result
+from sqlalchemy import or_, func
+from sqlalchemy.exc import IntegrityError
 from app.models.property import Property, PropertyImage
 from app.schemas.user_schema import UserInDB, AgentFeed
 from app.models.property import (
@@ -249,9 +251,64 @@ async def delist_property(property_id: int, db: AsyncSession, current_user: User
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Property cannot be deleted because it is currently rented or sold",
         )
-    await db.delete(property)
+
+    # appointment.property_id cascades, so deleting here would silently remove
+    # any viewing booked against this property. Refuse while one is still live
+    # and say which — someone has that slot in their calendar, and the seller
+    # should cancel it deliberately rather than have it disappear.
+    live_appointments = await db.execute(
+        select(Appointment).where(
+            Appointment.property_id == property_id,
+            Appointment.status.in_(
+                [AppointmentStatEnum.pending, AppointmentStatEnum.confirmed]
+            ),
+        )
+    )
+    blocking = live_appointments.scalars().all()
+    if blocking:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": (
+                    f"This property has {len(blocking)} active "
+                    f"appointment{'s' if len(blocking) != 1 else ''} and can't be "
+                    "deleted yet. Cancel them first, then try again."
+                ),
+                "blocking_appointments": [
+                    {
+                        "appointment_id": appt.id,
+                        "scheduled_at": appt.scheduled_at.isoformat()
+                        if appt.scheduled_at
+                        else None,
+                        "status": appt.status.value if appt.status else None,
+                    }
+                    for appt in blocking
+                ],
+            },
+        )
+
+    try:
+        await db.delete(property)
+        await db.commit()
+    except IntegrityError as exc:
+        # Something else still references this property. Previously this
+        # propagated as an unhandled 500; a 409 both tells the caller it's
+        # their state rather than our outage, and keeps CORS headers on the
+        # response (an unhandled 500 is generated outside that middleware).
+        await db.rollback()
+        logger.warning(
+            f"Property id:{property_id} could not be deleted, still referenced: {exc}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This property is still referenced by other records and can't be "
+                "deleted yet. Cancel any open appointments or transactions on it "
+                "first."
+            ),
+        ) from exc
+
     logger.info(f"Property with id:{property_id} deleted by agent id:{current_user.id}")
-    await db.commit()
     return DeleteProperty(message="Property Deleted")
 
 
@@ -261,6 +318,7 @@ async def run_book_appointment(
     property_id: int,
     requested_time: datetime,
     db: AsyncSession,
+    bid_id: int | None = None,
 ):
     requested_weekday = requested_time.strftime("%A").upper()
     requested_time_only = requested_time.time()
@@ -292,6 +350,10 @@ async def run_book_appointment(
         client_id=client_id,
         agent_id=agent_id,
         property_id=property_id,
+        # Ties this viewing to the on-chain deal it belongs to, so a seller
+        # with several accepted bids knows which buyer is coming and both
+        # sides can see one timeline instead of two disconnected halves.
+        bid_id=bid_id,
         scheduled_at=scheduled_time,
     )
 
@@ -299,6 +361,91 @@ async def run_book_appointment(
     await db.commit()
     await db.refresh(appointment)
     return appointment
+
+
+async def record_appointment_outcome(
+    appointment_id: int,
+    agreed: bool,
+    current_user: UserInDB,
+    db: AsyncSession,
+):
+    """Record what a viewing produced, once it has actually happened.
+
+    `confirmed` only ever meant the slot was booked. Nothing recorded whether
+    the meeting took place or how it went, which is the one thing the seller
+    needs before releasing the agreement on chain — and the one thing the buyer
+    needs to know their locked escrow is still moving.
+    """
+    appointment = await db.get(Appointment, appointment_id)
+    if not appointment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found"
+        )
+
+    # Only the two people who were meant to be at the viewing can say what came
+    # of it. This drives whether a seller may release documents, so letting a
+    # third party set it would let them push a deal forward on someone's behalf.
+    if current_user.id not in (appointment.client_id, appointment.agent_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the client or agent on this appointment can record its outcome",
+        )
+
+    if appointment.status in (
+        AppointmentStatEnum.canceled,
+        AppointmentStatEnum.completed,
+        AppointmentStatEnum.not_agreed,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This appointment is already {appointment.status.value}",
+        )
+
+    appointment.status = (
+        AppointmentStatEnum.completed if agreed else AppointmentStatEnum.not_agreed
+    )
+    db.add(appointment)
+    await db.commit()
+    await db.refresh(appointment)
+    return appointment
+
+
+async def fetch_appointment_stage(bid_id: int, db: AsyncSession):
+    """Where a deal stands in the off-chain half of the flow.
+
+    The buyer's escrow is locked the moment their bid is accepted, but the next
+    on-chain step — the seller releasing the agreement NFT — waits on a meeting
+    that happens in the real world. Nothing joined the two, so a deal in
+    progress looked exactly like a deal that had stalled, and the buyer had no
+    way to tell whether their money was working or stuck.
+    """
+    result: Result = await db.execute(
+        select(Appointment)
+        .where(Appointment.bid_id == bid_id)
+        .order_by(Appointment.scheduled_at)
+    )
+    appointments = list(result.scalars().all())
+
+    if not appointments:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No appointment has been booked for this bid yet.",
+        )
+
+    return {
+        "bid_id": bid_id,
+        "property_id": appointments[0].property_id,
+        "appointments": appointments,
+        # The signal the seller is waiting on. A viewing that merely got
+        # "confirmed" was only ever a booked slot — it says nothing about
+        # whether the meeting happened or the parties agreed.
+        "ready_for_documents": any(
+            a.status == AppointmentStatEnum.completed for a in appointments
+        ),
+        "viewing_not_agreed": any(
+            a.status == AppointmentStatEnum.not_agreed for a in appointments
+        ),
+    }
 
 
 async def create_availability(
@@ -498,12 +645,28 @@ async def run_create_contract(
     # Determine contract type (rent or sale)
     contract_type = property.listing_type
 
-    # Set contract duration if renting
+    # Set contract duration if renting.
+    #
+    # Days, and taken from the property unless the caller overrides it — the
+    # term was agreed when the property was listed. This used to multiply a
+    # month count by 30, which meant a seven-day let was recorded as a
+    # thirty-day one and a year ran 360 days, neither matching what the chain
+    # had stored for the same tenancy.
+    #
+    # The chain is still authoritative for when a lease actually ends. This
+    # date is the backend's own record of the agreement.
     end_date = None
     if contract_type == ListingTypeEnum.rent:
-        end_date = datetime.now(timezone.utc) + timedelta(
-            days=30 * contract_data.rental_period_months  # type: ignore
-        )  # type: ignore
+        duration_days = contract_data.lease_duration_days or property.lease_duration_days
+        if not duration_days or duration_days <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "This rental has no lease term. Set one on the listing, or "
+                    "pass lease_duration_days when creating the contract."
+                ),
+            )
+        end_date = datetime.now(timezone.utc) + timedelta(days=duration_days)
 
     # Create contract
     contract = Contract(
@@ -515,6 +678,12 @@ async def run_create_contract(
         start_date=datetime.now(timezone.utc),
         end_date=end_date,
         is_active=False,  # Activates when agent confirms
+        # Keep the link to what this contract is on chain. The app has always
+        # sent these; they were being dropped, leaving no way to tell which
+        # on-chain deal a row stood for.
+        bid_id=contract_data.bid_id,
+        lease_id=contract_data.lease_id,
+        transaction_hash=contract_data.transaction_hash,
     )
 
     # Update property status
@@ -567,3 +736,149 @@ async def confirm_agent_appointment(
     await db.refresh(appointment)
 
     return {"detail": "Appointment Confirmed", "status": appointment.status}
+
+
+# ── Searching for a property ────────────────────────────────────────────────
+#
+# Search ran only through Elasticsearch, and that made it fail in three
+# different ways at once: the index is never populated (nothing calls the
+# indexing endpoint), one deployment cannot reach Elasticsearch at all, and
+# the results it returns are too thin to render — ids and titles, no images.
+# The endpoint answered `{"results": [], "total": 0}` and looked healthy.
+#
+# So the database answers the query, and Elasticsearch — when it is reachable
+# and has anything indexed — only decides the order. That way search works on
+# a deployment with no index and no Elasticsearch, which is the state both
+# deployments are actually in, and it returns whole properties that a client
+# can draw.
+
+# `amenities` arrives as a list of names, but the model stores each one as its
+# own boolean column. Anything not named here is ignored rather than refused:
+# an unknown amenity should narrow nothing, not empty the page.
+_AMENITY_COLUMNS = {
+    "wifi": "wifi",
+    "air_condition": "air_condition",
+    "air_conditioning": "air_condition",
+    "ac": "air_condition",
+    "pop_ceiling": "pop_ceiling",
+    "floor_tiles": "floor_tiles",
+    "running_water": "running_water",
+    "water": "running_water",
+    "furniture": "furniture",
+    "furnished": "furnished",
+    "prepaid_meter": "prepaid_meter",
+}
+
+_SORT_COLUMNS = {
+    "price_asc": (Property.price, "asc"),
+    "price_desc": (Property.price, "desc"),
+    "created_desc": (Property.created_at, "desc"),
+    "created_asc": (Property.created_at, "asc"),
+}
+
+
+def _apply_search_filters(stmt, *, query=None, location=None, property_type=None,
+                          listing_type=None, min_price=None, max_price=None,
+                          min_bedroom=None, max_bedroom=None, min_bathroom=None,
+                          max_bathroom=None, furnished=None, amenities=None):
+    """Narrow a Property select by everything the search endpoint accepts."""
+    if query and query.strip() and query.strip() != "*":
+        like = f"%{query.strip()}%"
+        # Three fields, because people search for a place as readily as for a
+        # kind of property.
+        stmt = stmt.where(
+            or_(
+                Property.title.ilike(like),
+                Property.description.ilike(like),
+                Property.location.ilike(like),
+            )
+        )
+
+    if location:
+        stmt = stmt.where(Property.location.ilike(f"%{location}%"))
+    if property_type:
+        stmt = stmt.where(Property.property_type == property_type)
+    if listing_type:
+        stmt = stmt.where(Property.listing_type == listing_type)
+    if min_price is not None:
+        stmt = stmt.where(Property.price >= min_price)
+    if max_price is not None:
+        stmt = stmt.where(Property.price <= max_price)
+    if min_bedroom is not None:
+        stmt = stmt.where(Property.bedroom >= min_bedroom)
+    if max_bedroom is not None:
+        stmt = stmt.where(Property.bedroom <= max_bedroom)
+    if min_bathroom is not None:
+        stmt = stmt.where(Property.bathroom >= min_bathroom)
+    if max_bathroom is not None:
+        stmt = stmt.where(Property.bathroom <= max_bathroom)
+    if furnished is not None:
+        stmt = stmt.where(Property.furnished == furnished)
+
+    for name in amenities or []:
+        column = _AMENITY_COLUMNS.get(str(name).strip().lower().replace(" ", "_"))
+        if column:
+            stmt = stmt.where(getattr(Property, column).is_(True))
+
+    # A delisted property is not a search result. `is_active` is nullable on
+    # rows that predate the column, and `!= False` keeps those visible rather
+    # than silently dropping every older listing.
+    stmt = stmt.where(Property.is_active.isnot(False))
+    return stmt
+
+
+async def search_properties(
+    db: AsyncSession,
+    *,
+    query=None, location=None, property_type=None, listing_type=None,
+    min_price=None, max_price=None, min_bedroom=None, max_bedroom=None,
+    min_bathroom=None, max_bathroom=None, furnished=None, amenities=None,
+    sort="relevance", limit=20, offset=0, ranked_ids=None,
+):
+    """Find properties, returning whole rows rather than index fragments.
+
+    `ranked_ids` is Elasticsearch's opinion about ordering, when it had one.
+    The rows still come from the database, so a half-built index degrades the
+    ordering instead of emptying the page.
+    """
+    filters = dict(
+        query=query, location=location, property_type=property_type,
+        listing_type=listing_type, min_price=min_price, max_price=max_price,
+        min_bedroom=min_bedroom, max_bedroom=max_bedroom,
+        min_bathroom=min_bathroom, max_bathroom=max_bathroom,
+        furnished=furnished, amenities=amenities,
+    )
+
+    count_stmt = _apply_search_filters(select(func.count(Property.id)), **filters)
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    stmt = _apply_search_filters(
+        select(Property).options(selectinload(Property.images)), **filters
+    )
+
+    if ranked_ids:
+        # Keep Elasticsearch's order, and only for the page it ranked.
+        stmt = stmt.where(Property.id.in_(ranked_ids))
+        rows = list((await db.execute(stmt)).scalars().all())
+        position = {pid: i for i, pid in enumerate(ranked_ids)}
+        rows.sort(key=lambda p: position.get(p.id, len(position)))
+    else:
+        column, direction = _SORT_COLUMNS.get(sort, (None, None))
+        if column is None:
+            # Relevance without an index is not meaningful, so newest first —
+            # the useful default for a marketplace, and a stable order rather
+            # than whatever the database happens to return.
+            column, direction = Property.created_at, "desc"
+        stmt = stmt.order_by(column.desc() if direction == "desc" else column.asc())
+        stmt = stmt.limit(limit).offset(offset)
+        rows = list((await db.execute(stmt)).scalars().all())
+
+    return {
+        "data": rows,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        # Which path answered, so an empty page can be told apart from a
+        # missing index without reading the logs.
+        "source": "index" if ranked_ids else "database",
+    }

@@ -1,0 +1,52 @@
+name: Market contract tests
+
+# Reusable gate for the marketplace deploy workflows. The main CI already
+# tests the market crate on every push; this exists so a deploy cannot ship a
+# commit that has not been tested on its own.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Marketplace contract
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned, not stable: nearcore's VM rejects wasm built by Rust 1.87 and
+      # newer. `contracts/rust-toolchain.toml` names 1.86.0 as well, so this
+      # step mostly makes the component/target install explicit and cacheable.
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.86.0 --profile minimal \
+            --component rustfmt --component clippy \
+            --target wasm32-unknown-unknown
+
+      - name: Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint
+        run: cargo clippy -p sheda-contract --all-targets -- -W clippy::all
+
+      # These drive the contract against a real near-workspaces node, so they
+      # must run before anything reaches an account.
+      - name: Tests
+        run: cargo test -p sheda-contract
+
+      - name: Build wasm
+        run: cargo build -p sheda-contract --target wasm32-unknown-unknown --release
+
+      - name: Keep the wasm
+        uses: actions/upload-artifact@v4
+        with:
+          name: sheda-market-wasm
+          path: contracts/target/wasm32-unknown-unknown/release/sheda_contract.wasm
+          if-no-files-found: error
+          retention-days: 30

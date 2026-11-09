@@ -108,7 +108,25 @@ def create_app() -> FastAPI:
     app.include_router(indexer.router, prefix=settings.API_V_STR)
     app.include_router(collections.router, prefix=settings.API_V_STR)
 
+    # NOTE - Add rate limiting middleware
+    app.add_middleware(RateLimitMiddleware)
+
+    # NOTE - Add error handling middleware
+    app.add_middleware(ErrorHandlerMiddleware)
+
     # NOTE - Fully permissive CORS (dev only, restrict in production)
+    #
+    # Registered LAST on purpose. Starlette makes the most recently added
+    # middleware the outermost one, so anything added after this would produce
+    # its responses outside the CORS layer — and those responses go out with no
+    # Access-Control-Allow-Origin header.
+    #
+    # That's what made every 5xx on this API show up in the browser as a CORS
+    # error instead of the actual failure: ErrorHandlerMiddleware was outside
+    # CORSMiddleware, so its 500s were unreadable to the client and the real
+    # cause (an IntegrityError deleting a property) was invisible.
+    #
+    # Keep CORSMiddleware last.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -116,12 +134,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # NOTE - Add rate limiting middleware
-    app.add_middleware(RateLimitMiddleware)
-
-    # NOTE - Add error handling middleware
-    app.add_middleware(ErrorHandlerMiddleware)
 
     # NOTE - Setup exception handlers for proper error responses
     setup_exception_handlers(app)

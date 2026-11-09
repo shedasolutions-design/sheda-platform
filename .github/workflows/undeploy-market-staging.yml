@@ -1,0 +1,47 @@
+name: Undeploy market staging
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup-staging:
+    name: Cleanup staging account
+    runs-on: ubuntu-latest
+    env:
+      NEAR_CONTRACT_PR_STAGING_ACCOUNT_ID: gh-${{ github.event.number }}.${{ vars.NEAR_CONTRACT_STAGING_ACCOUNT_ID }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install near CLI
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/near-cli-rs/releases/download/v0.20.0/near-cli-rs-installer.sh | sh
+
+      # Returning the balance to the parent is the whole point of this job, so
+      # it should not go red for a PR that never got a staging account in the
+      # first place — a PR closed before the deploy ran, or one opened while
+      # the credentials were missing. Nothing to reclaim is a success.
+      - name: Remove staging account
+        run: |
+          set -euo pipefail
+          ACCOUNT="${{ env.NEAR_CONTRACT_PR_STAGING_ACCOUNT_ID }}"
+          RPC="https://rpc.${{ vars.NEAR_CONTRACT_STAGING_NETWORK }}.near.org"
+
+          RESPONSE=$(curl -sS -X POST "$RPC" -H 'Content-Type: application/json' \
+            -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{
+                  \"request_type\":\"view_account\",\"finality\":\"final\",
+                  \"account_id\":\"$ACCOUNT\"}}")
+
+          if ! echo "$RESPONSE" | jq -e '.result.amount != null' >/dev/null; then
+            echo "$ACCOUNT does not exist — nothing to clean up"
+            exit 0
+          fi
+
+          near account delete-account "$ACCOUNT" \
+            beneficiary "${{ vars.NEAR_CONTRACT_STAGING_ACCOUNT_ID }}" \
+            network-config "${{ vars.NEAR_CONTRACT_STAGING_NETWORK }}" \
+            sign-with-plaintext-private-key "${{ secrets.NEAR_CONTRACT_STAGING_ACCOUNT_PRIVATE_KEY }}" \
+            send

@@ -29,6 +29,11 @@
 //! If the build stalls, each investor pulls their share of it. A guarantee
 //! the builder can walk away from is not a guarantee.
 
+// The `#[near_bindgen]` constructor is expanded into a function whose argument
+// count is fixed by the contract's init parameters. Clippy's default threshold
+// is lower than that, so the lint fires on generated code we do not control.
+#![allow(clippy::too_many_arguments)]
+
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, UnorderedMap};
 use near_sdk::json_types::{U128, U64};

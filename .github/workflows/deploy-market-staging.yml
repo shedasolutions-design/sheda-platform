@@ -1,0 +1,109 @@
+name: Deploy market to staging
+
+on:
+  pull_request:
+    # A backend or mobile PR must not spin up a contract staging account.
+    paths:
+      - 'contracts/market/**'
+      - 'contracts/Cargo.toml'
+      - 'contracts/Cargo.lock'
+      - 'contracts/rust-toolchain.toml'
+      - '.github/workflows/deploy-market-staging.yml'
+      - '.github/workflows/deploy-market-production.yml'
+      - '.github/workflows/market-test.yml'
+
+jobs:
+  test:
+    uses: ./.github/workflows/market-test.yml
+
+  deploy-staging:
+    name: Deploy to staging subaccount
+    # Declaring any permission block replaces the defaults wholesale, so
+    # `contents: read` has to be spelled out or checkout cannot read the
+    # repository at all. It became "Repository not found" the moment the
+    # original repo went private.
+    permissions:
+      contents: read
+      pull-requests: write
+    needs: [test]
+    runs-on: ubuntu-latest
+    env:
+      NEAR_CONTRACT_PR_STAGING_ACCOUNT_ID: gh-${{ github.event.number }}.${{ vars.NEAR_CONTRACT_STAGING_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install near CLI
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/near-cli-rs/releases/download/v0.20.0/near-cli-rs-installer.sh | sh
+
+      # Every push to the PR gets a brand new staging account.
+      #
+      # Reusing one does not work: the deploy below runs `new()`, and a second
+      # push to the same PR would hit "The contract has already been
+      # initialized". Deploying without the init call instead would be worse —
+      # a PR that changes the struct layout would leave the preview holding
+      # state it cannot deserialize, which is exactly the failure this preview
+      # exists to catch early.
+      #
+      # Recreating is cheap here and makes the preview an honest reflection of
+      # the PR: whatever is on that account came from this commit and nothing
+      # else. The balance returns to the parent on the way through.
+      #
+      # The subaccount carries the staging parent's *public* key, which is what
+      # lets the parent's private key sign both the delete and the deploy.
+      - name: Recreate the staging account
+        run: |
+          set -euo pipefail
+          ACCOUNT="${{ env.NEAR_CONTRACT_PR_STAGING_ACCOUNT_ID }}"
+          PARENT="${{ vars.NEAR_CONTRACT_STAGING_ACCOUNT_ID }}"
+          NETWORK="${{ vars.NEAR_CONTRACT_STAGING_NETWORK }}"
+          RPC="https://rpc.$NETWORK.near.org"
+
+          exists() {
+            curl -sS -X POST "$RPC" -H 'Content-Type: application/json'               -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{
+                    \"request_type\":\"view_account\",\"finality\":\"final\",
+                    \"account_id\":\"$ACCOUNT\"}}"               | jq -e '.result.amount != null' >/dev/null
+          }
+
+          if exists; then
+            echo "$ACCOUNT exists from an earlier push — deleting it"
+            near account delete-account "$ACCOUNT"               beneficiary "$PARENT"               network-config "$NETWORK"               sign-with-plaintext-private-key "${{ secrets.NEAR_CONTRACT_STAGING_ACCOUNT_PRIVATE_KEY }}"               send
+          fi
+
+          echo "creating $ACCOUNT"
+          near account create-account fund-myself "$ACCOUNT" '7 NEAR'             use-manually-provided-public-key "${{ vars.NEAR_CONTRACT_STAGING_ACCOUNT_PUBLIC_KEY }}"             sign-as "$PARENT"             network-config "$NETWORK"             sign-with-plaintext-private-key "${{ secrets.NEAR_CONTRACT_STAGING_ACCOUNT_PRIVATE_KEY }}"             send
+
+      - name: Install cargo-near CLI
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.17.0/cargo-near-installer.sh | sh
+
+      # `--skip-git-remote-check` because pull request refs (refs/pull/N/merge)
+      # are awkward to resolve and live only as long as the PR, so the WASM
+      # reproducibility check SourceScan does is not available for staging.
+      #
+      # `with-init-call new` rather than `without-init-call`: every PR gets a
+      # brand new account, so there is never existing state to preserve, and
+      # code deployed without new() leaves a contract whose every method panics
+      # (PanicOnDefault) — which is not something worth deploying a preview of.
+      #
+      # `--manifest-path` because the marketplace crate is a member of the
+      # `contracts` workspace; naming it is what lets the reproducible build
+      # see the workspace root and lockfile.
+      - name: Deploy to staging
+        run: |
+          cargo near deploy build-reproducible-wasm --skip-git-remote-check \
+            --manifest-path contracts/market/Cargo.toml \
+            "${{ env.NEAR_CONTRACT_PR_STAGING_ACCOUNT_ID }}" \
+            with-init-call new \
+            json-args '{"media_url":"${{ vars.NEAR_CONTRACT_MEDIA_URL }}","supported_stablecoins":${{ vars.NEAR_CONTRACT_SUPPORTED_STABLECOINS }}}' \
+            prepaid-gas '300.0 Tgas' \
+            attached-deposit '0 NEAR' \
+            network-config "${{ vars.NEAR_CONTRACT_STAGING_NETWORK }}" \
+            sign-with-plaintext-private-key "${{ secrets.NEAR_CONTRACT_STAGING_ACCOUNT_PRIVATE_KEY }}" \
+            send
+
+      - name: Comment on pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment "${{ github.event.number }}" --body "Staging contract is deployed to ["'`'"${{ env.NEAR_CONTRACT_PR_STAGING_ACCOUNT_ID }}"'`'" account](https://testnet.nearblocks.io/address/${{ env.NEAR_CONTRACT_PR_STAGING_ACCOUNT_ID }})"

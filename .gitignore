@@ -7,11 +7,14 @@
 *.key
 **/credentials*.json
 
-# Mobile app
+# Mobile and Collections apps
 node_modules/
 apps/mobile/dist/
 apps/mobile/.expo/
 apps/mobile/web-build/
+apps/collection-app/dist/
+apps/collection-app/.expo/
+apps/collection-app/web-build/
 *.tsbuildinfo
 
 # Backend

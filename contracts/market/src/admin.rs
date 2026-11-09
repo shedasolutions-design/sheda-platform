@@ -1,0 +1,575 @@
+use crate::events::{
+    emit_event, AdminAddedEvent, AdminRemovedEvent, BidRefundedEvent, DisputeResolvedEvent,
+    EmergencyWithdrawalEvent, PropertyDeletedEvent, PropertyDelistedEvent,
+    StablecoinWithdrawnEvent,
+};
+pub use crate::ext::*;
+use crate::internal::extract_base_uri;
+use crate::views::LeaseView;
+use crate::{models::ContractError, ShedaContract, ShedaContractExt};
+#[allow(unused_imports)]
+use crate::{models::*, HasNew};
+use near_contract_standards::non_fungible_token::metadata::NFTContractMetadata;
+use near_sdk::json_types::U128;
+use near_sdk::{
+    env, log, near_bindgen, require, AccountId, Gas, NearToken, Promise, PromiseResult,
+};
+
+fn checked_add_u128(left: u128, right: u128, label: &str) -> u128 {
+    left.checked_add(right)
+        .unwrap_or_else(|| env::panic_str(&format!("Overflow in {}", label)))
+}
+
+fn checked_sub_u128(left: u128, right: u128, label: &str) -> u128 {
+    left.checked_sub(right)
+        .unwrap_or_else(|| env::panic_str(&format!("Underflow in {}", label)))
+}
+
+#[near_bindgen]
+impl ShedaContract {
+    fn resolve_dispute_payout(
+        &mut self,
+        lease_id: u64,
+        winner: DisputeWinner,
+        payout_amount: U128,
+        resolution_notes: String,
+    ) -> Result<(), ContractError> {
+        let mut lease = self
+            .leases
+            .get(&lease_id)
+            .cloned()
+            .ok_or(ContractError::LeaseNotFound)?;
+
+        if lease.dispute_status != DisputeStatus::Raised {
+            return Err(ContractError::DisputeAlreadyRaised);
+        };
+
+        let recipient = match winner {
+            DisputeWinner::Tenant => lease.tenant_id.clone(),
+            DisputeWinner::Owner => self
+                .properties
+                .get(&lease.property_id)
+                .expect("Property not found")
+                .owner_id
+                .clone(),
+        };
+
+        let payout = payout_amount.0.min(lease.escrow_held);
+        let escrow_token = lease.escrow_token.clone();
+        // Whatever the owner was not awarded is still the tenant's money. It
+        // goes back in the same call, so settling a claim closes the deposit
+        // out completely rather than leaving a remainder nobody owns.
+        let remainder = lease.escrow_held - payout;
+        let tenant_id = lease.tenant_id.clone();
+
+        lease.dispute_status = DisputeStatus::Resolved;
+        lease.escrow_held = 0;
+        if let Some(info) = lease.dispute.as_mut() {
+            info.winner = Some(winner.clone());
+            info.resolution_notes = Some(resolution_notes);
+            info.deduction_amount = Some(payout);
+            info.resolved_by = Some(env::signer_account_id());
+            info.resolved_at = Some(env::block_timestamp());
+        }
+        self.leases.insert(lease_id, lease);
+        log!(
+            "Dispute for lease {} resolved by admin {}",
+            lease_id,
+            env::signer_account_id()
+        );
+
+        let current_balance = *self.stable_coin_balances.get(&escrow_token).unwrap_or(&0);
+        self.stable_coin_balances.insert(
+            escrow_token.clone(),
+            checked_sub_u128(
+                current_balance,
+                checked_add_u128(payout, remainder, "resolve_dispute total"),
+                "resolve_dispute payout",
+            ),
+        );
+
+        if payout > 0 {
+            #[allow(unused_must_use)]
+            ft_contract::ext(escrow_token.clone())
+                .with_attached_deposit(NearToken::from_yoctonear(1))
+                .with_static_gas(Gas::from_tgas(30))
+                .ft_transfer(recipient.clone(), U128(payout));
+        }
+
+        if remainder > 0 {
+            #[allow(unused_must_use)]
+            ft_contract::ext(escrow_token)
+                .with_attached_deposit(NearToken::from_yoctonear(1))
+                .with_static_gas(Gas::from_tgas(30))
+                .ft_transfer(tenant_id, U128(remainder));
+        }
+
+        emit_event(
+            "DisputeResolved",
+            DisputeResolvedEvent {
+                token_id: lease_id,
+                admin_id: env::signer_account_id(),
+                winner_id: recipient,
+                escrow_returned: payout,
+            },
+        );
+
+        Ok(())
+    }
+
+    #[payable]
+    pub fn add_admin(&mut self, new_admin_id: AccountId) {
+        self.assert_admin();
+        self.admins.insert(new_admin_id.clone());
+        log!("Admin {} added", new_admin_id);
+        emit_event(
+            "AdminAdded",
+            AdminAddedEvent {
+                admin_id: new_admin_id,
+                added_by: env::signer_account_id(),
+            },
+        );
+    }
+
+    #[payable]
+    pub fn remove_admin(&mut self, admin_id: AccountId) {
+        self.assert_owner();
+        self.admins.remove(&admin_id);
+        log!("Admin {} removed", admin_id);
+        emit_event(
+            "AdminRemoved",
+            AdminRemovedEvent {
+                admin_id: admin_id.clone(),
+                removed_by: env::signer_account_id(),
+            },
+        );
+    }
+
+    pub fn is_admin(&self, account_id: AccountId) -> bool {
+        self.admins.contains(&account_id)
+    }
+
+    #[handle_result]
+    #[payable]
+    /// Settle a disputed lease: say who won, how much escrow moves to them,
+    /// and why. The reasoning is stored alongside the verdict so the losing
+    /// side can read it back rather than being told a number with no account
+    /// of how it was reached.
+    pub fn resolve_dispute(
+        &mut self,
+        lease_id: u64,
+        winner: DisputeWinner,
+        payout_amount: U128,
+        resolution_notes: String,
+    ) -> Result<(), ContractError> {
+        self.assert_admin();
+        self.resolve_dispute_payout(lease_id, winner, payout_amount, resolution_notes)
+    }
+
+    #[payable]
+    pub fn get_leases_with_disputes(&mut self) -> Vec<LeaseView> {
+        self.assert_admin();
+        log!("Admin {}", env::signer_account_id());
+        self.leases
+            .values()
+            .filter(|lease| lease.dispute_status == DisputeStatus::Raised)
+            .map(|lease| lease.into())
+            .collect()
+    }
+
+    /// Tune the buyer-cancellation windows without a redeploy.
+    ///
+    /// Each argument is optional; `None` leaves that window unchanged. A zero
+    /// is rejected rather than stored — a zero-length window would let a buyer
+    /// cancel at any point with no time bound, which is the opposite of what
+    /// these gates are for.
+    #[payable]
+    pub fn set_cancellation_windows(
+        &mut self,
+        path_a_ns: Option<u64>,
+        path_b_stage1_ns: Option<u64>,
+        path_b_stage2_ns: Option<u64>,
+        stalled_deal_timeout_ns: Option<u64>,
+        dispute_timelock_ns: Option<u64>,
+        lease_early_termination_ns: Option<u64>,
+    ) {
+        self.assert_owner();
+
+        let apply = |value: Option<u64>, target: &mut u64, label: &str| {
+            if let Some(v) = value {
+                require!(v > 0, format!("{} must be greater than zero", label));
+                *target = v;
+            }
+        };
+
+        apply(
+            path_a_ns,
+            &mut self.path_a_cancellation_window_ns,
+            "path_a_ns",
+        );
+        apply(
+            path_b_stage1_ns,
+            &mut self.path_b_stage1_window_ns,
+            "path_b_stage1_ns",
+        );
+        apply(
+            path_b_stage2_ns,
+            &mut self.path_b_stage2_window_ns,
+            "path_b_stage2_ns",
+        );
+        apply(
+            stalled_deal_timeout_ns,
+            &mut self.stalled_deal_timeout_ns,
+            "stalled_deal_timeout_ns",
+        );
+        apply(
+            dispute_timelock_ns,
+            &mut self.dispute_resolution_timelock_ns,
+            "dispute_timelock_ns",
+        );
+        apply(
+            lease_early_termination_ns,
+            &mut self.lease_early_termination_window_ns,
+            "lease_early_termination_ns",
+        );
+
+        log!(
+            "Cancellation windows updated by owner {}",
+            env::signer_account_id()
+        );
+    }
+
+    #[payable]
+    pub fn add_supported_stablecoin(&mut self, token_account: AccountId) {
+        self.assert_owner();
+        if !self.accepted_stablecoin.contains(&token_account) {
+            self.accepted_stablecoin.push(token_account.clone());
+            self.stable_coin_balances.insert(token_account.clone(), 0);
+            log!(
+                "Stablecoin {} added by owner {}",
+                token_account,
+                env::signer_account_id()
+            );
+        }
+    }
+
+    //withdraw supported stablecoin from contract
+    #[payable]
+    pub fn emergency_withdraw(&mut self, to_account: AccountId) {
+        self.assert_owner();
+        let supported_stables = self.accepted_stablecoin.clone();
+        for token in supported_stables.iter() {
+            let balance = *self.stable_coin_balances.get(token).unwrap_or(&0);
+            if balance > 0 {
+                // Optimistically set balance to 0
+                self.stable_coin_balances.insert(token.clone(), 0);
+
+                //cross contract call to transfer stablecoin to owner
+                #[allow(unused_must_use)]
+                ft_contract::ext(token.clone())
+                    .with_attached_deposit(NearToken::from_yoctonear(1))
+                    .with_static_gas(Gas::from_tgas(30))
+                    .ft_transfer(to_account.clone(), U128(balance))
+                    .then(
+                        Self::ext(env::current_account_id())
+                            .with_static_gas(Gas::from_tgas(10))
+                            .withdraw_callback(token.clone(), U128(balance)),
+                    );
+
+                log!(
+                    "Emergency withdrawal of {} {} to {} by owner {}",
+                    balance,
+                    token,
+                    to_account,
+                    env::signer_account_id()
+                );
+                emit_event(
+                    "EmergencyWithdrawal",
+                    EmergencyWithdrawalEvent {
+                        amount: balance,
+                        recipient: to_account.clone(),
+                        initiated_by: env::signer_account_id(),
+                    },
+                );
+            }
+        }
+    }
+
+    #[private]
+    pub fn withdraw_callback(&mut self, token: AccountId, amount: U128) {
+        match env::promise_result(0) {
+            PromiseResult::Successful(_) => {
+                log!("Withdrawal of {} {} successful", amount.0, token);
+            }
+            PromiseResult::Failed => {
+                log!(
+                    "Withdrawal of {} {} failed, reverting balance",
+                    amount.0,
+                    token
+                );
+                let current_balance = *self.stable_coin_balances.get(&token).unwrap_or(&0);
+                self.stable_coin_balances.insert(
+                    token,
+                    checked_add_u128(current_balance, amount.0, "withdraw revert"),
+                );
+            }
+        }
+    }
+
+    pub fn remove_supported_stablecoin(&mut self, token_account: AccountId) {
+        self.assert_owner();
+        let balance = *self.stable_coin_balances.get(&token_account).unwrap_or(&0);
+        assert_eq!(balance, 0, "Stablecoin balance must be zero to remove");
+        if let Some(index) = self
+            .accepted_stablecoin
+            .iter()
+            .position(|x| x == &token_account)
+        {
+            self.accepted_stablecoin.remove(index);
+            log!(
+                "Stablecoin {} removed by owner {}",
+                token_account,
+                env::signer_account_id()
+            );
+        }
+    }
+
+    pub fn withdraw_stablecoin(&mut self, token_account: AccountId, amount: u128) {
+        self.assert_owner();
+        let balance = *self.stable_coin_balances.get(&token_account).unwrap_or(&0);
+        assert!(balance >= amount, "Insufficient balance for withdrawal");
+
+        // Optimistically update balance
+        self.stable_coin_balances.insert(
+            token_account.clone(),
+            checked_sub_u128(balance, amount, "withdraw"),
+        );
+
+        //cross contract call to transfer stablecoin to owner
+        #[allow(unused_must_use)]
+        ft_contract::ext(token_account.clone())
+            .with_attached_deposit(NearToken::from_yoctonear(1))
+            .with_static_gas(Gas::from_tgas(30))
+            .ft_transfer(env::signer_account_id(), U128(amount))
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(10))
+                    .withdraw_callback(token_account.clone(), U128(amount)),
+            );
+
+        log!(
+            "Withdrawal of {} {} by owner {}",
+            amount,
+            token_account,
+            env::signer_account_id()
+        );
+
+        emit_event(
+            "StablecoinWithdrawn",
+            StablecoinWithdrawnEvent {
+                token_id: token_account,
+                amount,
+                recipient: env::signer_account_id(),
+            },
+        );
+    }
+
+    #[payable]
+    pub fn refund_bids(&mut self, property_id: u64) {
+        self.assert_admin();
+        if let Some(bids) = self.bids.get_mut(&property_id) {
+            for bid in bids.iter_mut() {
+                if bid.status != BidStatus::Pending {
+                    continue;
+                }
+
+                let bidder = bid.bidder.clone();
+                let amount = bid.amount;
+                let stablecoin_token = bid.stablecoin_token.clone();
+
+                //update stablecoin balance optimistically
+                let current_balance = *self
+                    .stable_coin_balances
+                    .get(&stablecoin_token)
+                    .unwrap_or(&0);
+                self.stable_coin_balances.insert(
+                    stablecoin_token.clone(),
+                    checked_sub_u128(current_balance, amount, "refund_bids"),
+                );
+
+                //cross contract call to transfer stablecoin back to bidder
+                #[allow(unused_must_use)]
+                ft_contract::ext(stablecoin_token.clone())
+                    .with_attached_deposit(NearToken::from_yoctonear(1))
+                    .with_static_gas(Gas::from_tgas(30))
+                    .ft_transfer(bidder.clone(), U128(amount))
+                    .then(
+                        Self::ext(env::current_account_id())
+                            .with_static_gas(Gas::from_tgas(10))
+                            .withdraw_callback(stablecoin_token.clone(), U128(amount)),
+                    );
+
+                bid.status = BidStatus::Cancelled;
+                bid.updated_at = env::block_timestamp();
+
+                log!(
+                    "Refunded {} to bidder {} for property {} by admin {}",
+                    amount,
+                    bidder,
+                    property_id,
+                    env::signer_account_id()
+                );
+
+                emit_event(
+                    "BidRefunded",
+                    BidRefundedEvent {
+                        token_id: property_id,
+                        bid_id: bid.id,
+                        bidder_id: bidder,
+                        amount,
+                        reason: "admin_refund".to_string(),
+                    },
+                );
+            }
+        }
+    }
+
+    pub fn admin_delist_property(&mut self, property_id: u64) {
+        self.assert_admin();
+        //Check that property is not sold or leased
+        let mut property = self
+            .properties
+            .get(&property_id)
+            .expect("Property not found")
+            .clone();
+        assert!(property.is_for_sale, "Property is not currently for sale");
+        assert!(
+            property.active_lease.is_none(),
+            "Property is currently leased"
+        );
+
+        assert!(
+            self.bids
+                .get(&property_id)
+                .map(|bids| !bids.iter().any(|b| b.status == BidStatus::Pending))
+                .unwrap_or(true),
+            "Cannot delist property with active bids"
+        );
+
+        // No `sold.is_none()` guard: `sold` is the current owner's purchase
+        // record, which a re-listed property carries for good. Keeping it
+        // would mean an admin could never delist anything that had changed
+        // hands. The `is_for_sale` assert above is the real precondition.
+        property.is_for_sale = false;
+        self.properties.insert(property_id, property);
+        log!(
+            "Property {} delisted by admin {}",
+            property_id,
+            env::signer_account_id()
+        );
+
+        emit_event(
+            "PropertyDelisted",
+            PropertyDelistedEvent {
+                token_id: property_id,
+                actor_id: env::signer_account_id(),
+            },
+        );
+    }
+
+    #[payable]
+    pub fn admin_delete_property(&mut self, property_id: u64) {
+        self.assert_admin();
+        let property = self
+            .properties
+            .get(&property_id)
+            .expect("Property not found")
+            .clone();
+
+        assert!(
+            property.active_lease.is_none(),
+            "Cannot delete a property with an active lease"
+        );
+
+        // No `sold.is_none()` guard — it records the current owner's own
+        // purchase, so it would permanently exempt every property that ever
+        // changed hands, which is the opposite of what an admin escape hatch
+        // is for. `assert_no_blocking_bids` below is the guard that protects
+        // anyone with funds riding on this property.
+
+        // Was checking only Pending, so an admin could delete a property out
+        // from under a bid that was Accepted, DocsReleased, DocsConfirmed,
+        // PaymentReleased or Disputed — all of which still hold the bidder's
+        // funds in escrow. Same guard the owner-facing path uses, and it names
+        // the blocking bids rather than just refusing.
+        crate::internal::assert_no_blocking_bids(self, property_id, "deleted");
+
+        self.properties.remove(&property_id.clone());
+        log!(
+            "Property {} deleted by admin {}",
+            property_id,
+            env::signer_account_id()
+        );
+
+        emit_event(
+            "PropertyDeleted",
+            PropertyDeletedEvent {
+                token_id: property_id,
+                actor_id: env::signer_account_id(),
+            },
+        );
+
+        //burn the NFT
+        crate::internal::burn_nft(self, property_id.to_string());
+    }
+
+    /// Settle a bid frozen in `Disputed`.
+    ///
+    /// `raise_dispute` could put a bid into `Disputed`, but nothing
+    /// could take it out again — the buyer's escrow stayed in the contract
+    /// permanently, and since a disputed bid still holds a claim on its
+    /// property, the property couldn't be deleted or delisted either. Both
+    /// sides were stuck with no route out.
+    ///
+    /// `SellerWins` deliberately pays no one here: it returns the bid to
+    /// `DocsConfirmed` so the deal completes through the normal release path,
+    /// which already knows how to transfer ownership on a purchase and open
+    /// the lease on a rental.
+    #[payable]
+    pub fn admin_resolve_bid_dispute(
+        &mut self,
+        property_id: u64,
+        bid_id: u64,
+        resolution: DisputeResolution,
+    ) -> Option<Promise> {
+        self.assert_admin();
+        crate::internal::internal_admin_resolve_bid_dispute(self, property_id, bid_id, resolution)
+    }
+
+    /// Bids currently frozen in `Disputed`, so admins can find what needs
+    /// settling without scanning every property.
+    pub fn get_disputed_bids(&self) -> Vec<crate::views::BidView> {
+        self.bids
+            .iter()
+            .flat_map(|(_property_id, bids)| bids.iter())
+            .filter(|bid| bid.status == BidStatus::Disputed)
+            .map(|bid| bid.into())
+            .collect()
+    }
+
+    #[payable]
+    pub fn admin_change_nft_metadata(&mut self, image_url: String, name: String, symbol: String) {
+        self.assert_admin();
+        let new_metadata = NFTContractMetadata {
+            spec: "nft-1.0.0".to_string(),
+            name: name,
+            symbol: symbol,
+            icon: Some(image_url.clone()),
+            base_uri: Some(extract_base_uri(&image_url)),
+            reference: None,
+            reference_hash: None,
+        };
+        self.metadata.set(&new_metadata);
+        log!("NFT metadata changed by admin {}", env::signer_account_id());
+    }
+}

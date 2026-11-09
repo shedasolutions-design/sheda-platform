@@ -1,14 +1,14 @@
-# Sheda Collection Contracts
+# Sheda Contracts
 
-The contracts behind property raises on Sheda: a vault that owns one unit on
-behalf of many people and splits its rent among them, and the stake registry
+The NEAR contracts behind Sheda. A marketplace that holds listings, bids and
+escrow, and the Collections contracts that sit on top of it: a vault that owns
+one unit on behalf of many people and splits its rent among them, a raise that
+escrows commitments and releases them a phase at a time, and the stake registry
 that backs a builder's promises.
 
-This is stage 1 and 2 of [the build spec][spec]: custody, shares, income, and
-the plug-in to the rental marketplace that already exists. The raise, the
-builder guarantee and governance come next and are not here yet.
-
-[spec]: https://claude.ai/artifact/9ttLG6SjqLLK5SV5dEtt47
+The vault is the piece the whole design rests on: it is an account, so the
+marketplace needs no knowledge that a flat has three hundred landlords. It
+treats the vault exactly like any other owner.
 
 ---
 
@@ -96,6 +96,8 @@ A cargo workspace. Each contract deploys on its own account.
 
 | Crate | Holds |
 | --- | --- |
+| `contracts/market` | Property NFTs, listings, bids, purchase and lease escrow, deposits, disputes |
+| `contracts/raise` | Escrow commitments, the phase schedule, refunds and opt-outs |
 | `contracts/vault` | One unit, its shares, and its rent |
 | `contracts/stake-registry` | Builder and manager stake, per profile |
 
@@ -201,6 +203,7 @@ nothing should be: none of this has been audited.
 
 | Contract | Account | Code hash |
 | --- | --- | --- |
+| Marketplace | `market.shedauser.testnet` | see `contracts/market/README.md` |
 | Raise | `sheda-raise-v1.testnet` | `6XiSfG7MHr2LyruXZ726rvPwAeBVSYpJktUUwtHkcHjX` |
 | Stake registry | `sheda-stake-v1.testnet` | `C12mXsaX8QJxvunrRERKr16fFfFiL2yAbeUKzWLZrTpg` |
 
@@ -267,14 +270,12 @@ rather than treating as an error, so the two contracts can ship separately.
 
 ## Not here yet
 
-Raise and escrow, governance and voting, and the share market. They are stages 3 to 6 of the spec. This
-contract is deliberately the piece that can be proven first, because the
-integration claim it rests on is the one that would force a redesign if it
-turned out to be wrong.
+Governance and voting, and the share market. Shares move by `ft_transfer` for
+now; a share market will need `ft_transfer_call` and will bring its resolve
+path with it rather than having it sit here unused.
 
-`ft_transfer_call` is also absent. Shares move by `ft_transfer` for now; the
-share market will need the call variant and will bring its resolve path with
-it rather than having it sit here unused.
+Per-unit vault deployment is also not built here: the raise records where a
+vault lives and mints against it, but nothing creates the account yet.
 
 ## Licence
 

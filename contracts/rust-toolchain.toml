@@ -1,3 +1,8 @@
 [toolchain]
-channel = "stable"
+# nearcore's VM rejects wasm produced by Rust 1.87 and newer. The marketplace
+# contract is tested against a real near-workspaces node, so the whole
+# workspace builds on the newest toolchain that VM accepts rather than
+# producing binaries that only fail at deploy time.
+channel = "1.86.0"
+components = ["rustfmt", "clippy"]
 targets = ["wasm32-unknown-unknown"]

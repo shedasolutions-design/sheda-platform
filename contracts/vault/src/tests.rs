@@ -7,7 +7,7 @@
 use crate::{Vault, BPS};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::test_utils::VMContextBuilder;
-use near_sdk::{testing_env, AccountId, NearToken};
+use near_sdk::{testing_env, AccountId, Gas, NearToken};
 
 fn acc(name: &str) -> AccountId {
     name.parse().unwrap()
@@ -16,7 +16,12 @@ fn acc(name: &str) -> AccountId {
 fn ctx(predecessor: AccountId, deposit: u128) {
     let mut b = VMContextBuilder::new();
     b.predecessor_account_id(predecessor)
-        .attached_deposit(NearToken::from_yoctonear(deposit));
+        .attached_deposit(NearToken::from_yoctonear(deposit))
+        // One mock context stands in for a whole test, including the
+        // thousand-holder setup, so it needs more gas than a single
+        // transaction would. This is the harness budget, not a contract
+        // limit: on chain each mint is its own transaction with its own gas.
+        .prepaid_gas(Gas::from_tgas(100_000));
     testing_env!(b.build());
 }
 
@@ -227,9 +232,17 @@ fn a_thousand_holders_still_reconcile() {
     // work per holder at all: this runs in constant time regardless.
     let mut v = vault();
     for i in 0..1_000u32 {
+        // near-sdk's mock caps a single context at the protocol's
+        // max_gas_burnt. On chain each mint is its own transaction; here the
+        // loop shares one budget, so refresh it periodically. Storage is
+        // carried across `testing_env!`, so the vault state is untouched.
+        if i % 10 == 0 {
+            ctx(acc("gov.testnet"), 0);
+        }
         let who: AccountId = format!("h{}.testnet", i).parse().unwrap();
         v.internal_mint(&who, 10);
     }
+    ctx(acc("gov.testnet"), 0);
     v.credit_holders(10_000_000);
 
     let total: u128 = (0..1_000u32)

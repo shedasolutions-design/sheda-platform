@@ -1,7 +1,7 @@
 """sync diverged profile passwords
 
 Revision ID: d5f3b81c47a9
-Revises: c8a207bd2e74
+Revises: a7f3b81c04d9
 Create Date: 2026-08-09 00:00:00.000000
 
 Every signup creates two rows for one person — a Client and an Agent sharing
@@ -27,7 +27,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "d5f3b81c47a9"
-down_revision: Union[str, Sequence[str], None] = "c8a207bd2e74"
+down_revision: Union[str, Sequence[str], None] = "a7f3b81c04d9"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

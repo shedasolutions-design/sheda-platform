@@ -98,6 +98,19 @@ class AppointmentStatEnum(str, Enum):
     pending = "pending"
     confirmed = "confirmed"
     canceled = "canceled"
+    # The viewing happened and both sides agreed to go ahead.
+    #
+    # "confirmed" only ever meant the slot was booked, so there was no way to
+    # record the outcome of the meeting — and that outcome is precisely what
+    # the seller is waiting on before releasing the agreement on chain. Without
+    # it, the buyer's escrow sits locked with no visible signal of whether the
+    # deal is progressing or stalled.
+    completed = "completed"
+    # The viewing happened and the parties did not reach agreement. Distinct
+    # from "canceled", which means the appointment itself never took place.
+    # The buyer can walk away and reclaim their escrow at this point, so the
+    # two need telling apart in the deal timeline.
+    not_agreed = "not_agreed"
 
 
 class WeekDayEnum(str, Enum):

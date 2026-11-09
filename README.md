@@ -124,11 +124,14 @@ sheda-platform/
 │   ├── app/collections/      the Collections screens
 │   ├── services/collections/ money, chain reads, the ranking
 │   └── contexts/WalletContext.tsx   the built-in NEAR wallet
+├── apps/collection-app/  Expo app. Collections as a standalone product.
 ├── services/backend/     FastAPI. What a contract is the wrong place for.
 ├── contracts/            NEAR. What has to be true without trusting us.
+│   ├── market/               listings, bids, escrow, deposits, disputes
 │   ├── vault/                one flat, its shares, its rent
 │   ├── raise/                escrow, phases, refunds, opt-outs
 │   └── stake-registry/       builder and manager stake
+├── .github/workflows/    CI, and the marketplace deploy/staging/undeploy jobs
 └── docs/ARCHITECTURE.md
 ```
 
@@ -154,6 +157,8 @@ NEAR testnet. Built by CI and deployed from that wasm, so the binary is one anyo
 
 The registry's controller is the raise contract. That is the entire authority to touch a builder's stake: a stalled project can slash the cover allocated to it, and nothing else can reach it.
 
+The marketplace deploys from [`.github/workflows/deploy-market-production.yml`](.github/workflows/deploy-market-production.yml); [contracts/market/DEPLOYMENT.md](contracts/market/DEPLOYMENT.md) covers the first deploy, migrations and the required variables.
+
 Nothing is on mainnet. **None of this has been audited**, and an address there would be a claim that it had.
 
 ---
@@ -163,10 +168,13 @@ Nothing is on mainnet. **None of this has been audited**, and an address there w
 Each part stands alone.
 
 ```bash
-# Contracts: 71 unit tests
+# Contracts: 71 unit tests + 29 marketplace integration tests
 cd contracts
 cargo test --workspace --lib
-cargo clippy --all-targets -- -D warnings
+cargo test -p sheda-contract        # marketplace tests drive a near-workspaces node
+cargo clippy -p sheda-collection-raise -p sheda-collection-vault \
+  -p sheda-stake-registry --all-targets -- -D warnings
+cargo clippy -p sheda-contract --all-targets -- -W clippy::all
 cargo build --workspace --target wasm32-unknown-unknown --release
 
 # Backend: docs at /sheda-docs
@@ -179,6 +187,12 @@ cd apps/mobile
 cp .env.example .env && npm install
 npm test
 npm start          # a for Android, i for iOS, w for web
+
+# Collections app: standalone
+cd apps/collection-app
+npm install
+npm test
+npm start
 ```
 
 ---
@@ -208,7 +222,7 @@ npm start          # a for Android, i for iOS, w for web
 | Collections: browse, rank, register as a builder, open a raise | Working |
 | Contracts: vault, raise, stake registry | Deployed to testnet, 71 tests |
 | Per-unit vault deployment | **Not built.** The raise records where a vault lives and mints against it; nothing creates the account. |
-| Cross-contract tests | **None.** Every transfer path is unproven, including the failure paths that assume a failed transfer means the money never left. |
+| Cross-contract tests | **Partial.** The marketplace contract has integration tests under `contracts/market/tests`; the vault/raise paths that call it have none, including the failure paths that assume a failed transfer means the money never left. |
 | Manager screens | **None.** A manager can register and then cannot attest a phase, which is the step the release schedule turns on. |
 | Chain-event indexer | **Not built.** Nothing populates the counts the ranking reads, so every profile currently reads "Not rated yet". |
 | Security audit | **Not done.** |
@@ -219,11 +233,17 @@ Still ahead on the Sheda roadmap: real estate services integration (management, 
 
 ## Where development happens
 
-This repository is a snapshot, assembled so the whole system can be read in one place. Work continues in the three repositories it was built from:
+This repository is the monorepo and the source of truth. It consolidates the
+code that was previously developed separately in:
 
-- `shedasolutions-design/sheda-solution-mobile`
-- `shedasolutions-design/Sheda-Backend`
-- `shedasolutions-design/sheda-collection-app-contract`
+- `shedasolutions-design/sheda-solution-mobile` → `apps/mobile/`
+- `shedasolutions-design/Sheda-Collection-app` → `apps/collection-app/`
+- `shedasolutions-design/Sheda-Backend` → `services/backend/`
+- `shedasolutions-design/sheda-new-contract` → `contracts/market/`
+- `shedasolutions-design/sheda-collection-app-contract` → `contracts/{raise,vault,stake-registry}/`
+
+Those repositories are inputs now, not parallel branches of work. New changes
+land here.
 
 ---
 

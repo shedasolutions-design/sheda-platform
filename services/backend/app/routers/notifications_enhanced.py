@@ -36,6 +36,7 @@ from typing import Optional, List
 from core.logger import logger
 from core.dependecies import DBSession, get_current_user
 from app.models.user import BaseUser
+from app.utils.enums import AccountTypeEnum
 
 try:
     from app.services.push_notifications import get_notification_service
@@ -65,6 +66,23 @@ class PushNotificationRequest:
     body: str
     notification_type: str
     data: Optional[dict] = None
+
+
+def require_admin(current_user: BaseUser) -> None:
+    """Refuse anyone who is not an admin.
+
+    Every endpoint below chooses both who receives a notification and what it
+    says. Behind only `get_current_user` that is open to any signed-up
+    account, which makes the platform's own push channel usable against its
+    users: a convincing "your payment failed" to every id in turn, from us,
+    on the lock screen. The gate was written as a commented-out TODO under a
+    docstring that already claimed admin was required.
+    """
+    if current_user.account_type != AccountTypeEnum.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required",
+        )
 
 
 # Device token registration endpoints are unified in notifications.py
@@ -101,9 +119,7 @@ async def send_notification(
             detail="Push notification service not available",
         )
 
-    # TODO: Add admin check
-    # if not current_user.is_admin:
-    #     raise HTTPException(status_code=403, detail="Admin privileges required")
+    require_admin(current_user)
 
     try:
         service = await get_notification_service()
@@ -167,6 +183,8 @@ async def send_bid_notification(
             detail="Push notification service not available",
         )
 
+    require_admin(current_user)
+
     try:
         service = await get_notification_service()
         from app.services.push_notifications import NotificationTemplates
@@ -229,6 +247,8 @@ async def send_payment_notification(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail="Push notification service not available",
         )
+
+    require_admin(current_user)
 
     try:
         service = await get_notification_service()

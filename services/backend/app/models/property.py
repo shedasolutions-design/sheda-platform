@@ -77,6 +77,30 @@ class Property(Base):
     listing_type: Mapped[ListingTypeEnum] = mapped_column(
         Enum(ListingTypeEnum), nullable=False, default=ListingTypeEnum.rent
     )
+
+    # ── Rental terms, mirroring the contract ────────────────────────────────
+    #
+    # Days, because that is the unit the contract stores and the unit the
+    # listing form offers. A month-based column cannot hold the short terms a
+    # seller can pick — a seven-day let would round to thirty — and having the
+    # two systems disagree about the length of a tenancy is worse than not
+    # recording it here at all.
+    #
+    # The chain remains authoritative. This is the copy the feed and search
+    # read so they do not have to make an RPC call per listing.
+    lease_duration_days: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    # Security deposit in the stablecoin's atomic units, held as a string for
+    # the same reason the chain reports u128 that way: the values exceed what a
+    # float can carry exactly, and a deposit that is off by a rounding error is
+    # a deposit somebody argues about. NULL or "0" means none is charged.
+    damage_deposit_required: Mapped[str | None] = mapped_column(
+        String(40),
+        nullable=True,
+    )
     status: Mapped[PropertyStatEnum] = mapped_column(
         Enum(PropertyStatEnum), default=PropertyStatEnum.available, nullable=False
     )
@@ -186,9 +210,30 @@ class Appointment(Base):
     agent_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("agent.id", ondelete="CASCADE"), nullable=False
     )
+    # ON DELETE CASCADE, matching every other FK pointing at property.id.
+    # Without it this defaulted to NO ACTION, so deleting a property that had
+    # any appointment raised an IntegrityError that nothing caught — a 500,
+    # which then surfaced in the browser as a CORS error (see main.py's
+    # middleware ordering). A viewing for a property that no longer exists has
+    # nothing to refer to, so it goes with it; delist_property refuses the
+    # delete outright while any appointment is still live, so cascading only
+    # ever removes already-finished ones.
     property_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("property.id"), nullable=False
+        Integer, ForeignKey("property.id", ondelete="CASCADE"), nullable=False
     )
+    # The on-chain bid this viewing belongs to.
+    #
+    # Appointments lived only here and bids lived only on chain, with nothing
+    # joining them. A seller with two accepted bids on one property couldn't
+    # tell which buyer a viewing was for, and neither side could see where the
+    # deal actually stood — the buyer's escrow is locked from the moment their
+    # bid is accepted, but the next on-chain step (releasing the agreement) is
+    # gated on a real-world meeting the chain can't observe.
+    #
+    # Nullable: viewings booked before any bid exists are legitimate — people
+    # look at properties before committing money — and every appointment
+    # created before this column existed has no deal to point at.
+    bid_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     scheduled_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, unique=True
     )  # NOTE Date/Time of appointment
@@ -249,6 +294,19 @@ class Contract(Base):
     )  # For rentals
     # NOTE -  Change to True once the agent confirms payment
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # ── What this contract is on chain ──────────────────────────────────────
+    #
+    # Without these a contract row has no route back to the deal it stands for,
+    # and reconciling the two sides means guessing from amounts and dates. The
+    # app has always sent them; nothing here was listening.
+    #
+    # Indexed because "show me the row for this bid" is the question actually
+    # asked of them.
+    bid_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    lease_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    transaction_hash: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
     idempotency_key: Mapped[str | None] = mapped_column(
         String(255), nullable=True, unique=True, index=True
     )  # For idempotency - prevents duplicate contract creation

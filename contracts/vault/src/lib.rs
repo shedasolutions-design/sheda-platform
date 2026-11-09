@@ -11,6 +11,11 @@
 //! arrears. Nobody is paid when rent arrives; see `income.rs` for why that
 //! matters more than it sounds.
 
+// The `#[near_bindgen]` constructor is expanded into a function whose argument
+// count is fixed by the contract's init parameters. Clippy's default threshold
+// is lower than that, so the lint fires on generated code we do not control.
+#![allow(clippy::too_many_arguments)]
+
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LookupMap;
 use near_sdk::json_types::{U128, U64};

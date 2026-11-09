@@ -1,4 +1,4 @@
-from fastapi import APIRouter, status, Query, HTTPException
+from fastapi import APIRouter, status, Query, HTTPException, BackgroundTasks
 from core.dependecies import DBSession
 from app.schemas.property_schema import (
     PropertyBase,
@@ -7,6 +7,7 @@ from app.schemas.property_schema import (
     FilterParams,
     PropertyFeed,
     DeleteProperty,
+    PropertySearchResponse,
 )
 from app.services.listing import (
     create_property_listing,
@@ -16,6 +17,10 @@ from app.services.listing import (
     filtered_property,
     get_agent_by_id,
     delist_property,
+    # Aliased: the route handler below is also called `search_properties`,
+    # and an unaliased import would be shadowed by it — the handler would
+    # call itself instead of the service.
+    search_properties as search_properties_in_db,
 )
 from app.services.user_service import ActiveAgent, ActiveUser
 from app.schemas.user_schema import AgentFeed
@@ -30,6 +35,42 @@ router = APIRouter(
 )
 
 
+async def index_property_in_background(property_obj) -> None:
+    """Add a property to the search index, quietly.
+
+    Runs after the response has gone out, and swallows everything. One of the
+    two deployments cannot reach Elasticsearch at all, so this fails routinely
+    and by design — a listing must not get slower, or fail, because a ranking
+    index could not be updated. Search itself reads the database and does not
+    depend on this.
+    """
+    if not SEARCH_AVAILABLE:
+        return
+    try:
+        service = await get_search_service()
+        await service.index_property(
+            property_id=property_obj.id,
+            title=property_obj.title,
+            description=property_obj.description,
+            location=property_obj.location,
+            price=float(property_obj.price or 0),
+            property_type=property_obj.property_type,
+            listing_type=property_obj.listing_type,
+            status=property_obj.status,
+            bedroom=property_obj.bedroom,
+            bathroom=property_obj.bathroom,
+            furnished=property_obj.furnished,
+            is_negotiable=property_obj.is_negotiable,
+            agent_id=property_obj.agent_id,
+            # No amenities column on Property; the index accepts the field, so
+            # it is passed empty rather than omitted.
+            amenities=getattr(property_obj, "amenities", None) or [],
+        )
+        logger.info("Property indexed", extra={"property_id": property_obj.id})
+    except Exception as e:
+        logger.warning(f"Could not index property for search: {e}")
+
+
 @router.post(
     "/list-property",
     response_model=PropertyShow,
@@ -37,9 +78,14 @@ router = APIRouter(
     status_code=status.HTTP_201_CREATED,
 )
 async def list_property(
-    current_user: ActiveAgent, payload: PropertyBase, db: DBSession
+    current_user: ActiveAgent,
+    payload: PropertyBase,
+    db: DBSession,
+    background_tasks: BackgroundTasks,
 ):
-    return await create_property_listing(current_user, payload, db)
+    new_property = await create_property_listing(current_user, payload, db)
+    background_tasks.add_task(index_property_in_background, new_property)
+    return new_property
 
 
 @router.get("/me", response_model=List[PropertyShow], status_code=status.HTTP_200_OK)
@@ -65,8 +111,13 @@ async def edit_property_listing(
     update_data: PropertyUpdate,
     current_user: ActiveAgent,
     db: DBSession,
+    background_tasks: BackgroundTasks,
 ):
-    return await update_listing(property_id, current_user, update_data, db)
+    updated = await update_listing(property_id, current_user, update_data, db)
+    # Re-indexed on edit as well, or the index keeps describing the listing as
+    # it was first written — a stale title ranks for the wrong searches.
+    background_tasks.add_task(index_property_in_background, updated)
+    return updated
 
 
 list_desc = """  
@@ -139,11 +190,18 @@ except ImportError:
 
 @router.get(
     "/search",
-    response_model=dict,
+    response_model=PropertySearchResponse,
     status_code=status.HTTP_200_OK,
     description="Full-text search for properties with advanced filtering",
 )
 async def search_properties(
+    # No default, and first — the way every other handler in this file takes
+    # its session. Written as `db: DBSession = None` it had to come last, and
+    # whether FastAPI then still resolves the dependency or simply hands over
+    # the default depends on the version: on one deployment the session
+    # arrived, on the other `None` did, and every search answered 500. This
+    # file pins no FastAPI version, so that difference is not stable.
+    db: DBSession,
     query: str = Query(..., min_length=1, description="Search query"),
     min_price: Annotated[int, Query(description="Minimum price")] = None,
     max_price: Annotated[int, Query(description="Maximum price")] = None,
@@ -208,16 +266,47 @@ async def search_properties(
     }
     ```
     """
-    if not SEARCH_AVAILABLE:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Search service not available",
-        )
+    # The database answers the query. Elasticsearch, when it is reachable and
+    # has anything indexed, only decides the order.
+    #
+    # It used to do both, which meant search failed three ways at once: the
+    # index is never populated, one deployment cannot reach Elasticsearch at
+    # all, and the hits it returns are too thin to draw — ids and titles, no
+    # images. The endpoint answered an empty list and looked perfectly
+    # healthy. Now a missing index costs ordering quality, not results.
+    ranked_ids = None
+    if SEARCH_AVAILABLE and query and query.strip() and query.strip() != "*":
+        try:
+            service = await get_search_service()
+            hits = await service.search_properties(
+                query=query,
+                location=location,
+                property_type=property_type,
+                listing_type=listing_type,
+                min_price=min_price,
+                max_price=max_price,
+                min_bedroom=min_bedroom,
+                max_bedroom=max_bedroom,
+                min_bathroom=min_bathroom,
+                max_bathroom=max_bathroom,
+                furnished=furnished,
+                amenities=amenities,
+                sort=sort,
+                limit=limit,
+                offset=offset,
+            )
+            # The service reports its own failures in an `error` key rather
+            # than raising, so an unreachable Elasticsearch arrives here as a
+            # successful call with no hits.
+            if not hits.get("error"):
+                ranked_ids = [h["id"] for h in hits.get("results", []) if h.get("id")]
+        except Exception as e:
+            # Ranking is an optimisation. Losing it must not lose the search.
+            logger.warning(f"Search ranking unavailable, falling back to database: {e}")
 
     try:
-        service = await get_search_service()
-
-        results = await service.search_properties(
+        results = await search_properties_in_db(
+            db,
             query=query,
             location=location,
             property_type=property_type,
@@ -233,14 +322,16 @@ async def search_properties(
             sort=sort,
             limit=limit,
             offset=offset,
+            ranked_ids=ranked_ids,
         )
 
         logger.info(
-            f"Property search executed",
+            "Property search executed",
             extra={
                 "query": query,
                 "total_results": results.get("total", 0),
-                "returned": len(results.get("results", [])),
+                "returned": len(results.get("data", [])),
+                "source": results.get("source"),
             },
         )
 
@@ -307,7 +398,13 @@ async def index_property_for_search(
             furnished=property_obj.furnished,
             is_negotiable=property_obj.is_negotiable,
             agent_id=property_obj.agent_id,
-            amenities=property_obj.amenities or [],
+            # Property has no `amenities` column. Reading it directly raised
+            # AttributeError, which the bare `except` below turned into a 500
+            # — so this endpoint could not succeed for any property, and the
+            # failure read as "indexing is broken" rather than "that field
+            # does not exist". Tolerated here so the rest of the document
+            # still indexes; remove once the column exists.
+            amenities=getattr(property_obj, "amenities", None) or [],
         )
 
         logger.info(

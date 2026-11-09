@@ -6,7 +6,7 @@ who owns what is stored anywhere else.**
 
 Everything below follows from that.
 
-## The three parts
+## The parts
 
 ### `contracts/`
 
@@ -14,6 +14,7 @@ What has to be true without trusting Sheda.
 
 | Crate | Holds |
 | --- | --- |
+| `market` | Property NFTs, listings, bids, purchase and lease escrow, deposits, disputes |
 | `vault` | One flat, its shares, and its rent |
 | `stake-registry` | Builder and manager stake, per profile |
 | `raise` | Escrow, the phase schedule, refunds and opt-outs |
@@ -40,6 +41,14 @@ switches can disagree.
 Collections is one tab. Everything past it is pushed onto a stack under
 `app/collections/`, so the whole feature can be removed without touching a
 marketplace screen.
+
+### `apps/collection-app/`
+
+The Collections flow as a standalone Expo app. It was built separately so the
+feature could be developed without risking the marketplace app that already
+had users, and it is kept as its own app while the integrated screens settle.
+It reads the same testnet contracts; nothing here is authoritative that the
+mobile app does not also hold.
 
 ## Why the ranking is in the app
 

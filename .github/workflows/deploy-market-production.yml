@@ -1,0 +1,223 @@
+name: Deploy market to production
+
+on:
+  push:
+    branches: [main]
+    # Only deploy the marketplace when the contract (or its lockfile and this
+    # workflow) changed. A mobile or backend commit must not redeploy a live
+    # contract.
+    paths:
+      - 'contracts/market/**'
+      - 'contracts/Cargo.toml'
+      - 'contracts/Cargo.lock'
+      - 'contracts/rust-toolchain.toml'
+      - '.github/workflows/deploy-market-production.yml'
+      - '.github/workflows/market-test.yml'
+  workflow_dispatch:
+    inputs:
+      run_migration:
+        description: >-
+          Run migrate() as an init call during this deploy. Required whenever
+          the deployed commit changes the ShedaContract struct — Borsh is
+          positional, so without it the contract cannot deserialize its own
+          state and every method panics.
+        type: boolean
+        default: false
+      initialize:
+        description: >-
+          Run new() as an init call. This is the FIRST deploy to a fresh
+          account and nothing else — new() asserts the contract has no state,
+          so it refuses to run twice and cannot wipe a live contract by
+          accident. A code-only deploy to an account that was never
+          initialized leaves every method panicking (PanicOnDefault), which is
+          why this path exists at all.
+        type: boolean
+        default: false
+
+# Declaring any permissions block zeroes every permission not listed.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/market-test.yml
+
+  deploy-production:
+    name: Deploy to production
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install cargo-near CLI
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.17.0/cargo-near-installer.sh | sh
+
+      # Whether a migration is needed is a fact about the chain, not something
+      # to be remembered. The live contract is asked what version it is running
+      # and that is compared against the version this commit builds. Relying on
+      # a human to tick run_migration is what left production unable to
+      # deserialize its own state for five days after #14: the struct changed,
+      # the push path deployed without migrate(), and the failure was only
+      # visible in a red check nobody re-ran.
+      - name: Determine whether a migration is required
+        id: preflight
+        run: |
+          set -euo pipefail
+          RPC="https://rpc.${{ vars.NEAR_CONTRACT_PRODUCTION_NETWORK }}.near.org"
+          ACCOUNT="${{ vars.NEAR_CONTRACT_PRODUCTION_ACCOUNT_ID }}"
+
+          # Both `version:` literals (new() and migrate()) must agree, or it is
+          # ambiguous what this commit actually builds.
+          CODE_VERSION=$(grep -oP '^\s*version:\s*\K[0-9]+' contracts/market/src/lib.rs | sort -u)
+          if [ "$(printf '%s' "$CODE_VERSION" | grep -c '')" -ne 1 ]; then
+            echo "::error::Conflicting version literals in contracts/market/src/lib.rs: $(echo $CODE_VERSION | tr '\n' ' ')"
+            exit 1
+          fi
+
+          RESPONSE=$(curl -sS -X POST "$RPC" -H 'Content-Type: application/json' \
+            -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{
+                  \"request_type\":\"call_function\",\"finality\":\"final\",
+                  \"account_id\":\"$ACCOUNT\",
+                  \"method_name\":\"get_version\",\"args_base64\":\"e30=\"}}")
+
+          if echo "$RESPONSE" | jq -e '(.error != null) or (.result.error != null)' >/dev/null; then
+            DEPLOYED="unreadable"
+          else
+            DEPLOYED=$(echo "$RESPONSE" | jq -r '.result.result | implode')
+          fi
+
+          # An account with no contract at all is a different situation from a
+          # contract whose state cannot be read, and the two need opposite
+          # handling — one needs new(), the other needs replacement code. The
+          # all-ones code hash is NEAR's "nothing deployed here".
+          ACCOUNT_VIEW=$(curl -sS -X POST "$RPC" -H 'Content-Type: application/json'             -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{
+                  \"request_type\":\"view_account\",\"finality\":\"final\",
+                  \"account_id\":\"$ACCOUNT\"}}")
+          CODE_HASH=$(echo "$ACCOUNT_VIEW" | jq -r '.result.code_hash // "unknown"')
+          if [ "$CODE_HASH" = "11111111111111111111111111111111" ]; then
+            HAS_CODE=false
+          else
+            HAS_CODE=true
+          fi
+
+          echo "on-chain version: $DEPLOYED / this commit builds: $CODE_VERSION / contract deployed: $HAS_CODE"
+          echo "deployed=$DEPLOYED" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "has_code=$HAS_CODE" >> "$GITHUB_OUTPUT"
+
+          # Block only on a *known* mismatch, where a readable state is behind
+          # the code about to replace it — the #14 trap.
+          #
+          # An unreadable contract is deliberately NOT blocked. It is already
+          # down, so refusing to deploy protects nothing and instead strands
+          # the recovery: shipping fresh code is precisely how that state gets
+          # fixed. The first cut blocked here, and the block then fired on a
+          # contract that was already broken, leaving no way forward through
+          # CI. "Verify contract state is readable" below is what actually
+          # confirms the outcome, and it runs after every path.
+          if [ "$DEPLOYED" = "unreadable" ]; then
+            echo "::warning::$ACCOUNT did not answer get_version. Either it has never been initialized (re-run via workflow_dispatch with initialize=true) or it is already broken, in which case this deploy cannot regress it."
+            echo "required=false" >> "$GITHUB_OUTPUT"
+          elif [ "$DEPLOYED" = "$CODE_VERSION" ]; then
+            echo "required=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Fails *before* anything reaches the chain, so a struct change can no
+      # longer brick production and report it only afterwards.
+      - name: Block a deploy that would brick the contract
+        if: ${{ steps.preflight.outputs.required == 'true' && inputs.run_migration != true && inputs.initialize != true }}
+        run: |
+          echo "::error::On-chain state is version '${{ steps.preflight.outputs.deployed }}' but this commit builds version '${{ steps.preflight.outputs.code }}'. Deploying code alone would leave the contract unable to deserialize its own state and every method would panic. Re-run this workflow via workflow_dispatch on this ref with run_migration=true."
+          exit 1
+
+      # A bare account needs new(), not code. Deploying code alone here would
+      # "succeed" and leave a contract whose every method panics — the state
+      # does not exist, and `PanicOnDefault` turns that into a panic on any
+      # call. Better to stop and say which switch to flip.
+      - name: Require initialize on an account with no contract
+        if: ${{ steps.preflight.outputs.has_code == 'false' && inputs.initialize != true }}
+        run: |
+          echo "::error::${{ vars.NEAR_CONTRACT_PRODUCTION_ACCOUNT_ID }} has no contract deployed yet. Run this workflow manually (Actions -> Deploy market to production -> Run workflow) with initialize=true for the first deploy."
+          exit 1
+
+      # Refuse to "initialize" something that is already live. new() asserts
+      # this itself and would panic on chain, but failing here costs no gas and
+      # says why.
+      - name: Block initialize on a contract that already has state
+        if: ${{ inputs.initialize == true && steps.preflight.outputs.deployed != 'unreadable' }}
+        run: |
+          echo "::error::${{ vars.NEAR_CONTRACT_PRODUCTION_ACCOUNT_ID }} is already initialized and answering get_version with '${{ steps.preflight.outputs.deployed }}'. initialize=true is only for a fresh account."
+          exit 1
+
+      # The marketplace crate is a member of the `contracts` cargo workspace,
+      # so every reproducible build names its manifest explicitly; building
+      # from the repo root is what makes the workspace root and its lockfile
+      # part of what the container sees.
+      #
+      # Every deploy here passes `--skip-git-remote-check` because this
+      # repository is private. `build-reproducible-wasm` otherwise insists on
+      # cloning the commit from a public remote so SourceScan can verify the
+      # WASM against its source, and it fails outright when it cannot reach
+      # one. The build is still the pinned-docker reproducible build; the only
+      # thing skipped is a public-remote check a private repo cannot satisfy.
+      - name: Deploy with new()
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.initialize == true }}
+        run: |
+          cargo near deploy build-reproducible-wasm --skip-git-remote-check \
+            --manifest-path contracts/market/Cargo.toml \
+            "${{ vars.NEAR_CONTRACT_PRODUCTION_ACCOUNT_ID }}" \
+            with-init-call new \
+            json-args '{"media_url":"${{ vars.NEAR_CONTRACT_MEDIA_URL }}","supported_stablecoins":${{ vars.NEAR_CONTRACT_SUPPORTED_STABLECOINS }}}' \
+            prepaid-gas '300.0 Tgas' \
+            attached-deposit '0 NEAR' \
+            network-config "${{ vars.NEAR_CONTRACT_PRODUCTION_NETWORK }}" \
+            sign-with-plaintext-private-key "${{ secrets.NEAR_CONTRACT_PRODUCTION_ACCOUNT_PRIVATE_KEY }}" \
+            send
+
+      # Deploying code alone is only safe while the state layout is unchanged,
+      # which the preflight above has now established.
+      - name: Deploy (no migration)
+        if: ${{ inputs.run_migration != true && inputs.initialize != true }}
+        run: |
+          cargo near deploy build-reproducible-wasm --skip-git-remote-check \
+            --manifest-path contracts/market/Cargo.toml \
+            "${{ vars.NEAR_CONTRACT_PRODUCTION_ACCOUNT_ID }}" \
+            without-init-call \
+            network-config "${{ vars.NEAR_CONTRACT_PRODUCTION_NETWORK }}" \
+            sign-with-plaintext-private-key "${{ secrets.NEAR_CONTRACT_PRODUCTION_ACCOUNT_PRIVATE_KEY }}" \
+            send
+
+      - name: Deploy with migrate()
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_migration == true && inputs.initialize != true }}
+        run: |
+          cargo near deploy build-reproducible-wasm --skip-git-remote-check \
+            --manifest-path contracts/market/Cargo.toml \
+            "${{ vars.NEAR_CONTRACT_PRODUCTION_ACCOUNT_ID }}" \
+            with-init-call migrate \
+            json-args '{}' \
+            prepaid-gas '300.0 Tgas' \
+            attached-deposit '0 NEAR' \
+            network-config "${{ vars.NEAR_CONTRACT_PRODUCTION_NETWORK }}" \
+            sign-with-plaintext-private-key "${{ secrets.NEAR_CONTRACT_PRODUCTION_ACCOUNT_PRIVATE_KEY }}" \
+            send
+
+      # A deploy that leaves the contract unable to read its own state is the
+      # failure mode this repo has already hit twice, and it is silent until a
+      # user hits it. get_version is a plain view over the state struct, so it
+      # only answers if deserialization works end to end.
+      - name: Verify contract state is readable
+        run: |
+          RESPONSE=$(curl -sS -X POST "https://rpc.${{ vars.NEAR_CONTRACT_PRODUCTION_NETWORK }}.near.org" \
+            -H 'Content-Type: application/json' \
+            -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{
+                  \"request_type\":\"call_function\",\"finality\":\"final\",
+                  \"account_id\":\"${{ vars.NEAR_CONTRACT_PRODUCTION_ACCOUNT_ID }}\",
+                  \"method_name\":\"get_version\",\"args_base64\":\"e30=\"}}")
+          echo "$RESPONSE"
+          if echo "$RESPONSE" | grep -q '"error"'; then
+            echo "::error::Contract state is not readable after deploy. If this account has never been initialized, re-run with initialize=true; if this commit changed the ShedaContract struct, re-run with run_migration=true."
+            exit 1
+          fi

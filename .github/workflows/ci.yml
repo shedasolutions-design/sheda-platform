@@ -30,24 +30,51 @@ jobs:
       - name: Install Rust
         if: steps.changed.outputs.contracts == 'true'
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup component add rustfmt clippy
-          rustup target add wasm32-unknown-unknown
+          # Pinned, not stable: nearcore's VM rejects wasm built by Rust 1.87
+          # and newer, so `contracts/rust-toolchain.toml` names 1.86.0 and the
+          # components/target are installed for that toolchain explicitly.
+          rustup toolchain install 1.86.0 --profile minimal \
+            --component rustfmt --component clippy \
+            --target wasm32-unknown-unknown
 
       - name: Formatting
         if: steps.changed.outputs.contracts == 'true'
         working-directory: contracts
         run: cargo fmt --all -- --check
 
-      - name: Lint
+      # The Collections contracts are held to a clean clippy. The marketplace
+      # contract is not: it was written against a `--warn` policy in its own
+      # repository and carries pre-existing lints. Turning the whole workspace
+      # to `-D warnings` in one step would fail this merge on warnings nobody
+      # introduced here, so the two policies are stated separately rather than
+      # silently weakened for everything.
+      - name: Lint (Collections)
         if: steps.changed.outputs.contracts == 'true'
         working-directory: contracts
-        run: cargo clippy --all-targets -- -D warnings
+        run: |
+          cargo clippy \
+            -p sheda-collection-raise \
+            -p sheda-collection-vault \
+            -p sheda-stake-registry \
+            --all-targets -- -D warnings
+
+      - name: Lint (marketplace)
+        if: steps.changed.outputs.contracts == 'true'
+        working-directory: contracts
+        run: cargo clippy -p sheda-contract --all-targets -- -W clippy::all
 
       - name: Unit tests
         if: steps.changed.outputs.contracts == 'true'
         working-directory: contracts
         run: cargo test --workspace --lib -- --nocapture
+
+      # The marketplace contract's tests drive the deployed contract against
+      # near-workspaces, so they are integration tests rather than `--lib`
+      # unit tests and would otherwise be silently skipped.
+      - name: Marketplace integration tests
+        if: steps.changed.outputs.contracts == 'true'
+        working-directory: contracts
+        run: cargo test -p sheda-contract
 
       - name: Build wasm
         if: steps.changed.outputs.contracts == 'true'
@@ -95,6 +122,41 @@ jobs:
         if: steps.changed.outputs.backend == 'true'
         working-directory: services/backend
         run: python -m pytest tests/unit -q
+
+  collection-app:
+    name: Collections app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changed
+        with:
+          filters: |
+            collection:
+              - 'apps/collection-app/**'
+              - '.github/workflows/ci.yml'
+
+      - uses: actions/setup-node@v4
+        if: steps.changed.outputs.collection == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/collection-app/package-lock.json
+
+      - name: Install
+        if: steps.changed.outputs.collection == 'true'
+        working-directory: apps/collection-app
+        run: npm ci
+
+      - name: Typecheck
+        if: steps.changed.outputs.collection == 'true'
+        working-directory: apps/collection-app
+        run: npm run typecheck
+
+      - name: Tests
+        if: steps.changed.outputs.collection == 'true'
+        working-directory: apps/collection-app
+        run: npm test
 
   mobile:
     name: Mobile app

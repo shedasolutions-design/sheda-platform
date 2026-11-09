@@ -1,0 +1,2574 @@
+use near_contract_standards::non_fungible_token::core::NonFungibleTokenCore;
+use near_sdk::{
+    assert_one_yocto, env, json_types::U128, log, require, AccountId, Gas, NearToken, Promise,
+    PromiseResult,
+};
+
+use crate::{
+    events::{
+        emit_event, BidApprovedEvent, BidCancelledByBuyerEvent, BidCancelledEvent,
+        BidDisputeResolvedEvent, BidRefundedEvent, BidRejectedEvent, DealFinalizedEvent,
+        DisputeRaisedEvent, LeaseExpiredEvent, LeaseRenewedEvent, PropertyDeletedEvent,
+        PropertyDelistedEvent,
+    },
+    ext::ft_contract,
+    models::{Action, Bid, BidStatus, DisputeResolution, DisputeStatus, Sold},
+    ShedaContract,
+};
+
+fn checked_add_u128(left: u128, right: u128, label: &str) -> u128 {
+    left.checked_add(right)
+        .unwrap_or_else(|| env::panic_str(&format!("Overflow in {}", label)))
+}
+
+fn checked_sub_u128(left: u128, right: u128, label: &str) -> u128 {
+    left.checked_sub(right)
+        .unwrap_or_else(|| env::panic_str(&format!("Underflow in {}", label)))
+}
+
+fn checked_add_u64(left: u64, right: u64, label: &str) -> u64 {
+    left.checked_add(right)
+        .unwrap_or_else(|| env::panic_str(&format!("Overflow in {}", label)))
+}
+
+fn checked_mul_u64(left: u64, right: u64, label: &str) -> u64 {
+    left.checked_mul(right)
+        .unwrap_or_else(|| env::panic_str(&format!("Overflow in {}", label)))
+}
+
+fn bid_lock_key(property_id: u64, bid_id: u64) -> String {
+    format!("bid:{}:{}", property_id, bid_id)
+}
+
+fn ft_lock_key(property_id: u64, account_id: &AccountId) -> String {
+    format!("ft:{}:{}", account_id, property_id)
+}
+
+pub fn lock_bid(contract: &mut ShedaContract, property_id: u64, bid_id: u64) {
+    let key = bid_lock_key(property_id, bid_id);
+    require!(
+        !contract.reentrancy_locks.contains(&key),
+        "ReentrancyGuard: bid locked"
+    );
+    contract.reentrancy_locks.insert(key);
+}
+
+pub fn unlock_bid(contract: &mut ShedaContract, property_id: u64, bid_id: u64) {
+    let key = bid_lock_key(property_id, bid_id);
+    contract.reentrancy_locks.remove(&key);
+}
+
+pub fn lock_ft_on_transfer(contract: &mut ShedaContract, property_id: u64, account_id: &AccountId) {
+    let key = ft_lock_key(property_id, account_id);
+    require!(
+        !contract.reentrancy_locks.contains(&key),
+        "ReentrancyGuard: ft_on_transfer locked"
+    );
+    contract.reentrancy_locks.insert(key);
+}
+
+pub fn unlock_ft_on_transfer(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    account_id: &AccountId,
+) {
+    let key = ft_lock_key(property_id, account_id);
+    contract.reentrancy_locks.remove(&key);
+}
+
+pub(crate) fn update_bid_in_list<F>(bids: &mut Vec<Bid>, bid_id: u64, update: F) -> Bid
+where
+    F: FnOnce(&mut Bid),
+{
+    let index = bids
+        .iter()
+        .position(|bid| bid.id == bid_id)
+        .expect("Bid not found for the property");
+    let bid = bids.get_mut(index).expect("Bid not found for the property");
+    update(bid);
+    bid.clone()
+}
+
+fn get_bid_from_list(bids: &Vec<Bid>, bid_id: u64) -> Bid {
+    bids.iter()
+        .find(|bid| bid.id == bid_id)
+        .expect("Bid not found for the property")
+        .clone()
+}
+
+pub fn extract_base_uri(url: &str) -> String {
+    if let Some(cid) = url.split("/ipfs/").nth(1) {
+        return format!("ipfs://{}", cid);
+    }
+
+    // fallback base_uri = origin of the URL
+    // ex: https://example.com/path/image.png → https://example.com
+    url.split('/').take(3).collect::<Vec<_>>().join("/")
+}
+
+// Storage deposit check helper - can be used in payable methods that create new storage
+// Example usage: assert_storage_deposit_for_bytes(1000);
+// The bytes parameter should be estimated based on the size of data being stored
+#[allow(dead_code)]
+pub fn assert_storage_deposit_for_bytes(estimated_bytes: u128) {
+    let attached = env::attached_deposit();
+    let required = near_sdk::env::storage_byte_cost().saturating_mul(estimated_bytes);
+
+    require!(
+        attached >= required,
+        format!(
+            "Insufficient storage deposit. Required at least {}",
+            required
+        )
+    );
+}
+
+pub fn burn_nft(contract: &mut ShedaContract, token_id: String) {
+    assert_one_yocto();
+
+    let token = contract
+        .tokens
+        .nft_token(token_id.clone())
+        .expect("Token not found");
+
+    assert_eq!(
+        env::signer_account_id(),
+        token.owner_id,
+        "Only owner can burn"
+    );
+
+    // Remove token ownership and metadata
+    contract.tokens.owner_by_id.remove(&token_id);
+    if let Some(tokens_per_owner) = contract.tokens.tokens_per_owner.as_mut() {
+        let mut owner_tokens = tokens_per_owner.get(&token.owner_id).unwrap_or_else(|| {
+            env::panic_str("Unable to access tokens per owner in unguarded call.")
+        });
+        owner_tokens.remove(&token_id);
+        if owner_tokens.is_empty() {
+            tokens_per_owner.remove(&token.owner_id);
+        } else {
+            tokens_per_owner.insert(&token.owner_id.clone(), &owner_tokens);
+        }
+    }
+    if let Some(token_metadata_by_id) = contract.tokens.token_metadata_by_id.as_mut() {
+        token_metadata_by_id.remove(&token_id);
+    }
+    if let Some(approvals_by_id) = contract.tokens.approvals_by_id.as_mut() {
+        approvals_by_id.remove(&token_id);
+    }
+}
+
+pub fn internal_accept_bid(contract: &mut ShedaContract, property_id: u64, bid_id: u64) -> Promise {
+    lock_bid(contract, property_id, bid_id);
+    let (owner_id, has_active_lease) = {
+        let property = contract
+            .properties
+            .get(&property_id)
+            .expect("Property does not exist");
+        (
+            property.owner_id.clone(),
+            property
+                .active_lease
+                .as_ref()
+                .map(|lease| lease.active)
+                .unwrap_or(false),
+        )
+    };
+
+    assert_eq!(
+        owner_id,
+        env::predecessor_account_id(),
+        "Only the property owner can accept bids"
+    );
+
+    // finalize_accepted_bid() (Purchase and Lease alike) transfers the NFT
+    // from property.owner_id to the bidder. While a lease is active the NFT
+    // is actually held by the tenant, not the owner, so that transfer would
+    // panic there instead of failing cleanly here — after payment has
+    // already gone out on the accept_bid fast path. Reject up front instead.
+    require!(
+        !has_active_lease,
+        "Cannot accept a bid while the property has an active lease"
+    );
+
+    let now = env::block_timestamp();
+    let bid_snapshot = {
+        let bids = contract.bids.get(&property_id).expect("Bid does not exist");
+        get_bid_from_list(bids, bid_id)
+    };
+
+    if let Some(expires_at) = bid_snapshot.expires_at {
+        if now > expires_at {
+            unlock_bid(contract, property_id, bid_id);
+            internal_reject_bid(contract, property_id, bid_id);
+            env::panic_str("Bid expired and was rejected");
+        }
+    }
+
+    let bid = {
+        let bids = contract
+            .bids
+            .get_mut(&property_id)
+            .expect("Bid does not exist");
+        update_bid_in_list(bids, bid_id, |bid| {
+            if bid.status != BidStatus::Pending {
+                env::panic_str("Bid is not in a pending state");
+            }
+            bid.status = BidStatus::Accepted;
+            bid.updated_at = now;
+        })
+    };
+
+    assert_eq!(
+        bid.property_id, property_id,
+        "Bid is not for the specified property"
+    );
+
+    emit_event(
+        "BidApproved",
+        BidApprovedEvent {
+            token_id: property_id,
+            bidder_id: bid.bidder.clone(),
+            seller_id: owner_id.clone(),
+            amount: bid.amount,
+        },
+    );
+
+    // Part 1: Transfer stablecoin from contract to property owner
+    let promise = ft_contract::ext(bid.stablecoin_token.clone())
+        .with_attached_deposit(NearToken::from_yoctonear(1))
+        .with_static_gas(Gas::from_tgas(30))
+        .ft_transfer(owner_id.clone(), U128(bid.amount));
+
+    // Update stablecoin balance after payment to seller
+    let current_balance = *contract
+        .stable_coin_balances
+        .get(&bid.stablecoin_token)
+        .unwrap_or(&0);
+    contract.stable_coin_balances.insert(
+        bid.stablecoin_token.clone(),
+        checked_sub_u128(current_balance, bid.amount, "accept_bid balance"),
+    );
+
+    // Part 2: Callback to handle success/failure
+    promise.then(
+        crate::ShedaContract::ext(env::current_account_id())
+            .with_static_gas(Gas::from_tgas(50))
+            .accept_bid_callback(property_id, bid_id),
+    )
+}
+
+// Callback to handle the result of ft_transfer
+pub fn accept_bid_callback(contract: &mut ShedaContract, property_id: u64, bid_id: u64) {
+    unlock_bid(contract, property_id, bid_id);
+    // Check if the promise succeeded
+    match env::promise_result(0) {
+        PromiseResult::Successful(_) => {
+            log!("ft_transfer successful, proceeding with NFT transfer and bid updates");
+            finalize_accepted_bid(contract, property_id, bid_id);
+        }
+        PromiseResult::Failed => {
+            log!("ft_transfer failed, reverting. NFT and bid remain unchanged");
+
+            // Revert the stablecoin balance update
+            let bid = {
+                let bids: &Vec<Bid> = contract.bids.get(&property_id).expect("Bid does not exist");
+                get_bid_from_list(bids, bid_id)
+            };
+
+            let current_balance = *contract
+                .stable_coin_balances
+                .get(&bid.stablecoin_token)
+                .unwrap_or(&0);
+            contract.stable_coin_balances.insert(
+                bid.stablecoin_token.clone(),
+                checked_add_u128(current_balance, bid.amount, "accept_bid revert"),
+            );
+
+            if let Some(bids) = contract.bids.get_mut(&property_id) {
+                let _ = update_bid_in_list(bids, bid_id, |bid| {
+                    bid.status = BidStatus::Pending;
+                    bid.updated_at = env::block_timestamp();
+                });
+            }
+
+            // NOTE: do not panic here. A panicking receipt discards every state
+            // write it made in this same call, including the revert above, which
+            // would otherwise leave the balance permanently short and the bid
+            // stuck in `Accepted` with no way to retry/cancel/reject it.
+            log!("Payment transfer failed. Bid acceptance aborted; balance and status reverted to Pending.");
+        }
+    }
+}
+
+// Shared callback for the refund transfers fired from internal_reject_bid,
+// internal_cancel_bid, and the "refund other pending bidders" loops in
+// internal_accept_bid_with_escrow / finalize_accepted_bid. Those call sites
+// optimistically decrement the ledger and flip the bid to a terminal status
+// before the transfer confirms; if the transfer actually fails (e.g. the
+// bidder's account isn't storage-registered on the token contract), this
+// callback puts both back so the refund can be retried instead of the funds
+// silently vanishing from the contract's own accounting.
+pub fn refund_pending_bid_callback(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+    stablecoin_token: AccountId,
+    amount: u128,
+) {
+    match env::promise_result(0) {
+        PromiseResult::Successful(_) => {
+            log!("Refund transfer for bid {} succeeded", bid_id);
+        }
+        PromiseResult::Failed => {
+            let current_balance = *contract
+                .stable_coin_balances
+                .get(&stablecoin_token)
+                .unwrap_or(&0);
+            contract.stable_coin_balances.insert(
+                stablecoin_token,
+                checked_add_u128(current_balance, amount, "refund_pending_bid revert"),
+            );
+
+            if let Some(bids) = contract.bids.get_mut(&property_id) {
+                let _ = update_bid_in_list(bids, bid_id, |bid| {
+                    bid.status = BidStatus::Pending;
+                    bid.updated_at = env::block_timestamp();
+                });
+            }
+
+            log!(
+                "Refund transfer for bid {} failed; balance and status reverted to Pending",
+                bid_id
+            );
+        }
+    }
+}
+
+pub fn internal_reject_bid(contract: &mut ShedaContract, property_id: u64, bid_id: u64) -> Promise {
+    let bid = {
+        let bids: &Vec<Bid> = contract.bids.get(&property_id).expect("Bid does not exist");
+        get_bid_from_list(bids, bid_id)
+    };
+
+    if bid.status != BidStatus::Pending {
+        env::panic_str("Bid is not in a pending state");
+    }
+
+    let property = contract
+        .properties
+        .get(&property_id)
+        .expect("Property does not exist");
+
+    assert_eq!(
+        property.owner_id,
+        env::predecessor_account_id(),
+        "Only the property owner can reject bids"
+    );
+
+    assert_eq!(
+        bid.property_id, property_id,
+        "Bid is not for the specified property"
+    );
+
+    // Refund stablecoin to bidder
+    let refund_promise = ft_contract::ext(bid.stablecoin_token.clone())
+        .with_attached_deposit(NearToken::from_yoctonear(1))
+        .with_static_gas(Gas::from_tgas(30))
+        .ft_transfer(bid.bidder.clone(), U128(bid.amount));
+
+    // Update stablecoin balance after refund (reverted on transfer failure)
+    let current_balance = *contract
+        .stable_coin_balances
+        .get(&bid.stablecoin_token)
+        .unwrap_or(&0);
+    contract.stable_coin_balances.insert(
+        bid.stablecoin_token.clone(),
+        checked_sub_u128(current_balance, bid.amount, "reject_bid refund"),
+    );
+
+    if let Some(bids) = contract.bids.get_mut(&property_id) {
+        let _ = update_bid_in_list(bids, bid_id, |bid| {
+            if bid.status != BidStatus::Pending {
+                env::panic_str("Bid is not in a pending state");
+            }
+            bid.status = BidStatus::Rejected;
+            bid.updated_at = env::block_timestamp();
+        });
+    }
+
+    emit_event(
+        "BidRejected",
+        BidRejectedEvent {
+            token_id: property_id,
+            bid_id,
+            bidder_id: bid.bidder.clone(),
+            amount: bid.amount,
+        },
+    );
+
+    refund_promise.then(
+        crate::ShedaContract::ext(env::current_account_id())
+            .with_static_gas(Gas::from_tgas(20))
+            .refund_pending_bid_callback(
+                property_id,
+                bid_id,
+                bid.stablecoin_token.clone(),
+                bid.amount,
+            ),
+    )
+}
+
+pub fn internal_cancel_bid(contract: &mut ShedaContract, property_id: u64, bid_id: u64) -> Promise {
+    let bid = {
+        let bids: &Vec<Bid> = contract.bids.get(&property_id).expect("Bid does not exist");
+        get_bid_from_list(bids, bid_id)
+    };
+
+    if bid.status != BidStatus::Pending {
+        env::panic_str("Bid is not in a pending state");
+    }
+
+    assert_eq!(
+        bid.bidder,
+        env::predecessor_account_id(),
+        "Only the bidder can cancel their bid"
+    );
+
+    assert_eq!(
+        bid.property_id, property_id,
+        "Bid is not for the specified property"
+    );
+
+    // "Ensure my bid was not accepted yet" is already guaranteed above: both
+    // accept paths stamp the winning bid `Accepted` in the same call, so a bid
+    // that is still `Pending` here is by definition not the one that won.
+    //
+    // There used to be two further checks — refusing to cancel when the
+    // property had been sold or leased *to the caller*. Because the winning
+    // bid can never be `Pending`, those could only ever fire on a *second*,
+    // still-pending bid belonging to whoever won, and for that bid cancelling
+    // is the correct remedy: it is their own deposit, never refunded, and
+    // `claim_lost_bid` will not take it either (`can_claim` requires the
+    // property to have gone to somebody *else*). Together they left a winner's
+    // leftover bid with no way out at all.
+    //
+    // Leftovers are not hypothetical: neither accept path is guaranteed to
+    // sweep every losing bid — both stop refunding once gas runs low.
+
+    // Refund stablecoin to bidder
+    let refund_promise = ft_contract::ext(bid.stablecoin_token.clone())
+        .with_attached_deposit(NearToken::from_yoctonear(1))
+        .with_static_gas(Gas::from_tgas(30))
+        .ft_transfer(bid.bidder.clone(), U128(bid.amount));
+
+    // Update stablecoin balance after refund (reverted on transfer failure)
+    let current_balance = *contract
+        .stable_coin_balances
+        .get(&bid.stablecoin_token)
+        .unwrap_or(&0);
+    contract.stable_coin_balances.insert(
+        bid.stablecoin_token.clone(),
+        checked_sub_u128(current_balance, bid.amount, "cancel_bid refund"),
+    );
+
+    if let Some(bids) = contract.bids.get_mut(&property_id) {
+        let _ = update_bid_in_list(bids, bid_id, |bid| {
+            if bid.status != BidStatus::Pending {
+                env::panic_str("Bid is not in a pending state");
+            }
+            bid.status = BidStatus::Cancelled;
+            bid.updated_at = env::block_timestamp();
+        });
+    }
+
+    emit_event(
+        "BidCancelled",
+        BidCancelledEvent {
+            token_id: property_id,
+            bid_id,
+            bidder_id: bid.bidder.clone(),
+            amount: bid.amount,
+        },
+    );
+
+    refund_promise.then(
+        crate::ShedaContract::ext(env::current_account_id())
+            .with_static_gas(Gas::from_tgas(20))
+            .refund_pending_bid_callback(
+                property_id,
+                bid_id,
+                bid.stablecoin_token.clone(),
+                bid.amount,
+            ),
+    )
+}
+
+/// Let a buyer walk away from a deal that is already under way, if they do it
+/// inside the window for the stage the deal has reached.
+///
+/// `cancel_bid` only ever covered a `Pending` bid — one the seller hadn't
+/// acted on. Once a bid was accepted the buyer was committed with no way out,
+/// so a deal that stalled (seller goes quiet, agreement never arrives) left
+/// the buyer's funds in escrow indefinitely with only an admin refund to fall
+/// back on.
+///
+/// # Where the exits are, and where they stop
+///
+/// The agreement is the real-world contract the two parties settled on after
+/// their appointments. The seller mints it to the buyer as an NFT, and the
+/// buyer reviews it. That review is the decision point:
+///
+/// - `Accepted` — nothing has been handed over. A clean exit.
+/// - `DocsReleased` — the buyer is holding the agreement and hasn't accepted
+///   it. Rejecting it burns the agreement and refunds them.
+/// - `DocsConfirmed` — **the buyer accepted the agreement. There is no exit.**
+///   Deliberately has no cancellation entrypoint: accepting is the commitment,
+///   and the only ways out after it are paying or raising a dispute.
+///
+/// # Why the agreement is burned on the way out
+///
+/// A buyer who walks away must not keep the agreement. Otherwise a seller
+/// hands over the signed terms, the buyer cancels, and leaves holding a
+/// document they never paid for. Burning it is what makes releasing documents
+/// safe for the seller, so it is not optional — if the bid has a document, it
+/// goes.
+///
+/// The window runs from `bid.updated_at`, which is set on every status
+/// transition and so marks when the bid entered its current stage. It bounds
+/// the seller's exposure in the other direction too: after it closes, the
+/// buyer is committed and the seller isn't left waiting indefinitely.
+///
+/// The refund is the same optimistic pattern the rest of the contract uses:
+/// decrement the tracked balance, transfer, and let
+/// `refund_pending_bid_callback` put it back if the transfer fails.
+fn internal_buyer_cancel_staged(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+    expected_status: BidStatus,
+    window_ns: Option<u64>,
+    stage: &str,
+) -> Promise {
+    let bid = {
+        let bids: &Vec<Bid> = contract.bids.get(&property_id).expect("Bid does not exist");
+        get_bid_from_list(bids, bid_id)
+    };
+
+    require!(
+        bid.property_id == property_id,
+        "Bid is not for the specified property"
+    );
+
+    require!(
+        bid.bidder == env::predecessor_account_id(),
+        "Only the bidder can cancel their own bid"
+    );
+
+    // Naming the actual status matters: a buyer hitting this is often racing
+    // the seller's next action, and "expected Accepted, found DocsReleased"
+    // tells them to use the next stage's call instead of just that it failed.
+    require!(
+        bid.status == expected_status,
+        format!(
+            "Cannot cancel at the '{}' stage: this bid is {:?}, not {:?}",
+            stage, bid.status, expected_status
+        )
+    );
+
+    let now = env::block_timestamp();
+
+    // `None` means the stage has no deadline. That applies while the deal is
+    // merely `Accepted`: the parties still have to arrange appointments and
+    // meet in the real world, which the contract can't see and which takes as
+    // long as it takes. Putting a clock on it would strand a buyer who simply
+    // couldn't get a viewing booked in time — committed, funds locked, and no
+    // agreement ever coming. Nothing has been handed over at that point, so
+    // there is no seller exposure a deadline would be protecting.
+    let window_remaining_ns = match window_ns {
+        None => u64::MAX,
+        Some(window_ns) => {
+            let deadline = checked_add_u64(bid.updated_at, window_ns, "cancellation deadline");
+            require!(
+                now <= deadline,
+                format!(
+                    "The window to cancel at the '{}' stage closed {} seconds ago. \
+                     The deal can now only be unwound by raising a dispute.",
+                    stage,
+                    now.saturating_sub(deadline) / 1_000_000_000
+                )
+            );
+            deadline.saturating_sub(now)
+        }
+    };
+
+    let refund_promise = ft_contract::ext(bid.stablecoin_token.clone())
+        .with_attached_deposit(NearToken::from_yoctonear(1))
+        .with_static_gas(Gas::from_tgas(30))
+        .ft_transfer(bid.bidder.clone(), U128(bid.amount));
+
+    let current_balance = *contract
+        .stable_coin_balances
+        .get(&bid.stablecoin_token)
+        .unwrap_or(&0);
+    contract.stable_coin_balances.insert(
+        bid.stablecoin_token.clone(),
+        checked_sub_u128(current_balance, bid.amount, "staged cancel refund"),
+    );
+
+    let previous_status = format!("{:?}", bid.status);
+
+    // Burn the agreement before anything else can fail. A buyer who walks away
+    // must not keep the terms the seller handed over — otherwise the seller
+    // has given a signed agreement to someone who never paid for the property.
+    //
+    // `burn_nft` checks the signer owns the token, which holds here: the
+    // document was transferred to the bidder on release, and the bidder is the
+    // caller. It also asserts one yocto, covered by these being #[payable]
+    // entrypoints the buyer attaches to.
+    if let Some(document_token_id) = bid.document_token_id.clone() {
+        burn_nft(contract, document_token_id.clone());
+        log!(
+            "Burned agreement {} — buyer {} rejected it and cancelled",
+            document_token_id,
+            bid.bidder
+        );
+    }
+
+    if let Some(bids) = contract.bids.get_mut(&property_id) {
+        let _ = update_bid_in_list(bids, bid_id, |b| {
+            b.status = BidStatus::Cancelled;
+            b.updated_at = now;
+            // The agreement no longer exists, so the bid must stop pointing at
+            // it — a dangling id here would let a later read think documents
+            // were still outstanding.
+            b.document_token_id = None;
+        });
+    }
+
+    // The seller put the property aside for this buyer when they accepted, so
+    // unwinding the deal has to hand it back rather than leave it in limbo.
+    if let Some(property) = contract.properties.get_mut(&property_id) {
+        property.is_for_sale = true;
+    }
+
+    emit_event(
+        "BidCancelledByBuyer",
+        BidCancelledByBuyerEvent {
+            token_id: property_id,
+            bid_id,
+            bidder_id: bid.bidder.clone(),
+            amount: bid.amount,
+            stage: stage.to_string(),
+            previous_status,
+            window_remaining_ns,
+        },
+    );
+
+    log!(
+        "Bid {} on property {} cancelled by buyer {} at stage '{}'",
+        bid_id,
+        property_id,
+        bid.bidder,
+        stage
+    );
+
+    refund_promise.then(
+        crate::ShedaContract::ext(env::current_account_id())
+            .with_static_gas(Gas::from_tgas(20))
+            .refund_pending_bid_callback(
+                property_id,
+                bid_id,
+                bid.stablecoin_token.clone(),
+                bid.amount,
+            ),
+    )
+}
+
+/// Stage 1 — the seller accepted, nothing has been handed over yet.
+pub fn internal_buyer_cancel_accepted_bid(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+) -> Promise {
+    // No deadline, deliberately. This is the stage where the two sides arrange
+    // appointments and go and view the property — real-world scheduling the
+    // contract can't observe and can't hurry. A window here would trap a buyer
+    // who couldn't get a viewing booked in time.
+    //
+    // The seller gives up nothing at this stage, so there's no exposure to
+    // bound. Their protection against a buyer who goes quiet is
+    // `refund_escrow_timeout`, which lets the deal be unwound after a long
+    // silence and frees the property.
+    internal_buyer_cancel_staged(
+        contract,
+        property_id,
+        bid_id,
+        BidStatus::Accepted,
+        None,
+        "accepted",
+    )
+}
+
+/// Stage 2 — the buyer has the agreement and is rejecting it.
+///
+/// The seller minted the terms they settled on in the real world to the buyer
+/// as an NFT. If the buyer won't accept those terms, the agreement is burned
+/// and their escrow is returned. Confirming instead is the commitment, and
+/// there is no cancellation past it.
+///
+/// There is deliberately **no** equivalent for `DocsConfirmed`. Once the buyer
+/// has accepted the agreement the only routes are releasing payment or raising
+/// a dispute — adding an exit there would let a buyer accept the terms and
+/// then walk, which is exactly what the seller is relying on not happening
+/// when they hand the document over.
+pub fn internal_buyer_reject_documents_and_cancel(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+) -> Promise {
+    // Bounded, unlike the `Accepted` stage: here the seller *has* handed
+    // something over, so the buyer has to decide within a set period rather
+    // than sit on the agreement indefinitely.
+    let window = Some(contract.path_b_stage2_window_ns);
+    internal_buyer_cancel_staged(
+        contract,
+        property_id,
+        bid_id,
+        BidStatus::DocsReleased,
+        window,
+        "documents_rejected",
+    )
+}
+
+pub fn internal_accept_bid_with_escrow(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+) -> bool {
+    let (owner_id, lease_duration_days, has_active_lease) = {
+        let property = contract
+            .properties
+            .get(&property_id)
+            .expect("Property does not exist");
+        (
+            property.owner_id.clone(),
+            property.lease_duration_days,
+            property
+                .active_lease
+                .as_ref()
+                .map(|lease| lease.active)
+                .unwrap_or(false),
+        )
+    };
+
+    assert_eq!(
+        owner_id,
+        env::predecessor_account_id(),
+        "Only the property owner can accept bids"
+    );
+
+    // See internal_accept_bid for why this has to be rejected here rather
+    // than left to fail later at NFT-transfer time.
+    require!(
+        !has_active_lease,
+        "Cannot accept a bid while the property has an active lease"
+    );
+
+    let now = env::block_timestamp();
+    let bid_snapshot = {
+        let bids = contract.bids.get(&property_id).expect("Bid does not exist");
+        get_bid_from_list(bids, bid_id)
+    };
+
+    if let Some(expires_at) = bid_snapshot.expires_at {
+        if now > expires_at {
+            internal_reject_bid(contract, property_id, bid_id);
+            env::panic_str("Bid expired and was rejected");
+        }
+    }
+
+    let bid = {
+        let bids = contract
+            .bids
+            .get_mut(&property_id)
+            .expect("Bid does not exist");
+        update_bid_in_list(bids, bid_id, |bid| {
+            if bid.status != BidStatus::Pending {
+                env::panic_str("Bid is not in a pending state");
+            }
+            bid.status = BidStatus::Accepted;
+            bid.updated_at = now;
+        })
+    };
+
+    assert_eq!(
+        bid.property_id, property_id,
+        "Bid is not for the specified property"
+    );
+
+    emit_event(
+        "BidApproved",
+        BidApprovedEvent {
+            token_id: property_id,
+            bidder_id: bid.bidder.clone(),
+            seller_id: owner_id.clone(),
+            amount: bid.amount,
+        },
+    );
+
+    lock_bid(contract, property_id, bid_id);
+
+    if let Some(bids) = contract.bids.get_mut(&property_id) {
+        for other_bid in bids.iter_mut() {
+            if other_bid.id == bid_id || other_bid.status != BidStatus::Pending {
+                continue;
+            }
+
+            if env::used_gas().as_gas() >= env::prepaid_gas().as_gas() - Gas::from_tgas(40).as_gas()
+            {
+                continue;
+            }
+
+            let other_bid_id = other_bid.id;
+            let other_token = other_bid.stablecoin_token.clone();
+            let other_amount = other_bid.amount;
+
+            let other_refund_promise = ft_contract::ext(other_token.clone())
+                .with_attached_deposit(NearToken::from_yoctonear(1))
+                .with_static_gas(Gas::from_tgas(30))
+                .ft_transfer(other_bid.bidder.clone(), U128(other_amount));
+
+            let current_balance = *contract
+                .stable_coin_balances
+                .get(&other_token)
+                .unwrap_or(&0);
+            contract.stable_coin_balances.insert(
+                other_token.clone(),
+                checked_sub_u128(current_balance, other_amount, "accept_bid_with_escrow"),
+            );
+
+            other_bid.status = BidStatus::Rejected;
+            other_bid.updated_at = env::block_timestamp();
+
+            other_refund_promise.then(
+                crate::ShedaContract::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(20))
+                    .refund_pending_bid_callback(
+                        property_id,
+                        other_bid_id,
+                        other_token,
+                        other_amount,
+                    ),
+            );
+        }
+    }
+
+    unlock_bid(contract, property_id, bid_id);
+
+    if matches!(&bid.action, Action::Lease) {
+        let mut updated_property = contract
+            .properties
+            .get(&property_id)
+            .cloned()
+            .expect("Property does not exist");
+        let lease_end_time = checked_add_u64(
+            env::block_timestamp(),
+            checked_mul_u64(
+                lease_duration_days.unwrap(),
+                24 * 60 * 60 * 1_000_000_000,
+                "lease duration",
+            ),
+            "lease end_time",
+        );
+        let lease = crate::models::Lease {
+            id: contract.lease_counter,
+            property_id,
+            tenant_id: bid.bidder.clone(),
+            start_time: env::block_timestamp(),
+            end_time: lease_end_time,
+            active: true,
+            dispute_status: crate::models::DisputeStatus::None,
+            dispute: None,
+            // The deposit, not the rent. This used to record `bid.amount` —
+            // money already transferred to the landlord — and `resolve_dispute`
+            // pays out of this figure, so a lease dispute drew on the pool
+            // holding everybody else's escrow.
+            escrow_held: bid.damage_deposit,
+            escrow_token: bid.stablecoin_token.clone(),
+            damage_claim_deadline: checked_add_u64(
+                lease_end_time,
+                contract.damage_claim_window_ns,
+                "damage claim deadline",
+            ),
+        };
+        let lease_id = lease.id;
+        updated_property.active_lease = Some(lease.clone());
+        contract.leases.insert(lease.id, lease);
+        contract.lease_counter = checked_add_u64(contract.lease_counter, 1, "lease_counter");
+        contract.properties.insert(property_id, updated_property);
+
+        let mut tenant_leases = contract
+            .lease_per_tenant
+            .get(&bid.bidder)
+            .cloned()
+            .unwrap_or_default();
+        tenant_leases.push(lease_id);
+        contract
+            .lease_per_tenant
+            .insert(bid.bidder.clone(), tenant_leases);
+
+        if let Some(bids) = contract.bids.get_mut(&property_id) {
+            let _ = update_bid_in_list(bids, bid_id, |b| {
+                b.lease_id = Some(lease_id);
+            });
+        }
+
+        emit_event(
+            "DealFinalized",
+            DealFinalizedEvent {
+                token_id: property_id,
+                buyer_id: bid.bidder.clone(),
+                seller_id: owner_id.clone(),
+                amount: bid.amount,
+                lease_duration_nanos: lease_duration_days.unwrap_or(0)
+                    * 24
+                    * 60
+                    * 60
+                    * 1_000_000_000,
+            },
+        );
+    }
+
+    true
+}
+
+fn finalize_accepted_bid(contract: &mut ShedaContract, property_id: u64, bid_id: u64) {
+    let property = contract
+        .properties
+        .get(&property_id)
+        .expect("Property does not exist")
+        .clone();
+
+    let bid = {
+        let bids = contract.bids.get(&property_id).expect("Bid does not exist");
+        get_bid_from_list(bids, bid_id)
+    };
+
+    // Transfer NFT to bidder
+    contract.tokens.internal_transfer(
+        &property.owner_id,
+        &bid.bidder,
+        &property_id.to_string(),
+        None,
+        None,
+    );
+
+    if let Some(bids) = contract.bids.get_mut(&property_id) {
+        for other_bid in bids.iter_mut() {
+            if other_bid.id == bid_id {
+                other_bid.status = BidStatus::Completed;
+                other_bid.updated_at = env::block_timestamp();
+                other_bid.escrow_release_tx = Some(format!("block:{}", env::block_height()));
+                continue;
+            }
+
+            if other_bid.status != BidStatus::Pending {
+                continue;
+            }
+
+            if env::used_gas().as_gas() >= env::prepaid_gas().as_gas() - Gas::from_tgas(40).as_gas()
+            {
+                continue;
+            }
+
+            let other_bid_id = other_bid.id;
+            let other_token = other_bid.stablecoin_token.clone();
+            let other_amount = other_bid.amount;
+
+            let other_refund_promise = ft_contract::ext(other_token.clone())
+                .with_attached_deposit(NearToken::from_yoctonear(1))
+                .with_static_gas(Gas::from_tgas(30))
+                .ft_transfer(other_bid.bidder.clone(), U128(other_amount));
+
+            let current_balance = *contract
+                .stable_coin_balances
+                .get(&other_token)
+                .unwrap_or(&0);
+            contract.stable_coin_balances.insert(
+                other_token.clone(),
+                checked_sub_u128(current_balance, other_amount, "accept_bid refund"),
+            );
+
+            other_bid.status = BidStatus::Rejected;
+            other_bid.updated_at = env::block_timestamp();
+
+            other_refund_promise.then(
+                crate::ShedaContract::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(20))
+                    .refund_pending_bid_callback(
+                        property_id,
+                        other_bid_id,
+                        other_token,
+                        other_amount,
+                    ),
+            );
+        }
+    }
+
+    match bid.action {
+        Action::Purchase => {
+            // Emit before the handover, while property.owner_id still holds
+            // the seller — transfer_property_ownership overwrites it.
+            emit_event(
+                "DealFinalized",
+                DealFinalizedEvent {
+                    token_id: property_id,
+                    buyer_id: bid.bidder.clone(),
+                    seller_id: property.owner_id.clone(),
+                    amount: bid.amount,
+                    lease_duration_nanos: 0,
+                },
+            );
+
+            transfer_property_ownership(contract, property_id, &bid.bidder, bid.amount);
+        }
+        Action::Lease => {
+            let mut updated_property = property.clone();
+            let lease_end_time = checked_add_u64(
+                env::block_timestamp(),
+                checked_mul_u64(
+                    property.lease_duration_days.unwrap(),
+                    24 * 60 * 60 * 1_000_000_000,
+                    "lease duration",
+                ),
+                "lease end_time",
+            );
+            let lease = crate::models::Lease {
+                id: contract.lease_counter,
+                property_id,
+                tenant_id: bid.bidder.clone(),
+                start_time: env::block_timestamp(),
+                end_time: lease_end_time,
+                active: true,
+                dispute_status: crate::models::DisputeStatus::None,
+                dispute: None,
+                // The deposit, not the rent — see the note on the other lease
+                // construction. The rent has already gone to the landlord by
+                // the time this runs.
+                escrow_held: bid.damage_deposit,
+                escrow_token: bid.stablecoin_token.clone(),
+                damage_claim_deadline: checked_add_u64(
+                    lease_end_time,
+                    contract.damage_claim_window_ns,
+                    "damage claim deadline",
+                ),
+            };
+            let lease_id = lease.id;
+            updated_property.active_lease = Some(lease.clone());
+            contract.leases.insert(lease.id, lease);
+            contract.lease_counter = checked_add_u64(contract.lease_counter, 1, "lease_counter");
+            contract.properties.insert(property_id, updated_property);
+
+            let mut tenant_leases = contract
+                .lease_per_tenant
+                .get(&bid.bidder)
+                .cloned()
+                .unwrap_or_default();
+            tenant_leases.push(lease_id);
+            contract
+                .lease_per_tenant
+                .insert(bid.bidder.clone(), tenant_leases);
+
+            if let Some(bids) = contract.bids.get_mut(&property_id) {
+                let _ = update_bid_in_list(bids, bid_id, |b| {
+                    b.lease_id = Some(lease_id);
+                });
+            }
+
+            emit_event(
+                "DealFinalized",
+                DealFinalizedEvent {
+                    token_id: property_id,
+                    buyer_id: bid.bidder.clone(),
+                    seller_id: property.owner_id.clone(),
+                    amount: bid.amount,
+                    lease_duration_nanos: property.lease_duration_days.unwrap_or(0)
+                        * 24
+                        * 60
+                        * 60
+                        * 1_000_000_000,
+                },
+            );
+        }
+    }
+}
+
+// ---- Lease renewal ----
+//
+// A renewal is a Lease bid placed the normal way (ft_on_transfer) by the
+// account that already holds the property's active lease. Unlike a regular
+// bid it doesn't compete for the NFT — the tenant already has it — so it
+// skips the NFT-transfer machinery entirely and just extends the existing
+// Lease and mints this term's own document. accept_bid/accept_bid_with_escrow
+// deliberately refuse to touch a bid while the property has an active lease
+// (see their has_active_lease guard); this is the one path allowed to act
+// while a lease is active, and only for the current tenant's own bid.
+pub fn internal_accept_lease_renewal(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+) -> Promise {
+    lock_bid(contract, property_id, bid_id);
+
+    let (owner_id, lease_duration_days, current_lease) = {
+        let property = contract
+            .properties
+            .get(&property_id)
+            .expect("Property does not exist");
+        (
+            property.owner_id.clone(),
+            property.lease_duration_days,
+            property.active_lease.clone(),
+        )
+    };
+
+    assert_eq!(
+        owner_id,
+        env::predecessor_account_id(),
+        "Only the property owner can accept a lease renewal"
+    );
+
+    let lease = current_lease.expect("Property has no active lease to renew");
+    let duration_days =
+        lease_duration_days.expect("Property is not configured with a lease duration");
+
+    let bid = {
+        let bids = contract.bids.get(&property_id).expect("Bid does not exist");
+        get_bid_from_list(bids, bid_id)
+    };
+
+    assert_eq!(
+        bid.property_id, property_id,
+        "Bid is not for the specified property"
+    );
+    require!(
+        matches!(&bid.action, Action::Lease),
+        "Renewal bid must be a Lease bid"
+    );
+    require!(
+        bid.status == BidStatus::Pending,
+        "Bid is not in a pending state"
+    );
+    assert_eq!(
+        bid.bidder, lease.tenant_id,
+        "Only the current tenant's own bid can be accepted as a renewal"
+    );
+
+    // Extend from the lease's own end_time, not from now — renewing a few
+    // days early (or a few days after end_time, before anyone reclaims)
+    // shouldn't shift the schedule or waste/duplicate any paid-for time.
+    let new_end_time = checked_add_u64(
+        lease.end_time,
+        checked_mul_u64(
+            duration_days,
+            24 * 60 * 60 * 1_000_000_000,
+            "renewal duration",
+        ),
+        "renewal end_time",
+    );
+
+    {
+        let bids = contract
+            .bids
+            .get_mut(&property_id)
+            .expect("Bid does not exist");
+        update_bid_in_list(bids, bid_id, |b| {
+            b.status = BidStatus::Accepted;
+            b.updated_at = env::block_timestamp();
+            b.lease_id = Some(lease.id);
+        });
+    }
+
+    emit_event(
+        "BidApproved",
+        BidApprovedEvent {
+            token_id: property_id,
+            bidder_id: bid.bidder.clone(),
+            seller_id: owner_id.clone(),
+            amount: bid.amount,
+        },
+    );
+
+    let promise = ft_contract::ext(bid.stablecoin_token.clone())
+        .with_attached_deposit(NearToken::from_yoctonear(1))
+        .with_static_gas(Gas::from_tgas(30))
+        .ft_transfer(owner_id.clone(), U128(bid.amount));
+
+    let current_balance = *contract
+        .stable_coin_balances
+        .get(&bid.stablecoin_token)
+        .unwrap_or(&0);
+    contract.stable_coin_balances.insert(
+        bid.stablecoin_token.clone(),
+        checked_sub_u128(current_balance, bid.amount, "accept_lease_renewal balance"),
+    );
+
+    promise.then(
+        crate::ShedaContract::ext(env::current_account_id())
+            .with_static_gas(Gas::from_tgas(50))
+            .accept_lease_renewal_callback(property_id, bid_id, new_end_time),
+    )
+}
+
+pub fn accept_lease_renewal_callback(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+    new_end_time: u64,
+) {
+    unlock_bid(contract, property_id, bid_id);
+    match env::promise_result(0) {
+        PromiseResult::Successful(_) => {
+            let bid = {
+                let bids = contract.bids.get(&property_id).expect("Bid does not exist");
+                get_bid_from_list(bids, bid_id)
+            };
+            let lease_id = bid.lease_id.expect("Renewal bid missing lease_id");
+
+            let mut lease = contract
+                .leases
+                .get(&lease_id)
+                .cloned()
+                .expect("Lease not found");
+            lease.end_time = new_end_time;
+            // The deposit is held for the whole tenancy, so the owner's window
+            // to claim against it moves with the new end date rather than
+            // lapsing part-way through a renewed lease.
+            lease.damage_claim_deadline = checked_add_u64(
+                new_end_time,
+                contract.damage_claim_window_ns,
+                "damage claim deadline",
+            );
+            lease.active = true;
+            contract.leases.insert(lease_id, lease.clone());
+
+            let mut property = contract
+                .properties
+                .get(&property_id)
+                .cloned()
+                .expect("Property does not exist");
+            property.active_lease = Some(lease.clone());
+            let owner_id = property.owner_id.clone();
+            contract.properties.insert(property_id, property);
+
+            // This renewal's own permanent document — never touches or
+            // reissues the original term's token.
+            let document_token_id = format!("doc:{}:{}", property_id, bid_id);
+            let token_metadata =
+                near_contract_standards::non_fungible_token::metadata::TokenMetadata {
+                    title: Some(format!(
+                        "Rent Agreement (Renewal) #{} — Property #{}",
+                        bid_id, property_id
+                    )),
+                    description: Some(format!(
+                        "Lease renewal for property #{}, new term ends at {}",
+                        property_id, new_end_time
+                    )),
+                    copies: Some(1),
+                    extra: Some(build_document_extra(
+                        property_id,
+                        bid_id,
+                        "Lease",
+                        true,
+                        Some(lease.start_time),
+                        Some(new_end_time),
+                    )),
+                    ..Default::default()
+                };
+            // Same storage problem as the document mint in
+            // `internal_confirm_document_release`, and here it cannot be
+            // solved by charging the caller at all: this runs in a promise
+            // callback, which carries no attached deposit no matter what the
+            // tenant sent to `accept_lease_renewal`. `internal_mint` therefore
+            // panicked with "Must attach N NEAR to cover storage" every time a
+            // landlord accepted a renewal.
+            contract.tokens.internal_mint_with_refund(
+                document_token_id.clone(),
+                owner_id.clone(),
+                Some(token_metadata),
+                None,
+            );
+            contract.tokens.internal_transfer(
+                &owner_id,
+                &bid.bidder,
+                &document_token_id,
+                None,
+                None,
+            );
+
+            if let Some(bids) = contract.bids.get_mut(&property_id) {
+                let _ = update_bid_in_list(bids, bid_id, |b| {
+                    b.status = BidStatus::Completed;
+                    b.updated_at = env::block_timestamp();
+                    b.document_token_id = Some(document_token_id.clone());
+                    b.escrow_release_tx = Some(format!("block:{}", env::block_height()));
+                });
+            }
+
+            emit_event(
+                "LeaseRenewed",
+                LeaseRenewedEvent {
+                    token_id: property_id,
+                    lease_id,
+                    tenant_id: bid.bidder.clone(),
+                    owner_id,
+                    amount: bid.amount,
+                    new_end_time,
+                },
+            );
+        }
+        PromiseResult::Failed => {
+            let bid = {
+                let bids: &Vec<Bid> = contract.bids.get(&property_id).expect("Bid does not exist");
+                get_bid_from_list(bids, bid_id)
+            };
+
+            let current_balance = *contract
+                .stable_coin_balances
+                .get(&bid.stablecoin_token)
+                .unwrap_or(&0);
+            contract.stable_coin_balances.insert(
+                bid.stablecoin_token.clone(),
+                checked_add_u128(current_balance, bid.amount, "accept_lease_renewal revert"),
+            );
+
+            if let Some(bids) = contract.bids.get_mut(&property_id) {
+                let _ = update_bid_in_list(bids, bid_id, |b| {
+                    b.status = BidStatus::Pending;
+                    b.updated_at = env::block_timestamp();
+                    b.lease_id = None;
+                });
+            }
+
+            log!("Lease renewal payment failed; balance and status reverted to Pending.");
+        }
+    }
+}
+
+// Every document/agreement token this contract mints must be traceable back
+// to the exact property it's for — the token_id already encodes it
+// ("doc:{property_id}:{bid_id}"), but that only helps a caller who knows to
+// parse the id. This puts the same information in the title (human-readable)
+// and in `extra` as machine-readable JSON, for indexers/wallets/the app to
+// read directly without parsing IDs. All interpolated values here are
+// non-string (u64/bool) or a literal we control ("Purchase"/"Lease"), so
+// plain string formatting is safe — no untrusted input needs escaping.
+fn build_document_extra(
+    property_id: u64,
+    bid_id: u64,
+    action_label: &str,
+    is_renewal: bool,
+    lease_start: Option<u64>,
+    lease_end: Option<u64>,
+) -> String {
+    format!(
+        "{{\"property_id\":{},\"bid_id\":{},\"action\":\"{}\",\"is_renewal\":{},\"lease_start\":{},\"lease_end\":{}}}",
+        property_id,
+        bid_id,
+        action_label,
+        is_renewal,
+        lease_start
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "null".to_string()),
+        lease_end
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "null".to_string()),
+    )
+}
+
+pub fn internal_confirm_document_release(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+    document_image_uri: String,
+    document_description: String,
+) -> bool {
+    let property_owner_id = {
+        let property = contract
+            .properties
+            .get(&property_id)
+            .expect("Property does not exist");
+        property.owner_id.clone()
+    };
+
+    assert_eq!(
+        property_owner_id,
+        env::predecessor_account_id(),
+        "Only the property owner can release documents"
+    );
+
+    let bid_snapshot = {
+        let bids = contract.bids.get(&property_id).expect("Bid does not exist");
+        get_bid_from_list(bids, bid_id)
+    };
+
+    if bid_snapshot.status != BidStatus::Accepted {
+        env::panic_str("Bid is not in an accepted state");
+    }
+
+    if bid_snapshot.document_token_id.is_some() {
+        env::panic_str("Document already minted for this bid");
+    }
+
+    let trimmed_uri = document_image_uri.trim();
+    if trimmed_uri.is_empty() {
+        env::panic_str("Document image URI is required");
+    }
+
+    let trimmed_description = document_description.trim();
+    if trimmed_description.is_empty() {
+        env::panic_str("Document description is required");
+    }
+
+    let document_token_id = format!("doc:{}:{}", property_id, bid_id);
+    let (agreement_label, action_label) = match bid_snapshot.action {
+        Action::Purchase => ("Property Document", "Purchase"),
+        Action::Lease => ("Rent Agreement", "Lease"),
+    };
+
+    // Path B (accept_bid_with_escrow) — the only path that reaches this
+    // function — already creates the Lease before docs can be released, so
+    // bid_snapshot.lease_id and its real start/end are available here.
+    let (lease_start, lease_end) = bid_snapshot
+        .lease_id
+        .and_then(|id| contract.leases.get(&id))
+        .map(|lease| (Some(lease.start_time), Some(lease.end_time)))
+        .unwrap_or((None, None));
+
+    let token_metadata = near_contract_standards::non_fungible_token::metadata::TokenMetadata {
+        title: Some(format!(
+            "{} #{} — Property #{}",
+            agreement_label, bid_id, property_id
+        )),
+        description: Some(trimmed_description.to_string()),
+        media: Some(trimmed_uri.to_string()),
+        copies: Some(1),
+        extra: Some(build_document_extra(
+            property_id,
+            bid_id,
+            action_label,
+            false,
+            lease_start,
+            lease_end,
+        )),
+        ..Default::default()
+    };
+
+    // `internal_mint` bills the *caller* for the new token's storage and
+    // panics ("Must attach N NEAR to cover storage") when they haven't
+    // attached it. `confirm_document_release` never asked for a storage
+    // deposit, so this panicked on every call and the seller could not hand
+    // over the agreement at all — the whole escrow purchase flow dead-ended
+    // here.
+    //
+    // The contract carries the cost instead. Making the seller pay would mean
+    // quoting a deposit that varies with the metadata they typed, and the same
+    // mint runs from `accept_lease_renewal_callback`, where there is no
+    // attached deposit to bill against in the first place.
+    contract.tokens.internal_mint_with_refund(
+        document_token_id.clone(),
+        property_owner_id.clone(),
+        Some(token_metadata),
+        None,
+    );
+    contract.tokens.internal_transfer(
+        &property_owner_id,
+        &bid_snapshot.bidder,
+        &document_token_id,
+        None,
+        None,
+    );
+
+    if let Some(bids) = contract.bids.get_mut(&property_id) {
+        let _ = update_bid_in_list(bids, bid_id, |bid| {
+            if bid.status != BidStatus::Accepted {
+                env::panic_str("Bid is not in an accepted state");
+            }
+            bid.status = BidStatus::DocsReleased;
+            bid.updated_at = env::block_timestamp();
+            bid.document_token_id = Some(document_token_id.clone());
+            bid.document_image_uri = Some(trimmed_uri.to_string());
+            bid.document_description = Some(trimmed_description.to_string());
+        });
+    } else {
+        env::panic_str("Bid does not exist");
+    }
+
+    true
+}
+
+pub fn internal_confirm_document_receipt(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+) -> bool {
+    if let Some(bids) = contract.bids.get_mut(&property_id) {
+        let _ = update_bid_in_list(bids, bid_id, |bid| {
+            if bid.status != BidStatus::DocsReleased {
+                env::panic_str("Bid is not in a document released state");
+            }
+            if bid.document_token_id.is_none() {
+                env::panic_str("No document was minted for this bid");
+            }
+            if bid.bidder != env::predecessor_account_id() {
+                env::panic_str("Only the bidder can confirm receipt");
+            }
+            bid.status = BidStatus::DocsConfirmed;
+            bid.updated_at = env::block_timestamp();
+            bid.escrow_release_after = Some(checked_add_u64(
+                env::block_timestamp(),
+                contract.escrow_release_delay_ns,
+                "escrow timelock",
+            ));
+        });
+    } else {
+        env::panic_str("Bid does not exist");
+    }
+
+    true
+}
+
+pub fn internal_release_escrow(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+) -> Promise {
+    lock_bid(contract, property_id, bid_id);
+    let bid = {
+        let bids = contract.bids.get(&property_id).expect("Bid does not exist");
+        get_bid_from_list(bids, bid_id)
+    };
+
+    let property = contract
+        .properties
+        .get(&property_id)
+        .expect("Property does not exist");
+
+    assert_eq!(
+        bid.bidder,
+        env::predecessor_account_id(),
+        "Only the bidder can release escrow"
+    );
+
+    if bid.status != BidStatus::DocsConfirmed {
+        env::panic_str("Bid is not in a document confirmed state");
+    }
+
+    if let Some(unlock_at) = bid.escrow_release_after {
+        require!(
+            env::block_timestamp() >= unlock_at,
+            "Escrow timelock not reached"
+        );
+    }
+
+    let promise = ft_contract::ext(bid.stablecoin_token.clone())
+        .with_attached_deposit(NearToken::from_yoctonear(1))
+        .with_static_gas(Gas::from_tgas(30))
+        .ft_transfer(property.owner_id.clone(), U128(bid.amount));
+
+    let current_balance = *contract
+        .stable_coin_balances
+        .get(&bid.stablecoin_token)
+        .unwrap_or(&0);
+    contract.stable_coin_balances.insert(
+        bid.stablecoin_token.clone(),
+        checked_sub_u128(current_balance, bid.amount, "release_escrow"),
+    );
+
+    promise.then(
+        crate::ShedaContract::ext(env::current_account_id())
+            .with_static_gas(Gas::from_tgas(50))
+            .release_escrow_callback(property_id, bid_id),
+    )
+}
+
+pub fn release_escrow_callback(contract: &mut ShedaContract, property_id: u64, bid_id: u64) {
+    unlock_bid(contract, property_id, bid_id);
+    match env::promise_result(0) {
+        PromiseResult::Successful(_) => {
+            let property = contract
+                .properties
+                .get(&property_id)
+                .expect("Property does not exist")
+                .clone();
+
+            let bid = {
+                let bids = contract.bids.get(&property_id).expect("Bid does not exist");
+                get_bid_from_list(bids, bid_id)
+            };
+
+            if let Some(bids) = contract.bids.get_mut(&property_id) {
+                let _ = update_bid_in_list(bids, bid_id, |bid| {
+                    bid.status = BidStatus::PaymentReleased;
+                    bid.updated_at = env::block_timestamp();
+                    bid.escrow_release_tx = Some(format!("block:{}", env::block_height()));
+                });
+            }
+
+            match bid.action {
+                Action::Purchase => {
+                    contract.tokens.internal_transfer(
+                        &property.owner_id,
+                        &bid.bidder,
+                        &property_id.to_string(),
+                        None,
+                        None,
+                    );
+
+                    // Keep Property.owner_id and property_per_owner in step
+                    // with the token we just moved — without this the buyer
+                    // holds the NFT but the contract still records the seller
+                    // as owner, which leaves the property unusable by either
+                    // party.
+                    transfer_property_ownership(contract, property_id, &bid.bidder, bid.amount);
+                }
+                Action::Lease => {
+                    // The Lease record was already created in
+                    // internal_accept_bid_with_escrow when the bid was accepted
+                    // (escrow_held there tracks the funds we just released).
+                    // Creating a second Lease here would orphan that first
+                    // record (it stays active/untracked in `leases`) and would
+                    // never be indexed in `lease_per_tenant`, so all we do at
+                    // this stage is hand over the NFT.
+                    contract.tokens.internal_transfer(
+                        &property.owner_id,
+                        &bid.bidder,
+                        &property_id.to_string(),
+                        None,
+                        None,
+                    );
+                }
+            }
+        }
+        PromiseResult::Failed => {
+            let bid = {
+                let bids: &Vec<Bid> = contract.bids.get(&property_id).expect("Bid does not exist");
+                get_bid_from_list(bids, bid_id)
+            };
+
+            let current_balance = *contract
+                .stable_coin_balances
+                .get(&bid.stablecoin_token)
+                .unwrap_or(&0);
+            contract.stable_coin_balances.insert(
+                bid.stablecoin_token.clone(),
+                checked_add_u128(current_balance, bid.amount, "release_escrow revert"),
+            );
+
+            if let Some(bids) = contract.bids.get_mut(&property_id) {
+                let _ = update_bid_in_list(bids, bid_id, |bid| {
+                    bid.status = BidStatus::DocsConfirmed;
+                    bid.updated_at = env::block_timestamp();
+                });
+            }
+
+            // NOTE: do not panic here, it would discard the revert writes above
+            // (a panicking receipt rolls back every state change it made) and
+            // leave the balance short with the bid stuck past DocsConfirmed.
+            log!("Escrow release failed. Payment transfer aborted; balance and status reverted to DocsConfirmed.");
+        }
+    }
+}
+
+pub fn internal_raise_bid_dispute(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+    reason: String,
+) -> bool {
+    let property = contract
+        .properties
+        .get(&property_id)
+        .expect("Property does not exist");
+
+    if let Some(bids) = contract.bids.get_mut(&property_id) {
+        let _ = update_bid_in_list(bids, bid_id, |bid| {
+            let caller = env::predecessor_account_id();
+            if caller != bid.bidder && caller != property.owner_id {
+                env::panic_str("Only buyer or seller can raise dispute");
+            }
+
+            match bid.status {
+                BidStatus::Accepted | BidStatus::DocsReleased | BidStatus::DocsConfirmed => {}
+                _ => env::panic_str("Bid is not in a disputable state"),
+            }
+
+            bid.status = BidStatus::Disputed;
+            bid.updated_at = env::block_timestamp();
+            bid.dispute_reason = Some(reason.clone());
+        });
+    } else {
+        env::panic_str("Bid does not exist");
+    }
+
+    emit_event(
+        "DisputeRaised",
+        DisputeRaisedEvent {
+            token_id: property_id,
+            tenant_id: env::predecessor_account_id(),
+            bond_amount: 0,
+        },
+    );
+
+    true
+}
+
+pub fn internal_complete_transaction(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+) -> bool {
+    let property = contract
+        .properties
+        .get(&property_id)
+        .expect("Property does not exist");
+
+    if let Some(bids) = contract.bids.get_mut(&property_id) {
+        let _ = update_bid_in_list(bids, bid_id, |bid| {
+            let caller = env::predecessor_account_id();
+            if caller != bid.bidder && caller != property.owner_id {
+                env::panic_str("Only buyer or seller can complete the transaction");
+            }
+
+            if bid.status != BidStatus::PaymentReleased {
+                env::panic_str("Bid is not in a payment released state");
+            }
+
+            bid.status = BidStatus::Completed;
+            bid.updated_at = env::block_timestamp();
+        });
+    } else {
+        env::panic_str("Bid does not exist");
+    }
+
+    true
+}
+
+/// Unwind a deal that has gone silent, once the timeout has genuinely elapsed.
+///
+/// # Previously exploitable
+///
+/// This took `timeout_nanos` from the caller and had no access control at all.
+/// Since the check was `elapsed < timeout_nanos`, passing `0` made it vacuously
+/// true, so **anyone** could force-refund **any** bid sitting in `Accepted` or
+/// `DocsReleased`, at any moment. That allowed:
+///
+/// - griefing a seller by unwinding their accepted deals at will;
+/// - and worse, a buyer calling it themselves at `DocsReleased` to get their
+///   money back *while keeping the agreement NFT* — defeating the burn in
+///   `buyer_reject_documents_and_cancel`, which is the only thing making it
+///   safe for a seller to hand documents over.
+///
+/// The timeout now comes from contract state, and only the two parties to the
+/// deal or an admin may invoke it. Callers no longer pass a duration.
+pub fn internal_refund_escrow_timeout(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+) -> Promise {
+    lock_bid(contract, property_id, bid_id);
+    let bid = {
+        let bids = contract.bids.get(&property_id).expect("Bid does not exist");
+        get_bid_from_list(bids, bid_id)
+    };
+
+    match bid.status {
+        BidStatus::Accepted | BidStatus::DocsReleased => {}
+        _ => env::panic_str("Bid is not in a refundable timeout state"),
+    }
+
+    // Either party can unwind a stalled deal — the buyer to free their funds,
+    // the seller to free their property — plus admins for support cases.
+    // Anyone else has no stake in it and no business collapsing it.
+    let caller = env::predecessor_account_id();
+    let property_owner = contract
+        .properties
+        .get(&property_id)
+        .expect("Property does not exist")
+        .owner_id
+        .clone();
+    require!(
+        caller == bid.bidder || caller == property_owner || contract.admins.contains(&caller),
+        "Only the bidder, the property owner or an admin can time out this deal"
+    );
+
+    // From state, not from the caller. The old signature let anyone pass 0 and
+    // skip the wait entirely.
+    let timeout_nanos = contract.stalled_deal_timeout_ns;
+    let now = env::block_timestamp();
+    let elapsed = now.saturating_sub(bid.updated_at);
+    require!(
+        elapsed >= timeout_nanos,
+        format!(
+            "This deal can't be timed out yet — {} seconds still to go.",
+            (timeout_nanos - elapsed) / 1_000_000_000
+        )
+    );
+
+    // A timed-out deal at `DocsReleased` means the buyer is walking away while
+    // holding the seller's agreement, so it burns here for the same reason it
+    // burns in `buyer_reject_documents_and_cancel`. Without this, timing out
+    // would be the loophole that route closes.
+    if let Some(document_token_id) = bid.document_token_id.clone() {
+        burn_nft(contract, document_token_id.clone());
+        log!(
+            "Burned agreement {} — deal timed out at DocsReleased",
+            document_token_id
+        );
+    }
+
+    let promise = ft_contract::ext(bid.stablecoin_token.clone())
+        .with_attached_deposit(NearToken::from_yoctonear(1))
+        .with_static_gas(Gas::from_tgas(30))
+        .ft_transfer(bid.bidder.clone(), U128(bid.amount));
+
+    let current_balance = *contract
+        .stable_coin_balances
+        .get(&bid.stablecoin_token)
+        .unwrap_or(&0);
+    contract.stable_coin_balances.insert(
+        bid.stablecoin_token.clone(),
+        checked_sub_u128(current_balance, bid.amount, "refund_escrow_timeout"),
+    );
+
+    promise.then(
+        crate::ShedaContract::ext(env::current_account_id())
+            .with_static_gas(Gas::from_tgas(30))
+            .refund_escrow_timeout_callback(property_id, bid_id, bid.stablecoin_token, bid.amount),
+    )
+}
+
+pub fn refund_escrow_timeout_callback(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+    stablecoin_token: AccountId,
+    amount: u128,
+) {
+    unlock_bid(contract, property_id, bid_id);
+    match env::promise_result(0) {
+        PromiseResult::Successful(_) => {
+            let bidder_id = contract
+                .bids
+                .get(&property_id)
+                .map(|bids| get_bid_from_list(bids, bid_id).bidder)
+                .unwrap_or_else(|| env::predecessor_account_id());
+            if let Some(bids) = contract.bids.get_mut(&property_id) {
+                let _ = update_bid_in_list(bids, bid_id, |bid| {
+                    bid.status = BidStatus::Cancelled;
+                    bid.updated_at = env::block_timestamp();
+                    bid.escrow_release_tx = Some(format!("refund:{}", env::block_height()));
+                });
+            }
+
+            emit_event(
+                "BidRefunded",
+                BidRefundedEvent {
+                    token_id: property_id,
+                    bid_id,
+                    bidder_id,
+                    amount,
+                    reason: "escrow_timeout".to_string(),
+                },
+            );
+        }
+        PromiseResult::Failed => {
+            let current_balance = *contract
+                .stable_coin_balances
+                .get(&stablecoin_token)
+                .unwrap_or(&0);
+            contract.stable_coin_balances.insert(
+                stablecoin_token,
+                checked_add_u128(current_balance, amount, "refund_escrow_timeout revert"),
+            );
+
+            // NOTE: no panic here — see accept_bid_callback/release_escrow_callback
+            // for why a trailing panic would discard this very revert write.
+            log!("Timeout refund failed. Balance reverted.");
+        }
+    }
+}
+
+pub fn internal_delist_property(contract: &mut ShedaContract, property_id: u64) {
+    let mut property = contract
+        .properties
+        .get(&property_id)
+        .expect("Property not found")
+        .clone();
+
+    assert_eq!(
+        property.owner_id,
+        env::predecessor_account_id(),
+        "Only the property owner can delist the property"
+    );
+
+    assert!(
+        property.active_lease.is_none(),
+        "Cannot delist a property with an active lease"
+    );
+
+    // No `sold.is_none()` guard. `sold` records how the *current* owner came
+    // by this property, so it is their own purchase history — not a reason to
+    // stop them taking their listing down. The check was unreachable while
+    // `sold` was never assigned; now that it is, keeping it would newly lock
+    // every bought property into its listing.
+
+    // Delisting is less destructive than deleting — the property survives —
+    // but it still pulls the listing out from under anyone who has funds in
+    // escrow against it, leaving their bid unresolvable through the normal
+    // flow. Same guard, same reasoning.
+    assert_no_blocking_bids(contract, property_id, "delisted");
+
+    // Set the property as not for sale
+    property.is_for_sale = false;
+
+    // Update the property in storage
+    contract.properties.insert(property_id, property);
+
+    emit_event(
+        "PropertyDelisted",
+        PropertyDelistedEvent {
+            token_id: property_id,
+            actor_id: env::predecessor_account_id(),
+        },
+    );
+}
+
+/// Refuse to remove a property while any bid still has a claim on it.
+///
+/// Bids hold the bidder's stablecoins in escrow from the moment they're
+/// placed until they're refunded or paid out. Removing the property they
+/// point at leaves those funds sitting in the contract with nothing left to
+/// settle them against — nobody can accept, reject, cancel or refund a bid on
+/// a property that no longer exists.
+///
+/// The panic message names every blocking bid, its bidder, state and amount,
+/// because "cannot delete" on its own gives the owner nothing to act on. What
+/// they need to know is which bids to resolve first.
+///
+/// `action` is the verb for the message ("deleted" / "delisted").
+pub fn assert_no_blocking_bids(contract: &ShedaContract, property_id: u64, action: &str) {
+    let blocking: Vec<&Bid> = contract
+        .bids
+        .get(&property_id)
+        .map(|bids| {
+            bids.iter()
+                .filter(|bid| ShedaContract::is_bid_blocking(&bid.status))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if blocking.is_empty() {
+        return;
+    }
+
+    let details = blocking
+        .iter()
+        .map(|bid| {
+            format!(
+                "bid #{} by {} ({:?}, {} tokens)",
+                bid.id, bid.bidder, bid.status, bid.amount
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+
+    env::panic_str(&format!(
+        "Cannot {} this property: {} bid(s) still hold funds in escrow against it — {}. \
+         Reject or cancel them first so the bidders are refunded.",
+        action,
+        blocking.len(),
+        details
+    ));
+}
+
+/// Hand a property over to its new owner, keeping `Property.owner_id` and the
+/// `property_per_owner` index in step with the NEP-171 token.
+///
+/// The NFT was already being transferred on a completed purchase, but neither
+/// of those two were updated alongside it, so the token said the buyer owned
+/// the property while the contract's own records still said the seller did.
+/// That left a purchased property permanently stuck: the seller couldn't act
+/// on it (`delete_property`/`delist_property` both refused once `sold` was
+/// set) and the buyer couldn't either (they weren't `owner_id`), and it never
+/// appeared in the buyer's portfolio, since `get_property_by_owner` reads
+/// `property_per_owner`.
+///
+/// The property is left unlisted so the new owner can do whatever they like
+/// with it — relist it for sale, put it up for lease, or transfer it on.
+///
+/// `sold` is kept, as a permanent record of the sale. It used to be cleared
+/// right here, because leaving it set re-tripped those delist/delete guards.
+/// The guards were the actual mistake: `sold` describes how the *current*
+/// owner came by the property, so refusing their own delist or delete on the
+/// strength of it is backwards. They are gone, which lets the record stay —
+/// and it has to stay, because `claim_lost_bid` reads it to decide whether a
+/// losing purchase bid may be withdrawn, and `SoldView` reports it to clients.
+/// Clearing it is what made both of those dead.
+///
+/// Call this immediately after `tokens.internal_transfer`, so the token and
+/// these records can never drift apart again.
+///
+/// Purchases only. A lease deliberately leaves `owner_id` alone — the
+/// landlord stays the owner for the duration, and `internal_expire_lease`
+/// hands the token back when it ends. `sale_amount` is the winning bid.
+pub fn transfer_property_ownership(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    new_owner: &AccountId,
+    sale_amount: u128,
+) {
+    let mut property = contract
+        .properties
+        .get(&property_id)
+        .expect("Property not found")
+        .clone();
+
+    let previous_owner = property.owner_id.clone();
+    if previous_owner == *new_owner {
+        return;
+    }
+
+    // Drop it from the previous owner's index, removing the key outright when
+    // that was their last property (same cleanup internal_delete_property does).
+    let mut previous_owner_properties = contract
+        .property_per_owner
+        .get(&previous_owner)
+        .cloned()
+        .unwrap_or_default();
+    previous_owner_properties.retain(|id| *id != property_id);
+    if previous_owner_properties.is_empty() {
+        contract.property_per_owner.remove(&previous_owner);
+    } else {
+        contract
+            .property_per_owner
+            .insert(previous_owner.clone(), previous_owner_properties);
+    }
+
+    // Add it to the new owner's index, guarding against a double-push in case
+    // this ever runs twice for the same pair.
+    let mut new_owner_properties = contract
+        .property_per_owner
+        .get(new_owner)
+        .cloned()
+        .unwrap_or_default();
+    if !new_owner_properties.contains(&property_id) {
+        new_owner_properties.push(property_id);
+    }
+    contract
+        .property_per_owner
+        .insert(new_owner.clone(), new_owner_properties);
+
+    property.owner_id = new_owner.clone();
+
+    // Record the sale rather than discarding it.
+    //
+    // `Sold` was declared, exposed through `SoldView`, and read by
+    // `claim_lost_bid` — but never constructed anywhere, and this line used to
+    // clear the field outright. `property.sold` was therefore permanently
+    // `None`, which made the purchase branch of `can_claim` permanently false:
+    // a losing *purchase* bid could never be withdrawn by its owner.
+    //
+    // That is a way to strand real money. Neither accept path is guaranteed to
+    // sweep the losing bids — both stop refunding once gas runs low and leave
+    // the rest `Pending` — and a bid placed after the winner was accepted is
+    // never swept at all. `claim_lost_bid` is the bidder's own way out of
+    // exactly those cases, and for purchases it did not work.
+    //
+    // Kept as permanent history, not cleared when the new owner re-lists: the
+    // client already reads it that way, ranking `is_for_sale` above `sold` so
+    // a re-listed property shows as listed rather than sold forever.
+    property.sold = Some(Sold {
+        property_id,
+        buyer_id: new_owner.clone(),
+        amount: sale_amount,
+        previous_owner_id: previous_owner.clone(),
+        sold_at: env::block_timestamp(),
+    });
+
+    property.is_for_sale = false;
+    contract.properties.insert(property_id, property);
+}
+
+pub fn internal_delete_property(contract: &mut ShedaContract, property_id: u64) {
+    let property = contract
+        .properties
+        .get(&property_id)
+        .expect("Property not found")
+        .clone();
+
+    assert_eq!(
+        property.owner_id,
+        env::predecessor_account_id(),
+        "Only the property owner can delete the property"
+    );
+
+    assert!(
+        property.active_lease.is_none(),
+        "Cannot delete a property with an active lease"
+    );
+
+    // No `sold.is_none()` guard — same reasoning as delisting, and the stakes
+    // are higher here: this burns the NFT, so refusing on the buyer's own
+    // purchase record would strand every bought property permanently.
+    // `assert_no_blocking_bids` below is what actually protects anyone with
+    // funds riding on this property.
+
+    assert_no_blocking_bids(contract, property_id, "deleted");
+
+    burn_nft(contract, property_id.to_string());
+
+    // Remove the property from storage
+    contract.properties.remove(&property_id);
+
+    let mut owner_properties = contract
+        .property_per_owner
+        .get(&property.owner_id)
+        .cloned()
+        .unwrap_or_default();
+    owner_properties.retain(|id| *id != property_id);
+    if owner_properties.is_empty() {
+        contract.property_per_owner.remove(&property.owner_id);
+    } else {
+        contract
+            .property_per_owner
+            .insert(property.owner_id.clone(), owner_properties);
+    }
+
+    emit_event(
+        "PropertyDeleted",
+        PropertyDeletedEvent {
+            token_id: property_id,
+            actor_id: env::predecessor_account_id(),
+        },
+    );
+}
+
+pub fn internal_raise_dispute(contract: &mut ShedaContract, lease_id: u64, reason: String) {
+    let mut lease = contract
+        .leases
+        .get(&lease_id)
+        .cloned()
+        .expect("Lease not found");
+
+    let caller = env::predecessor_account_id();
+    assert_eq!(
+        lease.tenant_id, caller,
+        "Only the tenant can raise a dispute"
+    );
+
+    assert_eq!(
+        lease.dispute_status,
+        crate::models::DisputeStatus::None,
+        "Dispute already raised for this lease"
+    );
+
+    lease.dispute_status = crate::models::DisputeStatus::Raised;
+    lease.dispute = Some(crate::models::DisputeInfo {
+        raised_by: caller,
+        raised_at: env::block_timestamp(),
+        reason,
+        claimed_amount: None,
+        winner: None,
+        resolution_notes: None,
+        deduction_amount: None,
+        resolved_by: None,
+        resolved_at: None,
+    });
+
+    let property_id = lease.property_id;
+    contract.leases.insert(lease_id, lease);
+
+    emit_event(
+        "DisputeRaised",
+        DisputeRaisedEvent {
+            token_id: property_id,
+            tenant_id: env::predecessor_account_id(),
+            bond_amount: 0,
+        },
+    );
+}
+
+pub fn internal_expire_lease(contract: &mut ShedaContract, lease_id: u64) {
+    let mut lease = contract
+        .leases
+        .get(&lease_id)
+        .cloned()
+        .expect("Lease not found");
+
+    let current_time = env::block_timestamp();
+
+    // Check if lease has expired
+    require!(lease.end_time <= current_time, "Lease has not expired yet");
+
+    require!(lease.active, "Lease is already inactive");
+
+    // Mark lease as inactive
+    lease.active = false;
+    contract.leases.insert(lease_id, lease.clone());
+
+    log!("Lease {} has ended and is now inactive", lease_id);
+
+    // Transfer NFT back to owner
+    let property = contract
+        .properties
+        .get(&lease.property_id)
+        .expect("Property not found");
+
+    contract.tokens.internal_transfer(
+        &lease.tenant_id,
+        &property.owner_id,
+        &lease.property_id.to_string(),
+        None,
+        None,
+    );
+
+    // Update property to remove active lease
+    let mut updated_property = property.clone();
+    updated_property.active_lease = None;
+    contract
+        .properties
+        .insert(lease.property_id, updated_property);
+
+    emit_event(
+        "LeaseExpired",
+        LeaseExpiredEvent {
+            token_id: lease.property_id,
+            tenant_id: lease.tenant_id,
+            escrow_returned: 0,
+        },
+    );
+}
+
+/// Settle a bid stuck in `Disputed`.
+///
+/// `internal_raise_bid_dispute` freezes a bid, and nothing else in the
+/// contract ever moved one out again — no refund, no payout, no expiry. The
+/// buyer's stablecoins sat in the contract permanently, and because a disputed
+/// bid still holds a claim on its property, the property could not be deleted
+/// or delisted either. Both sides were stuck with no route out at all.
+///
+/// Only `BuyerWins` and `Split` pay anyone here. `SellerWins` puts the bid
+/// back to `DocsConfirmed` so the deal finishes down the ordinary release
+/// path, which is what knows to transfer ownership on a purchase and open the
+/// lease on a rental — logic worth having exactly one copy of.
+pub fn internal_admin_resolve_bid_dispute(
+    contract: &mut ShedaContract,
+    property_id: u64,
+    bid_id: u64,
+    resolution: DisputeResolution,
+) -> Option<Promise> {
+    let property = contract
+        .properties
+        .get(&property_id)
+        .cloned()
+        .expect("Property does not exist");
+
+    let bid = contract
+        .bids
+        .get(&property_id)
+        .and_then(|bids| bids.iter().find(|b| b.id == bid_id).cloned())
+        .unwrap_or_else(|| env::panic_str("Bid does not exist"));
+
+    require!(
+        bid.status == BidStatus::Disputed,
+        format!(
+            "Bid #{} is {:?}, not Disputed — there is nothing to resolve",
+            bid_id, bid.status
+        )
+    );
+
+    // The buyer keeps the odd unit on a split: it is their money sitting in
+    // the contract, so rounding should not quietly move in the seller's favour.
+    let (buyer_refund, seller_payout) = match resolution {
+        DisputeResolution::BuyerWins => (bid.amount, 0u128),
+        DisputeResolution::SellerWins => (0u128, 0u128),
+        DisputeResolution::Split => {
+            let seller_half = bid.amount / 2;
+            (bid.amount.saturating_sub(seller_half), seller_half)
+        }
+    };
+
+    if resolution == DisputeResolution::SellerWins {
+        // No transfer: hand the deal back to the normal completion path.
+        if let Some(bids) = contract.bids.get_mut(&property_id) {
+            let _ = update_bid_in_list(bids, bid_id, |b| {
+                b.status = BidStatus::DocsConfirmed;
+                b.updated_at = env::block_timestamp();
+            });
+        }
+
+        log!(
+            "Dispute on bid {} resolved in the seller's favour by admin {}; \
+             returned to DocsConfirmed so escrow release can proceed",
+            bid_id,
+            env::predecessor_account_id()
+        );
+
+        emit_event(
+            "BidDisputeResolved",
+            BidDisputeResolvedEvent {
+                token_id: property_id,
+                bid_id,
+                admin_id: env::predecessor_account_id(),
+                resolution: format!("{:?}", resolution),
+                buyer_id: bid.bidder.clone(),
+                seller_id: property.owner_id.clone(),
+                buyer_refund: 0,
+                seller_payout: 0,
+            },
+        );
+
+        return None;
+    }
+
+    // Both remaining outcomes unwind the deal, so the whole escrow leaves the
+    // contract and the property stays with the seller.
+    let total_out = checked_add_u128(buyer_refund, seller_payout, "dispute settlement");
+    let current_balance = *contract
+        .stable_coin_balances
+        .get(&bid.stablecoin_token)
+        .unwrap_or(&0);
+    contract.stable_coin_balances.insert(
+        bid.stablecoin_token.clone(),
+        checked_sub_u128(current_balance, total_out, "dispute settlement"),
+    );
+
+    let mut promise = ft_contract::ext(bid.stablecoin_token.clone())
+        .with_attached_deposit(NearToken::from_yoctonear(1))
+        .with_static_gas(Gas::from_tgas(30))
+        .ft_transfer(bid.bidder.clone(), U128(buyer_refund));
+
+    if seller_payout > 0 {
+        promise = promise.then(
+            ft_contract::ext(bid.stablecoin_token.clone())
+                .with_attached_deposit(NearToken::from_yoctonear(1))
+                .with_static_gas(Gas::from_tgas(30))
+                .ft_transfer(property.owner_id.clone(), U128(seller_payout)),
+        );
+    }
+
+    if let Some(bids) = contract.bids.get_mut(&property_id) {
+        let _ = update_bid_in_list(bids, bid_id, |b| {
+            b.status = BidStatus::Cancelled;
+            b.updated_at = env::block_timestamp();
+        });
+    }
+
+    log!(
+        "Dispute on bid {} resolved as {:?} by admin {}: {} refunded to {}, {} paid to {}",
+        bid_id,
+        resolution,
+        env::predecessor_account_id(),
+        buyer_refund,
+        bid.bidder,
+        seller_payout,
+        property.owner_id
+    );
+
+    emit_event(
+        "BidDisputeResolved",
+        BidDisputeResolvedEvent {
+            token_id: property_id,
+            bid_id,
+            admin_id: env::predecessor_account_id(),
+            resolution: format!("{:?}", resolution),
+            buyer_id: bid.bidder.clone(),
+            seller_id: property.owner_id.clone(),
+            buyer_refund,
+            seller_payout,
+        },
+    );
+
+    Some(promise)
+}
+
+/// The owner claims against a tenant's security deposit.
+///
+/// Only after the lease has ended, only inside the claim window, and only
+/// once. The amount is what the owner is asking for, not what they get — an
+/// admin settles it through `resolve_dispute`, and anything not awarded goes
+/// back to the tenant.
+///
+/// The window is the whole point of the arrangement. Before it opens the
+/// deposit is untouchable, and once it closes the tenant can take the money
+/// back whether the owner cooperates or not, so neither side can strand the
+/// other's funds by going quiet.
+pub fn internal_raise_damage_claim(
+    contract: &mut ShedaContract,
+    lease_id: u64,
+    amount: u128,
+    reason: String,
+) {
+    assert_one_yocto();
+
+    let mut lease = contract
+        .leases
+        .get(&lease_id)
+        .cloned()
+        .expect("Lease not found");
+
+    let owner_id = contract
+        .properties
+        .get(&lease.property_id)
+        .expect("Property not found")
+        .owner_id
+        .clone();
+    assert_eq!(
+        owner_id,
+        env::predecessor_account_id(),
+        "Only the property owner can claim against the deposit"
+    );
+
+    require!(
+        lease.escrow_held > 0,
+        "No security deposit is held for this lease"
+    );
+
+    let now = env::block_timestamp();
+    require!(
+        now >= lease.end_time,
+        "The lease has not ended yet, so there is nothing to settle"
+    );
+    require!(
+        now < lease.damage_claim_deadline,
+        "The window to claim against this deposit has closed"
+    );
+    require!(
+        lease.dispute_status == DisputeStatus::None,
+        "A claim has already been raised for this lease"
+    );
+    require!(
+        amount > 0 && amount <= lease.escrow_held,
+        "Claim must be above zero and no more than the deposit held"
+    );
+
+    let trimmed = reason.trim();
+    require!(!trimmed.is_empty(), "A claim must say what the damage is");
+
+    lease.dispute_status = DisputeStatus::Raised;
+    lease.dispute = Some(crate::models::DisputeInfo {
+        raised_by: owner_id.clone(),
+        raised_at: now,
+        reason: trimmed.to_string(),
+        claimed_amount: Some(amount),
+        winner: None,
+        resolution_notes: None,
+        deduction_amount: None,
+        resolved_by: None,
+        resolved_at: None,
+    });
+    contract.leases.insert(lease_id, lease.clone());
+
+    if let Some(property) = contract.properties.get(&lease.property_id) {
+        let mut property = property.clone();
+        if property
+            .active_lease
+            .as_ref()
+            .is_some_and(|l| l.id == lease_id)
+        {
+            property.active_lease = Some(lease.clone());
+            contract.properties.insert(lease.property_id, property);
+        }
+    }
+
+    emit_event(
+        "DisputeRaised",
+        DisputeRaisedEvent {
+            token_id: lease_id,
+            tenant_id: lease.tenant_id.clone(),
+            bond_amount: amount,
+        },
+    );
+}
+
+/// The tenant takes their security deposit back once the owner's window has
+/// closed without a claim.
+///
+/// Deliberately callable by anyone: the money can only go to the tenant, so
+/// there is nothing to gain by calling it on their behalf, and it means a
+/// tenant who has lost access to the app is not the only one who can unstick
+/// their own funds.
+pub fn internal_refund_damage_deposit(contract: &mut ShedaContract, lease_id: u64) -> Promise {
+    let mut lease = contract
+        .leases
+        .get(&lease_id)
+        .cloned()
+        .expect("Lease not found");
+
+    require!(
+        lease.escrow_held > 0,
+        "No security deposit is held for this lease"
+    );
+    require!(
+        lease.dispute_status != DisputeStatus::Raised,
+        "A damage claim on this lease is still unresolved"
+    );
+
+    let now = env::block_timestamp();
+    require!(
+        now >= lease.damage_claim_deadline,
+        "The owner's window to claim against this deposit is still open"
+    );
+
+    let amount = lease.escrow_held;
+    let token = lease.escrow_token.clone();
+    let tenant = lease.tenant_id.clone();
+
+    // Written down before the transfer and restored by the callback if it
+    // fails, so the contract never reports holding a deposit it has already
+    // sent — the same mistake that made `escrow_held` a phantom balance.
+    lease.escrow_held = 0;
+    contract.leases.insert(lease_id, lease);
+
+    let current_balance = *contract.stable_coin_balances.get(&token).unwrap_or(&0);
+    contract.stable_coin_balances.insert(
+        token.clone(),
+        checked_sub_u128(current_balance, amount, "damage deposit refund"),
+    );
+
+    ft_contract::ext(token.clone())
+        .with_attached_deposit(NearToken::from_yoctonear(1))
+        .with_static_gas(Gas::from_tgas(30))
+        .ft_transfer(tenant, U128(amount))
+        .then(
+            crate::ShedaContract::ext(env::current_account_id())
+                .with_static_gas(Gas::from_tgas(20))
+                .refund_damage_deposit_callback(lease_id, token, U128(amount)),
+        )
+}
+
+/// Puts the deposit back on the lease if the transfer failed.
+pub fn refund_damage_deposit_callback(
+    contract: &mut ShedaContract,
+    lease_id: u64,
+    token: AccountId,
+    amount: u128,
+) {
+    if matches!(env::promise_result(0), PromiseResult::Successful(_)) {
+        return;
+    }
+
+    log!("Damage deposit refund failed, restoring it to the lease");
+    if let Some(lease) = contract.leases.get(&lease_id) {
+        let mut lease = lease.clone();
+        lease.escrow_held = checked_add_u128(lease.escrow_held, amount, "damage deposit restore");
+        contract.leases.insert(lease_id, lease);
+    }
+    let current_balance = *contract.stable_coin_balances.get(&token).unwrap_or(&0);
+    contract.stable_coin_balances.insert(
+        token,
+        checked_add_u128(current_balance, amount, "damage deposit restore balance"),
+    );
+}

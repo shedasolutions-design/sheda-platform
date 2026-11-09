@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Sheda Collections",
+    "slug": "sheda-collection-app",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "shedacollections",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "baseUrl": "/Sheda-Collection-app"
+    },
+    "extra": {
+      "network": "testnet",
+      "marketplaceContract": "market.shedauser.testnet",
+      "stablecoin": "usdt.fakes.testnet"
+    }
+  }
+}

@@ -43,6 +43,20 @@ class PropertyBase(BaseModel):
     is_negotiable: bool
     images: List[PropertyImage]
 
+    # ── Rental terms, mirroring the contract ────────────────────────────────
+    #
+    # Days, the unit the contract stores and the listing form offers. The app
+    # was already sending a term here and it was being dropped on the floor:
+    # Pydantic ignores fields a schema does not declare, so the length of every
+    # tenancy was lost between the form and the database without a word.
+    #
+    # Only meaningful when `listing_type` is rent.
+    lease_duration_days: Optional[int] = None
+
+    # Security deposit in atomic stablecoin units, as a string — the same shape
+    # the chain reports u128 in. `None` or "0" means none is charged.
+    damage_deposit_required: Optional[str] = None
+
     class Config:
         from_attributes = True
 
@@ -77,6 +91,8 @@ class PropertyUpdate(BaseModel):
     wifi: Optional[bool] = None
     is_negotiable: Optional[bool] = None
     images: Optional[List[PropertyImage]] = None
+    lease_duration_days: Optional[int] = None
+    damage_deposit_required: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -94,6 +110,29 @@ class FilterParams(BaseModel):
 class PropertyFeed(BaseModel):
     data: List[PropertyShow]
     next_coursor: int | None
+
+
+class PropertySearchResponse(BaseModel):
+    """What a search returns.
+
+    Whole properties, not index fragments. The Elasticsearch path returned
+    ids, titles and prices with no images or description, which no client
+    could draw a result card from — so a search that "worked" still showed
+    nothing. `data` matches the key the property feed already uses.
+    """
+
+    data: List[PropertyShow]
+    total: int
+    limit: int
+    offset: int
+    # Which path answered: "index" when Elasticsearch ranked the page,
+    # "database" when it was unreachable or had nothing indexed. Surfaced so
+    # an empty page can be told apart from a missing index without digging
+    # through logs.
+    source: str
+
+    class Config:
+        from_attributes = True
 
 
 class DeleteProperty(BaseModel):
@@ -114,6 +153,10 @@ class AppointmentSchema(BaseModel):
     agent_id: int
     property_id: int
     requested_time: datetime
+    # The on-chain bid this viewing is for. Optional because people view
+    # properties before committing money; supplied once a bid is accepted, so
+    # a seller with several accepted bids can tell which buyer is coming.
+    bid_id: int | None = None
 
 
 class AvailabilityShow(AgentAvailabilitySchema):
@@ -130,10 +173,38 @@ class AppointmentShow(BaseModel):
     client_id: int
     agent_id: int
     property_id: int
+    bid_id: int | None = None
     scheduled_at: datetime
     status: AppointmentStatEnum
     created_at: datetime
     updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AppointmentStageShow(BaseModel):
+    """Where a deal stands in the off-chain half of the flow.
+
+    The buyer's escrow is locked from the moment their bid is accepted, but the
+    next on-chain step — the seller releasing the agreement NFT — depends on a
+    meeting that happens in the real world. Neither side could see that half,
+    so a deal in progress looked identical to a deal that had stalled.
+
+    Returned alongside the on-chain bid status so a client can show one
+    continuous timeline instead of two disconnected halves.
+    """
+
+    bid_id: int
+    property_id: int
+    appointments: list[AppointmentShow]
+    # True once a viewing for this bid reached `completed` — the signal the
+    # seller is waiting on before releasing the agreement.
+    ready_for_documents: bool
+    # True if the parties met and did not agree. The buyer can cancel and
+    # reclaim their escrow; surfaced so the app can say so plainly rather than
+    # leaving them to guess.
+    viewing_not_agreed: bool
 
     class Config:
         from_attributes = True
@@ -158,8 +229,25 @@ class ContractInDB(BaseModel):
 class ContractCreate(BaseModel):
     property_id: int
     amount: float
-    rental_period_months: Optional[int] = None  # Required only for rentals
+    # Days, matching the contract and the property's own term. This was months,
+    # which could not express a let shorter than one — and the chain and the
+    # backend then disagreed about when the same tenancy ended.
+    #
+    # Omit it to take the term from the property, which is the normal case: the
+    # length was agreed when the property was listed, not when the contract row
+    # was written.
+    lease_duration_days: Optional[int] = None
     is_payment_made: bool  # Ensure payment is confirmed before contract creation
+
+    # ── What this contract is on chain ──────────────────────────────────────
+    #
+    # The app has always sent these and they were always dropped, which left a
+    # contract row with no way back to the deal it represents: no bid, no
+    # lease, no transaction. Reconciling the two sides — or answering "which
+    # on-chain deal is this row?" — meant guessing from amounts and dates.
+    bid_id: Optional[int] = None
+    lease_id: Optional[int] = None
+    transaction_hash: Optional[str] = None
 
 
 class ContractResponse(BaseModel):
