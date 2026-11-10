@@ -177,3 +177,8 @@ cython_debug/
 media/uploads/
 !static/
 !static/*
+
+# Cloudflare Workers / Wrangler
+.wrangler/
+python_modules/
+

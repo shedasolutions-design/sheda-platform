@@ -51,12 +51,6 @@ phase_state = sa.Enum(
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    collection_role.create(bind, checkfirst=True)
-    raise_status.create(bind, checkfirst=True)
-    document_status.create(bind, checkfirst=True)
-    phase_state.create(bind, checkfirst=True)
-
     op.create_table(
         "collection_profile",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
