@@ -51,11 +51,48 @@ def requested_account_type(profile: ProfileEnum | None) -> AccountTypeEnum:
     return profile_to_account_type(profile)
 
 
+async def _free_near_account_id(db: AsyncSession, wanted: str | None) -> str | None:
+    """
+    The requested wallet id, or the next free variant of it.
+
+    The apps propose a wallet id from the part of the email before the @, so
+    john@gmail.com and john@yahoo.com both ask for john.shedauser.testnet. It
+    is a provisional name (the wallet itself is created afterwards and picks a
+    free name on chain), so a clash is resolved here as john2, john3 ... rather
+    than refusing the second person's signup.
+    """
+    if not wanted:
+        return wanted
+    label, dot, rest = wanted.partition(".")
+    candidate, n = wanted, 2
+    while (
+        await db.execute(
+            select(BaseUser.id).where(BaseUser.near_account_id == candidate).limit(1)
+        )
+    ).first() is not None:
+        candidate = f"{label}{n}{dot}{rest}"
+        n += 1
+    return candidate
+
+
 # NOTE -  Create agent
 async def create_account(user_data: UserCreate, db: AsyncSession):
+    # A taken email or username is a real duplicate: say so plainly.
+    taken = BaseUser.email == user_data.email
+    if user_data.username:
+        taken = taken | (BaseUser.username == user_data.username)
+    if (await db.execute(select(BaseUser.id).where(taken).limit(1))).first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists",
+        )
+
     # `profile` says which row the caller wants a token for; it is not a
     # column on either model, so it must not reach the constructors.
     columns = user_data.model_dump(exclude={"profile"})
+    columns["near_account_id"] = await _free_near_account_id(
+        db, columns.get("near_account_id")
+    )
     new_client = Client(**columns, account_type=AccountTypeEnum.client)
     new_agent = Agent(**columns, account_type=AccountTypeEnum.agent)
     try:
