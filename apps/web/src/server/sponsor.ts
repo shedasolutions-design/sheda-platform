@@ -97,8 +97,11 @@ async function accountExists(p: JsonRpcProvider, accountId: string): Promise<boo
     await p.viewAccount(accountId);
     return true;
   } catch (e: any) {
-    const msg = String(e?.message ?? e);
-    if (/does not exist|UNKNOWN_ACCOUNT|AccountDoesNotExist/i.test(msg)) return false;
+    // The library says "doesn't exist" and puts AccountDoesNotExist in
+    // `type`, not the message. Missing that made every new name look like
+    // an RPC failure, so no new account could be funded.
+    const msg = `${e?.type ?? ""} ${e?.name ?? ""} ${e?.message ?? e}`;
+    if (/does not exist|doesn't exist|UNKNOWN_ACCOUNT|AccountDoesNotExist/i.test(msg)) return false;
     throw e;
   }
 }

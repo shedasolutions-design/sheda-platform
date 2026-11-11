@@ -68,3 +68,11 @@ def test_authenticator_codes():
     assert not _totp_ok(secret, _code(secret, time.time() - 300))  # an old code
     assert not _totp_ok(secret, "000000") or _code(secret, time.time()) == "000000"
     assert not _totp_ok(secret, "12345")
+
+
+def test_land_listings_can_have_zero_bedrooms():
+    from app.utils.validators import ValidatorMixin
+
+    assert ValidatorMixin.validate_bedroom_count(0) == 0
+    with pytest.raises(ValueError):
+        ValidatorMixin.validate_bedroom_count(-1)

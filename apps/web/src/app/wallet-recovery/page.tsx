@@ -44,7 +44,7 @@ function Secret({ label, value }: { label: string; value: string }) {
  * with their transaction PIN if they set one, otherwise their password.
  */
 function WalletRecovery() {
-  const { walletState, getStoredSeedPhrase, getPrivateKeyFromStoredSeedPhrase, hasTransactionPin, getAuthorizedPrivateKey, isCloudBackupAvailable, hasCloudBackup } = useWallet();
+  const { walletState, getStoredSeedPhrase, getPrivateKeyFromStoredSeedPhrase, hasTransactionPin, getAuthorizedPrivateKey, isCloudBackupAvailable, hasCloudBackup, isWalletSafe, markPhraseSaved } = useWallet();
   const [showBackup, setShowBackup] = useState(false);
   const [backedUp, setBackedUp] = useState(false);
   const { user } = useApi();
@@ -175,6 +175,16 @@ function WalletRecovery() {
                 {error && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{error}</p>}
                 {seed && <Secret label="Recovery phrase" value={seed} />}
                 {key && <Secret label="Private key" value={key} />}
+                {(seed || key) &&
+                  (isWalletSafe ? (
+                    <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
+                      ✓ This wallet is backed up. Keep your copy somewhere safe and offline.
+                    </p>
+                  ) : (
+                    <Button full onClick={() => markPhraseSaved(accountId).catch(() => {})}>
+                      I&apos;ve written it down safely
+                    </Button>
+                  ))}
               </>
             )}
           </>
