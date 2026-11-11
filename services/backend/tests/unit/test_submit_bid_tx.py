@@ -2,6 +2,7 @@ import pytest
 import json
 import httpx
 from unittest.mock import patch, MagicMock
+from core.configs import settings
 from httpx import AsyncClient
 from app.models.user import BaseUser
 from app.models.property import Property
@@ -87,7 +88,7 @@ async def test_submit_bid_tx_success(async_client: AsyncClient, test_user, test_
         # Define side effect for httpx post to only intercept NEAR RPC calls
         original_post = httpx.AsyncClient.post
         async def mock_post(self_client, url, **kwargs):
-            if "rpc.testnet.near.org" not in str(url):
+            if settings.near_rpc_url not in str(url):
                 return await original_post(self_client, url, **kwargs)
                 
             json_data = kwargs.get("json", {})

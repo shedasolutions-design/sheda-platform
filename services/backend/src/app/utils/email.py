@@ -45,6 +45,12 @@ class EmailSender:
     ) -> bool:
         """Sends an email (Brevo's API when configured, else SMTP), with optional attachments."""
         from app.utils.brevo import brevo_enabled, send_via_brevo
+        from core.configs import settings
+
+        # Someone with accounts on both sites can tell at a glance which one
+        # an email (a sign-in code, say) is for.
+        if settings.NEAR_NETWORK == "testnet" and not subject.startswith("[Testnet]"):
+            subject = f"[Testnet] {subject}"
 
         if brevo_enabled():
             return await send_via_brevo(

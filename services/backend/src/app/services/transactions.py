@@ -412,7 +412,7 @@ async def verify_and_register_bid_tx(
     from app.services.push import send_push_notification as trigger_push
 
     # 1. Strip and validate RPC URL
-    rpc_url = settings.NEAR_RPC_URL.strip()
+    rpc_url = settings.near_rpc_url
     if not current_user.near_account_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

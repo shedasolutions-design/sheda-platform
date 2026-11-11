@@ -2,7 +2,7 @@ import logging
 import os
 import types
 from datetime import timedelta
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Literal
 
 from dotenv import load_dotenv
 from pydantic import AliasChoices, Field, computed_field
@@ -281,7 +281,23 @@ class Settings(BaseSettings):
     }
 
     #Blockchain
-    NEAR_RPC_URL:str = Field(default="https://rpc.testnet.near.org ",description="Near RPC URl")
+    # Each backend serves exactly one network: testnet (api-testnet.sheda.app)
+    # or mainnet (api.sheda.app), each with its own database, so the same
+    # email can hold an account on both without the two ever meeting.
+    NEAR_NETWORK: Literal["testnet", "mainnet"] = Field(default="testnet", description="testnet or mainnet")
+    # Empty means the network default (FastNEAR; rpc.*.near.org is retired).
+    NEAR_RPC_URL: str = Field(default="", description="Near RPC URL")
+
+    @property
+    def near_rpc_url(self) -> str:
+        url = self.NEAR_RPC_URL.strip()
+        if url:
+            return url
+        return "https://free.rpc.fastnear.com" if self.NEAR_NETWORK == "mainnet" else "https://test.rpc.fastnear.com"
+
+    @property
+    def near_account_suffix(self) -> str:
+        return ".near" if self.NEAR_NETWORK == "mainnet" else ".testnet"
 
     # Computed properties
     @property

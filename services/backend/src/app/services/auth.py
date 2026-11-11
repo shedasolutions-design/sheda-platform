@@ -90,6 +90,14 @@ async def create_account(user_data: UserCreate, db: AsyncSession):
     # `profile` says which row the caller wants a token for; it is not a
     # column on either model, so it must not reach the constructors.
     columns = user_data.model_dump(exclude={"profile"})
+    # A wallet from the other network would point this account at a chain
+    # this backend never reads.
+    wallet = columns.get("near_account_id") or ""
+    if wallet and not wallet.endswith(settings.near_account_suffix):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"This is the {settings.NEAR_NETWORK} service; use a {settings.near_account_suffix} wallet.",
+        )
     columns["near_account_id"] = await _free_near_account_id(
         db, columns.get("near_account_id")
     )
@@ -253,7 +261,7 @@ async def process_social_login(
                 username=username,
                 email=email,
                 password=generate_random_password(),
-                near_account_id=f"{username.lower()}-{uuid.uuid4().hex[:6]}.testnet",
+                near_account_id=f"{username.lower()}-{uuid.uuid4().hex[:6]}{settings.near_account_suffix}",
                 profile=payload.profile,
             )
 
