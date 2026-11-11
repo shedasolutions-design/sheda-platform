@@ -1,5 +1,1 @@
-import NotPortedYet from "@/components/NotPortedYet";
-
-export default function Page() {
-  return <NotPortedYet title="Invest" />;
-}
+export { default } from "@/components/collections/screens/invest";

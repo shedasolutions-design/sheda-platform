@@ -91,16 +91,16 @@ Ported and working in a browser:
 Still to move. Each shows a placeholder that links to the same page on the current app:
 
 - [x] Property details `/details/[id]` (mobile: 1,288 lines, the most used screen after home)
-- [ ] Portfolio `/wallet` (1,586 lines: balances, send, receive, intents deposit/withdraw)
+- [x] Portfolio `/wallet` (1,586 lines: balances, send, receive, intents deposit/withdraw)
 - [x] List a property `/list` (seller listing flow, with `components/seller/*`)
 - [x] Activities `/activity` and History `/history` (deal cards, timeline, damage claims)
 - [x] Inbox and chat
-- [ ] Invest and all of `/collections/*` (directory, project, units, stake, holdings, approvals, new raise, become builder)
+- [x] Invest and all of `/collections/*` (directory, project, units, stake, holdings, approvals, new raise, become builder)
 - [x] Profile, personal info, profile settings, change password, delete account
 - [x] Notifications and notification settings
 - [x] Filter, see all
 - [x] Book appointment, availability, appointment booked/successful
 - [x] Support, support feedback, user profile
-- [ ] Release document, wallet recovery
+- [x] Release document, wallet recovery
 - [ ] Tests: move the logic tests from `apps/mobile/__tests__` (most are plain TypeScript)
-- [ ] Deployment (Vercel, Cloudflare or Coolify) and the CI job for this app
+- [ ] Deployment on Vercel, and the CI job for this app
