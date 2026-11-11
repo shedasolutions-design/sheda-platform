@@ -62,7 +62,8 @@ export default function HouseCard({
             </Link>
           )}
         </h3>
-        <p className="text-xs capitalize text-secondaryText">{house.type}</p>
+        {/* luxury_villa → "Luxury Villa" (the backend spells types with underscores). */}
+        <p className="text-xs capitalize text-secondaryText">{String(house.type ?? "").replace(/_/g, " ")}</p>
         <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[#878787BF]">
           <li className="flex items-center gap-1">
             <MapPin size={12} /> {house.location}
