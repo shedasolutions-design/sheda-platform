@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+/*
+ * Sheda's palette, carried over from the mobile app's tailwind.config.js so
+ * the class names screens already use (bg-primary, text-secondaryText,
+ * border-borderColor ...) mean exactly what they meant on mobile.
+ */
+@theme {
+  --color-primary: #c1272d;
+  --color-primaryLight: #c1272d0a;
+  --color-background: #ffffff;
+  --color-primaryText: #000000;
+  --color-secondaryText: #878787;
+  --color-cardBackground: #f5f5f5;
+  --color-borderColor: #d8dadc;
+  --color-active: #ffe6e6;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-manrope: var(--font-manrope), var(--font-inter), sans-serif;
+  --font-sora: var(--font-sora), var(--font-inter), sans-serif;
+}
+
+html,
+body {
+  background: #ffffff;
+  color: #000000;
+}
+
+/* The app is designed light-only; keep form controls light too. */
+:root {
+  color-scheme: light;
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
