@@ -82,7 +82,7 @@ This is the backend for a real estate platform built with **FastAPI**. The platf
 3. **Install dependencies**
 
    ```sh
-   pip install -r requirements.txt
+   pip install -r requirements-server.txt
    ```
 
 4. **Set up environment variables**  
@@ -93,7 +93,7 @@ This is the backend for a real estate platform built with **FastAPI**. The platf
 6. **Start the server**
 
    ```sh
-   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+   uvicorn main:app --app-dir src --host 0.0.0.0 --port 8000 --reload
    ```
 
 # Real Estate Backend API

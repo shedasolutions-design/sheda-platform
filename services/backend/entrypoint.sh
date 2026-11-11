@@ -14,4 +14,4 @@ alembic upgrade heads > /dev/null && echo "Database migrations completed success
 BIND_ADDRESS=${BIND_ADDRESS:-0.0.0.0:8000}
 
 echo "Starting application with Gunicorn ($WORKERS workers) on $BIND_ADDRESS..."
-exec gunicorn -k uvicorn.workers.UvicornWorker main:app --bind "$BIND_ADDRESS"
+exec gunicorn -k uvicorn.workers.UvicornWorker main:app --chdir src --bind "$BIND_ADDRESS"

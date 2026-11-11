@@ -240,7 +240,7 @@ redis-server
 
 ### 4. Run application
 ```bash
-uvicorn main:app --reload
+uvicorn main:app --reload --app-dir src
 ```
 
 **All Phase 2 services** (Firebase, Persona, Elasticsearch) are optional and will gracefully skip if not configured.

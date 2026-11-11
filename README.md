@@ -182,8 +182,8 @@ cargo build --workspace --target wasm32-unknown-unknown --release
 
 # Backend: docs at /sheda-docs
 cd services/backend
-cp .env.example .env && pip install -r requirements.txt
-alembic upgrade head && uvicorn main:app --reload
+cp .env.example .env && pip install -r requirements-server.txt
+alembic upgrade head && uvicorn main:app --reload --app-dir src
 
 # Web app (the product, going forward)
 cd apps/web

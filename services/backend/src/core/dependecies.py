@@ -1,3 +1,4 @@
+import os
 from fastapi import Depends, Form, HTTPException, status
 from core.database import get_db
 from typing import Annotated, Optional
@@ -17,7 +18,8 @@ from fastapi.openapi.models import (
     SecuritySchemeType,
 )
 
-env = Environment(loader=FileSystemLoader("templates"))
+# Absolute, so it resolves the same whatever the working directory (on Workers it is not this folder).
+env = Environment(loader=FileSystemLoader(os.path.join(settings.BASE_DIR, "templates")))
 
 
 class HTTPBearerWithScopes(HTTPBearer):

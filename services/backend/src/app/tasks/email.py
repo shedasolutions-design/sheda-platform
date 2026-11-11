@@ -291,6 +291,13 @@ async def _send_email(
         html_content: HTML email body
         text_content: Optional plain text body
     """
+    from app.utils.brevo import brevo_enabled, send_via_brevo
+
+    if brevo_enabled():
+        if not await send_via_brevo(recipient, subject, html=html_content, text=text_content):
+            raise RuntimeError(f"Brevo could not send email to {recipient}")
+        return
+
     try:
         # Create message
         msg = MIMEMultipart("alternative")

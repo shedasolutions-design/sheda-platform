@@ -8,7 +8,7 @@ This testing guide covers all aspects of testing the Sheda backend application.
 
 ```bash
 # Install test dependencies
-pip install -r requirements.txt
+pip install -r requirements-server.txt
 
 # Additional dependencies for testing
 pip install pytest pytest-asyncio pytest-cov httpx locust
@@ -197,7 +197,7 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements-server.txt
       - run: pytest tests/ --cov=app --cov-report=xml
       - uses: codecov/codecov-action@v3
 ```
@@ -233,7 +233,7 @@ Tests use in-memory SQLite. If you encounter issues:
 rm -rf .pytest_cache
 
 # Reinstall dependencies
-pip install -r requirements.txt --force-reinstall
+pip install -r requirements-server.txt --force-reinstall
 ```
 
 ### Async Test Errors

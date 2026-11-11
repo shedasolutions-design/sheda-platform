@@ -12,6 +12,7 @@ from .property import (
 )
 from .chat import ChatMessage
 from .rating import Rating
+from .kv import KVEntry
 from .collection import (
     CollectionProfile,
     CollectionChainRecord,
@@ -32,6 +33,7 @@ from .transaction import (
 )
 
 __all__ = [
+    "KVEntry",
     "BaseUser",
     "Client",
     "Agent",

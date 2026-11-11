@@ -15,6 +15,28 @@ from typing import Callable, Optional
 logger = get_logger(__name__)
 
 
+# Workers run Python single-threaded. The limits library's memory storage
+# starts a threading.Timer to sweep expired counters, and starting a thread
+# raises there. Skip the sweep instead: counters still expire when read.
+# Note that on Workers these counters are per instance, so a limit is a cap
+# per instance rather than across the whole service.
+from core.runtime import ON_WORKERS
+
+if ON_WORKERS:
+    import threading
+
+    _orig_timer_start = threading.Timer.start
+
+    def _timer_start_or_skip(self):
+        try:
+            return _orig_timer_start(self)
+        except RuntimeError as e:
+            if "can't start new thread" not in str(e):
+                raise
+
+    threading.Timer.start = _timer_start_or_skip
+
+
 # Initialize global limiter
 limiter = Limiter(key_func=get_remote_address)
 

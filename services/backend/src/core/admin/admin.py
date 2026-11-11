@@ -1,3 +1,4 @@
+import os
 from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette_admin.contrib.sqla import Admin as StarletteAdmin, ModelView
@@ -7,16 +8,21 @@ from app.models import *
 from .resources import *
 from .auth import AdminAuthProvider
 
+# Absolute, because the working directory is not this folder on Workers; and
+# optional, because a Worker bundle may not carry the image files.
+_static = os.path.join(settings.BASE_DIR, "static")
+_static = _static if os.path.isdir(_static) else None
+
 admin = StarletteAdmin(
     engine,
     title="Sheda Solutions Admin",
     base_url="/sheda-backend",
     route_name="sheda-backend",
-    statics_dir="static",
-    favicon_url="/static/sheda-solutions.ico",
+    statics_dir=_static,
+    favicon_url="/static/sheda-solutions.ico" if _static else None,
     debug=settings.DEBUG_MODE,
-    logo_url="/static/sheda-solutions.png",
-    login_logo_url="/static/sheda-solutions.png",
+    logo_url="/static/sheda-solutions.png" if _static else None,
+    login_logo_url="/static/sheda-solutions.png" if _static else None,
     auth_provider=AdminAuthProvider(),
     middlewares=[Middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)],
 )

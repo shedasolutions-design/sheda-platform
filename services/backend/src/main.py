@@ -74,13 +74,10 @@ def create_app() -> FastAPI:
         ),
     )
 
-    if not os.path.exists("static"):
-        os.makedirs("static")
-    app.mount(
-        "/static",
-        StaticFiles(directory=os.path.join(settings.BASE_DIR, "static")),
-        name="static",
-    )
+    # static/ is committed; no need to create it (and Workers' bundle is read-only).
+    _static = os.path.join(settings.BASE_DIR, "static")
+    if os.path.isdir(_static):
+        app.mount("/static", StaticFiles(directory=_static), name="static")
 
     # NOTE - Include Routers
     app.include_router(auth.router, prefix=settings.API_V_STR)

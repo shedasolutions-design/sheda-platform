@@ -1,29 +1,90 @@
 import logging
 import os
 import types
-import bcrypt
-from dotenv import load_dotenv
-
-# Workaround for passlib compatibility with bcrypt >= 4.0.0 where passlib reads bcrypt.__about__.__version__
-if not hasattr(bcrypt, "__about__"):
-    bcrypt.__about__ = types.SimpleNamespace(__version__=getattr(bcrypt, "__version__", "4.0.0"))
-
-from passlib.context import CryptContext
 from datetime import timedelta
-import redis.asyncio as aioredis
+from typing import TYPE_CHECKING, Optional
+
+from dotenv import load_dotenv
+from pydantic import AliasChoices, Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, computed_field
-from typing import Optional
+
+from core.runtime import ON_WORKERS
+
+if TYPE_CHECKING:
+    from passlib.context import CryptContext
 
 
-load_dotenv()
+# src/ holds the code (and static/, templates/); env files live one level up,
+# in services/backend, next to alembic.ini and wrangler.jsonc.
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_PROJECT_DIR = os.path.dirname(_BACKEND_DIR)
+_ENV_FILE = os.path.join(_PROJECT_DIR, ".env")
+# .env.local is written by `neon init` / `neon env pull` and wins over .env.
+_ENV_LOCAL = os.path.join(_PROJECT_DIR, ".env.local")
+_ENV_FILES = tuple(p for p in (_ENV_FILE, _ENV_LOCAL) if os.path.exists(p)) or (".env",)
+for _f in _ENV_FILES:
+    load_dotenv(_f, override=_f == _ENV_LOCAL)
+
+# On Cloudflare Workers, vars and secrets arrive as bindings on `env`, not as
+# process environment variables. Copy the plain values across before Settings
+# reads the environment, so one Settings class serves every runtime.
+if ON_WORKERS:
+    try:
+        import js
+        from workers import env as _cf_env
+
+        for _key in js.Object.keys(_cf_env._env):
+            _val = getattr(_cf_env, str(_key), None)
+            if isinstance(_val, (str, int, float, bool)):
+                os.environ.setdefault(str(_key), str(_val))
+    except Exception as _e:  # pragma: no cover - only reachable inside workerd
+        logging.getLogger(__name__).warning("Could not read Worker bindings: %s", _e)
+
+
+_pwd_context = None
+
+
+def _get_pwd_context() -> "CryptContext":
+    """
+    Built on first use rather than at import.
+
+    On Workers, everything imported at module scope counts against the start-up
+    CPU budget, and hashing is not needed to serve most requests.
+    """
+    global _pwd_context
+    if _pwd_context is None:
+        import bcrypt
+
+        # passlib reads bcrypt.__about__.__version__, which bcrypt >= 4 removed.
+        if not hasattr(bcrypt, "__about__"):
+            bcrypt.__about__ = types.SimpleNamespace(
+                __version__=getattr(bcrypt, "__version__", "4.0.0")
+            )
+        from passlib.context import CryptContext
+
+        _pwd_context = CryptContext(
+            schemes=["bcrypt"],
+            deprecated="auto",
+            bcrypt__rounds=settings.BCRYPT_ROUNDS,
+        )
+    return _pwd_context
 
 
 class Settings(BaseSettings):
     # Don't crash on additional keys in `.env` that aren't modeled here
     # (e.g., admin seeding vars used by `core.admin.seed`).
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-    pwd_context: CryptContext = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    model_config = SettingsConfigDict(
+        env_file=_ENV_FILES, extra="ignore"
+    )
+
+    @property
+    def pwd_context(self) -> "CryptContext":
+        return _get_pwd_context()
+
+    # Cost of new password hashes. Existing hashes verify at whatever cost they
+    # were made with. Lowered on Workers only as far as its CPU limit forces;
+    # see wrangler.jsonc. Never below 10.
+    BCRYPT_ROUNDS: int = Field(default=12, ge=10, le=15, description="bcrypt cost factor")
 
     # General description
     SIGN_UP_DESC: str = Field(
@@ -33,7 +94,7 @@ class Settings(BaseSettings):
 
     @property
     def BASE_DIR(self) -> str:
-        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return _BACKEND_DIR
 
     # Security
     SECRET_KEY: str = Field(..., description="JWT secret key")
@@ -49,17 +110,26 @@ class Settings(BaseSettings):
     DEBUG_MODE: bool = Field(default=False, description="Debug mode flag")
 
     # Email settings
-    SMTP_USERNAME: str = Field(..., description="Email address for sending emails")
-    SMTP_PASSWORD: str = Field(..., description="App password for email")
+    SMTP_USERNAME: str = Field(default="", description="SMTP login (not used with BREVO_API_KEY)")
+    SMTP_PASSWORD: str = Field(default="", description="SMTP password (not used with BREVO_API_KEY)")
+    # Brevo's HTTP API. Used instead of SMTP when set, and required on Workers,
+    # which cannot open the raw TCP connection SMTP needs.
+    BREVO_API_KEY: Optional[str] = Field(default=None, description="Brevo transactional email API key")
     SMTP_HOST: str = Field(..., description="Email host")
     SMTP_PORT: int = Field(default=2525, description="Email port")
     SMTP_SEND_FROM_MAIL: str = Field(
-        ..., description="Email address for sending emails"
+        default="", description="Sender address (must be verified in Brevo)"
     )
 
     # Database
-    DB_URL: str = Field(..., description="Database connection URL")
-    REDIS_URL: str = Field(..., description="Redis connection URL")
+    # DATABASE_URL is the name Neon (and most hosts) write; DB_URL is ours.
+    DB_URL: str = Field(
+        ...,
+        validation_alias=AliasChoices("DB_URL", "DATABASE_URL"),
+        description="Database connection URL",
+    )
+    # Not used on Workers, where the key-value store is a Postgres table.
+    REDIS_URL: str = Field(default="redis://localhost:6379/0", description="Redis connection URL")
 
     # External Services (Phase 2)
     # Firebase Cloud Messaging (Push Notifications)
@@ -121,10 +191,12 @@ class Settings(BaseSettings):
 
     # SECTION Cloudinary data
 
-    CLOUDINARY_NAME: str = Field(..., description="Cloudinary database name")
-    CLOUDINARY_API_KEY: str = Field(..., description="Cloudinary API key")
-    CLOUDINARY_API_SECRET: str = Field(..., description="Cloudinary Api Key")
-    CLOUDINARY_URL: str = Field(..., description="cloudinary url")
+    # Optional so the API can start before Cloudinary is set up; uploads fail
+    # with a clear error until it is (core/starter.py).
+    CLOUDINARY_NAME: str = Field(default="", description="Cloudinary cloud name")
+    CLOUDINARY_API_KEY: str = Field(default="", description="Cloudinary API key")
+    CLOUDINARY_API_SECRET: str = Field(default="", description="Cloudinary Api Key")
+    CLOUDINARY_URL: str = Field(default="", description="cloudinary url")
 
     # PINATA Credentials
     PINATA_JWT: Optional[str] = Field(
@@ -223,6 +295,37 @@ class Settings(BaseSettings):
 settings = Settings()  # type: ignore
 
 
-redis: aioredis.Redis = aioredis.from_url(
-    settings.REDIS_URL, decode_responses=True, encoding="utf8"
-)
+class _LazyRedis:
+    """
+    The key-value store for OTP codes and revoked tokens.
+
+    Everywhere but Workers this is Redis. On Workers it is a table in Postgres
+    (core/kv.py): a Worker runs as many separate instances, and anything kept in
+    one instance's memory is invisible to the next, so a code emailed by one
+    instance would be rejected by another.
+
+    Created on first use, so importing settings never opens a connection.
+    """
+
+    def __init__(self):
+        self._client = None
+
+    def _get(self):
+        if self._client is None:
+            if ON_WORKERS:
+                from core.kv import PostgresKV
+
+                self._client = PostgresKV()
+            else:
+                import redis.asyncio as aioredis
+
+                self._client = aioredis.from_url(
+                    settings.REDIS_URL, decode_responses=True, encoding="utf8"
+                )
+        return self._client
+
+    def __getattr__(self, name):
+        return getattr(self._get(), name)
+
+
+redis = _LazyRedis()

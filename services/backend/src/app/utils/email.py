@@ -1,5 +1,5 @@
 # from email.mime.application import MIMEApplication
-from random import randint
+import secrets
 from core.configs import settings, redis
 from core.logger import logger
 from core.dependecies import env
@@ -43,7 +43,17 @@ class EmailSender:
             List[Union[str, Tuple[str, str]]]
         ] = None,  # Now supports single file paths too
     ) -> bool:
-        """Sends an email using SMTP with optional file attachments."""
+        """Sends an email (Brevo's API when configured, else SMTP), with optional attachments."""
+        from app.utils.brevo import brevo_enabled, send_via_brevo
+
+        if brevo_enabled():
+            return await send_via_brevo(
+                to_email,
+                subject,
+                html=text if text_type == "html" else None,
+                text=text if text_type == "plain" else None,
+                attachments=attachments,
+            )
         try:
             # Prepare email
             msg = MIMEMultipart()
@@ -97,7 +107,8 @@ email_sender = EmailSender(
 
 
 async def create_send_otp(email: str, length: int = 4) -> int:
-    otp = "".join(str(randint(0, 9)) for _ in range(length))
+    # secrets, not random: a login code must not be predictable from earlier ones.
+    otp = "".join(str(secrets.randbelow(10)) for _ in range(length))
     await redis.setex(settings.OTP_PREFIX.format(email), 300, otp)
     logger.info(f"otp saved to redis for {settings.verification_expire_delta} minutes")
     otp_text = render_template(
