@@ -393,7 +393,7 @@ interface ApiContextType extends ApiState {
 
   // Schedule methods
   createAvailableTime: (availability: AgentAvailabilitySchema) => Promise<void>;
-  getSchedule: () => Promise<void>;
+  getSchedule: () => Promise<AvailabilityShow[]>;
   updateSchedule: (
     scheduleId: number,
     availability: AgentAvailabilitySchema
@@ -1554,6 +1554,7 @@ export function ApiProvider({ children }: ApiProviderProps) {
   const getSchedule = useCallback(async () => {
     const schedule = await apiCall(() => apiService.getSchedule());
     dispatch({ type: "SET_SCHEDULE", payload: schedule });
+    return (schedule ?? []) as AvailabilityShow[];
   }, [apiCall, dispatch]);
 
   const updateSchedule = useCallback(async (

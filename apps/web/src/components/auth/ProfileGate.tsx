@@ -6,6 +6,7 @@ import { useApi } from "@/contexts/ApiContext";
 import { useMode } from "@/contexts/ModeContext";
 import { NEW_SIGNIN_CHOOSER } from "@/constants/featureFlags";
 import ProfileChooser, { type Profile } from "./ProfileChooser";
+import ViewingHoursPrompt from "@/components/seller/ViewingHoursPrompt";
 
 /**
  * Decides when the profile chooser appears, for every entry point at once.
@@ -64,7 +65,8 @@ export default function ProfileGate() {
     [setModeExplicitly, rememberChoice, pathname, router]
   );
 
-  if (!visible) return null;
+  // The hours prompt waits until the chooser is answered, so the two never stack.
+  if (!visible) return <ViewingHoursPrompt />;
 
   return (
     <ProfileChooser
