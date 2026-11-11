@@ -128,8 +128,10 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("DB_URL", "DATABASE_URL"),
         description="Database connection URL",
     )
-    # Not used on Workers, where the key-value store is a Postgres table.
-    REDIS_URL: str = Field(default="redis://localhost:6379/0", description="Redis connection URL")
+    # Optional. Without it (and always on Workers) the key-value store is a
+    # Postgres table and background tasks run in-process, so the API needs
+    # nothing but its database. Set it to use Redis and Celery instead.
+    REDIS_URL: str = Field(default="", description="Redis connection URL (optional)")
 
     # External Services (Phase 2)
     # Firebase Cloud Messaging (Push Notifications)
@@ -299,10 +301,9 @@ class _LazyRedis:
     """
     The key-value store for OTP codes and revoked tokens.
 
-    Everywhere but Workers this is Redis. On Workers it is a table in Postgres
-    (core/kv.py): a Worker runs as many separate instances, and anything kept in
-    one instance's memory is invisible to the next, so a code emailed by one
-    instance would be rejected by another.
+    Redis when REDIS_URL is set. Otherwise, and always on Workers, a table in
+    Postgres (core/kv.py). Either is shared by every instance; memory would not
+    be, and a code emailed by one instance would be rejected by another.
 
     Created on first use, so importing settings never opens a connection.
     """
@@ -312,7 +313,7 @@ class _LazyRedis:
 
     def _get(self):
         if self._client is None:
-            if ON_WORKERS:
+            if ON_WORKERS or not settings.REDIS_URL:
                 from core.kv import PostgresKV
 
                 self._client = PostgresKV()
