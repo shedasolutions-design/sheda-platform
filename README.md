@@ -119,13 +119,16 @@ Below a minimum history there is no score at all. A builder with one finished jo
 
 ```
 sheda-platform/
-├── apps/mobile/          Expo app. Marketplace and Collections, one product.
+├── apps/web/             Next.js web app. Where the product is built now.
+│                         See apps/web/README.md for what has moved so far.
+├── apps/mobile/          Expo app. Being replaced by apps/web, screen by screen.
 │   ├── app/(tabs)/           home, saved, activity, inbox, portfolio, invest
 │   ├── app/collections/      the Collections screens
 │   ├── services/collections/ money, chain reads, the ranking
 │   └── contexts/WalletContext.tsx   the built-in NEAR wallet
 ├── apps/collection-app/  Expo app. Collections as a standalone product.
 ├── services/backend/     FastAPI. What a contract is the wrong place for.
+├── services/backend-cloudflare/  The same API as a Python Worker (served first).
 ├── contracts/            NEAR. What has to be true without trusting us.
 │   ├── market/               listings, bids, escrow, deposits, disputes
 │   ├── vault/                one flat, its shares, its rent
@@ -182,7 +185,12 @@ cd services/backend
 cp .env.example .env && pip install -r requirements.txt
 alembic upgrade head && uvicorn main:app --reload
 
-# Mobile app: 424 tests
+# Web app (the product, going forward)
+cd apps/web
+cp .env.example .env.local && npm install
+npm run dev        # http://localhost:3000
+
+# Mobile app: 424 tests (being replaced by apps/web)
 cd apps/mobile
 cp .env.example .env && npm install
 npm test
@@ -238,7 +246,8 @@ code that was previously developed separately in:
 
 - `shedasolutions-design/sheda-solution-mobile` → `apps/mobile/`
 - `shedasolutions-design/Sheda-Collection-app` → `apps/collection-app/`
-- `shedasolutions-design/Sheda-Backend` → `services/backend/`
+- `shedasolutions-design/Sheda-Backend` → `services/backend/` (`main`), and
+  `services/backend-cloudflare/` (the `cloudflare` branch)
 - `shedasolutions-design/sheda-new-contract` → `contracts/market/`
 - `shedasolutions-design/sheda-collection-app-contract` → `contracts/{raise,vault,stake-registry}/`
 

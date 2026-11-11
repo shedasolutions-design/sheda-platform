@@ -1,0 +1,56 @@
+{% extends "email_base.html" %}
+
+{% block title %}Sheda Solutions - OTP Verification{% endblock %}
+
+{% block extra_styles %}
+.otp-container {
+text-align: center;
+margin: 30px 0;
+}
+
+.otp-code {
+font-family: monospace;
+font-size: 32px;
+font-weight: bold;
+letter-spacing: 6px;
+color: #2c3e50;
+background-color: #f8f9fa;
+padding: 16px 32px;
+border-radius: 6px;
+border: 1px dashed #ced4da;
+display: inline-block;
+}
+
+.expiry-info {
+font-size: 14px;
+color: #777777;
+text-align: center;
+margin-top: 10px;
+}
+{% endblock %}
+
+{% block content %}
+<div class="greeting">Hello There,</div>
+
+<div class="message">
+    You requested a one-time password (OTP) to verify your account. Please use the verification code below
+    to complete your request.
+</div>
+
+<div class="otp-container">
+    <div class="otp-code">{{ otp }}</div>
+    <div class="expiry-info">
+        This code is valid for <strong>{{ expiry }} minutes</strong>.
+    </div>
+</div>
+
+<div class="message">
+    If you did not request this code, you can safely ignore this email. No changes will be made to your
+    account.
+</div>
+
+<div class="warning">
+    <strong>Safety Tip:</strong> For security reasons, never share your OTP with anyone. Sheda Solutions
+    staff will never ask for your password or OTP.
+</div>
+{% endblock %}

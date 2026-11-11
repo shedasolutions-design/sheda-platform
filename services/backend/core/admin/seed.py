@@ -24,7 +24,6 @@ async def seed_superadmin() -> None:
     """
     username = settings.ADMIN_SEED_USERNAME
     password = settings.ADMIN_SEED_PASSWORD
-    print(len(password.encode("utf-8")))
 
     explicitly_enabled = settings.ADMIN_SEED_ENABLED
     implicitly_enabled = not explicitly_enabled and bool(username) and bool(password)

@@ -45,6 +45,8 @@ from app.schemas.collection_schema import (
     DocumentCreate,
     DocumentOut,
     DocumentVerify,
+    ImageCreate,
+    ImageOut,
     PhaseUpdateCreate,
     PhaseUpdateOut,
     ProjectCreate,
@@ -58,6 +60,10 @@ from app.services.user_service import ActiveUser, AdminUser
 from core.database import get_db
 
 router = APIRouter(tags=["Collections"], prefix="/collections")
+
+#: Enough to show a development properly without letting one raise fill the
+#: bucket. The marketplace uses the same ceiling for a listing.
+MAX_PROJECT_IMAGES = 10
 
 
 # ---- helpers ---------------------------------------------------------------
@@ -640,6 +646,88 @@ async def verify_document(
     await db.commit()
     await db.refresh(document)
     return DocumentOut.model_validate(document)
+
+
+# ---- images ----------------------------------------------------------------
+
+
+@router.get("/projects/{slug}/images", response_model=List[ImageOut])
+async def list_images(slug: str, db: AsyncSession = Depends(get_db)):
+    """Public. The photographs are the first thing anyone judges a raise on."""
+    project = (
+        await db.execute(select(CollectionProject).where(CollectionProject.slug == slug))
+    ).scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return [
+        ImageOut.model_validate(i) for i in sorted(project.images, key=lambda x: x.position)
+    ]
+
+
+@router.post(
+    "/projects/{slug}/images",
+    response_model=ImageOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_image(
+    slug: str,
+    payload: ImageCreate,
+    current_user: ActiveUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Attach a photograph to a raise.
+
+    Takes a URL rather than the bytes. The media endpoint already handles
+    uploads for the marketplace, and routing images through a second path
+    here would mean two places where a file size limit, a content type
+    check and a storage bucket could disagree.
+
+    Allowed after publishing, unlike the rest of the raise. The terms are
+    frozen once people commit against them, but a photograph of the site as
+    it stands is a progress report, not a term, and holders watching a
+    building go up are the people it is for.
+    """
+    project, _ = await _owned_project(db, slug, current_user)
+
+    count = len(project.images)
+    if count >= MAX_PROJECT_IMAGES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A raise can carry at most {MAX_PROJECT_IMAGES} images.",
+        )
+
+    image = CollectionProjectImage(
+        project_id=project.id,
+        image_url=payload.image_url,
+        # Appended by default, so the first image uploaded stays the cover
+        # unless somebody deliberately reorders them.
+        position=payload.position or count,
+    )
+    db.add(image)
+    await db.commit()
+    await db.refresh(image)
+    return ImageOut.model_validate(image)
+
+
+@router.delete("/images/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_image(
+    image_id: int,
+    current_user: ActiveUser,
+    db: AsyncSession = Depends(get_db),
+):
+    image = await db.get(CollectionProjectImage, image_id)
+    if image is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    project = await db.get(CollectionProject, image.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    # Reuses the ownership check rather than repeating it, so a builder can
+    # only ever remove a photograph from their own raise.
+    await _owned_project(db, project.slug, current_user)
+
+    await db.delete(image)
+    await db.commit()
 
 
 # ---- phase updates ---------------------------------------------------------

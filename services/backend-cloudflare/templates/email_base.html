@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Sheda Solutions{% endblock %}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+            color: #333333;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 30px auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .header {
+            background-color: #ffffff;
+            padding: 24px;
+            text-align: center;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .header img {
+            max-width: 180px;
+            height: auto;
+        }
+
+        .content {
+            padding: 40px 30px;
+        }
+
+        .greeting {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            color: #555555;
+            font-size: 15px;
+        }
+
+        .button {
+            display: inline-block;
+            padding: 12px 32px;
+            background-color: #2c3e50;
+            color: #ffffff !important;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            text-align: center;
+            margin: 20px 0;
+            transition: background-color 0.3s ease;
+        }
+
+        .button:hover {
+            background-color: #1a252f;
+        }
+
+        .info-box {
+            background-color: #f8f9fa;
+            padding: 16px;
+            border-radius: 6px;
+            border-left: 4px solid #2c3e50;
+            margin: 20px 0;
+        }
+
+        .warning {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-top: 30px;
+            border-left: 4px solid #ffeeba;
+        }
+
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-top: 30px;
+            border-left: 4px solid #c3e6cb;
+        }
+
+        .footer {
+            background-color: #2c3e50;
+            color: #ffffff;
+            padding: 24px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .footer a {
+            color: #ffffff;
+            text-decoration: none;
+            margin: 0 8px;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        .social-links {
+            margin-bottom: 16px;
+        }
+
+        .copyright {
+            opacity: 0.8;
+            font-size: 12px;
+            margin-top: 16px;
+        }
+
+        .divider {
+            height: 1px;
+            background-color: #e0e0e0;
+            margin: 30px 0;
+        }
+
+        @media only screen and (max-width: 600px) {
+            .container {
+                margin: 10px;
+                border-radius: 4px;
+            }
+
+            .content {
+                padding: 30px 20px;
+            }
+
+            .header {
+                padding: 16px;
+            }
+
+            .footer {
+                padding: 16px;
+            }
+        }
+
+            {
+            % block extra_styles %
+        }
+
+            {
+            % endblock %
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header with Logo -->
+        <div class="header">
+            <a href="https://sheda.app" target="_blank">
+                <img src="https://www.sheda.app/images/shedddddddddd-1.png" alt="Sheda Solutions">
+            </a>
+        </div>
+
+        <!-- Main Content -->
+        <div class="content">
+            {% block content %}
+            <!-- Content will be inserted here by child templates -->
+            {% endblock %}
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="social-links">
+                <a href="https://x.com/Shedasolutions">Twitter</a> |
+                <a href="https://t.me/shedasolutions">Telegram</a>
+            </div>
+            <p>
+                Best regards,<br>
+                <strong>Sheda Solutions Team</strong>
+            </p>
+            <p>
+                Need help? Contact us at <a href="mailto:{{ support_email or 'support@sheda.app' }}">{{ support_email or
+                    'support@sheda.app' }}</a>
+            </p>
+            <div class="copyright">
+                &copy; 2025 Sheda Solutions. All rights reserved.
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
