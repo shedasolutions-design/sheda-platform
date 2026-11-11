@@ -11,9 +11,10 @@
  *   BREVO_API_KEY        transactional email
  *   CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET, CLOUDINARY_URL
  *   PINATA_JWT, PINATA_API_KEY, PINATA_API_SECRET
+ *   PINATA_GATEWAY_KEY   stored for later; not put into links (see README)
  *   GOOGLE_CLIENT_ID
  * And, because they belong to the new accounts:
- *   CLOUDINARY_NAME, SMTP_SEND_FROM_MAIL, PINATA_GATEWAY_URL
+ *   CLOUDINARY_NAME, SMTP_SEND_FROM_MAIL
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
@@ -35,6 +36,7 @@
 		"SMTP_HOST": "smtp-relay.brevo.com",
 		"SMTP_PORT": "2525",
 		"PINATA_URL": "https://uploads.pinata.cloud/v3/files",
+		"PINATA_GATEWAY_URL": "https://violet-calm-damselfly-972.mypinata.cloud",
 		"ADMIN_ROUTE": "/sheda-backend",
 		"ADMIN_PREFIX": "sheda-backend",
 		"ADMIN_SITE_NAME": "Sheda Admin",
