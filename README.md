@@ -277,7 +277,7 @@ development needs `eval` and live-reload sockets they would block.
 | --- | --- |
 | Web app: every screen, on market.sheda.app and testing.sheda.app | Working |
 | Marketplace: listings, inspections, offers, escrow, leases, documents, disputes | Working |
-| Built-in wallet: creation, import, recovery, Google backup | Working |
+| Built-in wallet: created and funded automatically at sign-up; import, recovery, Google backup | Working |
 | Collections: browse, rank, register as a builder, open a raise | Working |
 | Admin panel: dashboard, every table, Smart contracts | Working |
 | Contracts: vault, raise, stake registry | Deployed to testnet, 71 tests |
@@ -296,7 +296,8 @@ Still ahead on the Sheda roadmap: real estate services integration (management, 
 ## Where development happens
 
 This repository is the monorepo and the source of truth. Work happens on
-`TT` (deployed to testing.sheda.app); `main` is what market.sheda.app runs.
+`TT`, which deploys to testing.sheda.app on every push. When it is ready,
+`TT` is merged into `main`, which deploys to market.sheda.app.
 It consolidates the code that was previously developed separately in:
 
 - `shedasolutions-design/sheda-solution-mobile` → `apps/mobile/` (reference only)
