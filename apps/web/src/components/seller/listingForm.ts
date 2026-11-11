@@ -1,3 +1,5 @@
+import { getPropertyTypeOptions } from "@/constants/propertyTypes";
+
 /** The listing wizard's single form state, shared by every step. */
 export interface PropertyFormState {
   title: string;
@@ -28,17 +30,11 @@ export interface PropertyFormState {
 
 export type FormUpdate = (data: Partial<PropertyFormState>) => void;
 
-/**
- * The property types the backend accepts. The browse filters offer more
- * (duplex, bungalow…), but listing one of those used to be saved silently as
- * an "apartment", so the listing form only offers what will be kept.
- */
-export const LISTABLE_TYPES = [
-  { label: "Apartment", value: "apartment" },
-  { label: "Land", value: "land" },
-  { label: "Shortlet", value: "shortlet" },
-  { label: "Shared Apartment", value: "shared apartment" },
-];
+/** Every property type the app offers; the backend stores them all. */
+export const LISTABLE_TYPES = getPropertyTypeOptions();
+
+/** "luxury villa" → "luxury_villa", the backend's spelling. */
+export const toBackendType = (t: string) => t.trim().toLowerCase().replace(/\s+/g, "_");
 
 export const createInitialFormState = (currency: string): PropertyFormState => ({
   title: "",

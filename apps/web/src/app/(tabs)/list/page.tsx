@@ -12,7 +12,7 @@ import { PhotoUploadForm } from "@/components/seller/PhotoUploadForm";
 import { PriceDescriptionForm } from "@/components/seller/PriceDescriptionForm";
 import OwnedPropertyPicker from "@/components/seller/OwnedPropertyPicker";
 import { MyListings } from "@/components/seller/MyListings";
-import { createInitialFormState, isLandForm, isRentStatus, type PropertyFormState } from "@/components/seller/listingForm";
+import { createInitialFormState, isLandForm, isRentStatus, toBackendType, type PropertyFormState } from "@/components/seller/listingForm";
 import { useApi } from "@/contexts/ApiContext";
 import { useMode } from "@/contexts/ModeContext";
 import { useWallet } from "@/contexts/WalletContext";
@@ -263,7 +263,7 @@ function ListingFlow() {
         description: form.description,
         location: form.location,
         price: toNumber(form.price),
-        property_type: form.propertyType.replace(" ", "_") as PropertyBase["property_type"],
+        property_type: toBackendType(form.propertyType) as PropertyBase["property_type"],
         listing_type: isForRent ? "rent" : "sale",
         status: "available",
         furnished: !isLand && form.furnishing !== "unfurnished",

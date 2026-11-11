@@ -6,6 +6,8 @@ import Button from "@/components/ui/Button";
 import SelectField from "@/components/ui/SelectField";
 import Spinner from "@/components/ui/Spinner";
 import { useWallet } from "@/contexts/WalletContext";
+import { useCurrency } from "@/contexts/CurrencyContext";
+import { fiatToUsdGeneric } from "@/constants/exchangeRates";
 import { SUPPORTED_FIATS } from "@/services/priceOracle";
 import { WEEKDAY_NAMES, minutesToLabel, timeToMinutes } from "@/utilities/availability";
 import { StepFrame } from "./ListingParts";
@@ -175,6 +177,7 @@ export function AuthorizeListingForm({
   blockchainPropertyId: string | number | null;
   transactionHash: string | null;
 }) {
+  const { oracle, selectedCurrency, formatPrice } = useCurrency();
   if (busy) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3" aria-live="polite">
@@ -183,10 +186,21 @@ export function AuthorizeListingForm({
       </div>
     );
   }
-  const symbol = SUPPORTED_FIATS.find((f) => f.code === formData.listingCurrency)?.symbol ?? "";
-  const price = Number(formData.price.replace(/,/g, "")) || 0;
+  // Shown in the viewer's preferred currency, with the stable-dollar amount
+  // the contract actually holds beside it.
+  const entered = Number(formData.price.replace(/,/g, "")) || 0;
+  const listingRate = oracle?.fiat?.[formData.listingCurrency];
+  const usd = listingRate ? fiatToUsdGeneric(entered, listingRate) : null;
+  const dollars = usd == null ? "" : `$${usd.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+  const priceText =
+    usd == null
+      ? `${SUPPORTED_FIATS.find((f) => f.code === formData.listingCurrency)?.symbol ?? ""}${entered.toLocaleString()}`
+      : selectedCurrency === "USD"
+        ? dollars
+        : `${formatPrice(usd)} (≈ ${dollars})`;
+  const term = isRentStatus(formData.status) && formData.rentDurationDays ? ` for ${formData.rentDurationDays} days` : "";
   const rows: [string, string][] = [
-    ["Price", `${symbol}${price.toLocaleString()}${isRentStatus(formData.status) && formData.rentDurationDays ? ` for ${formData.rentDurationDays} days` : ""}`],
+    ["Price", priceText + term],
     ["Negotiable", formData.isNegotiable ? "Yes" : "No"],
   ];
   return (

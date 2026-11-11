@@ -92,6 +92,13 @@ class PropertyTypeEnum(str, Enum):
     land = "land"
     shortlet = "shortlet"
     shared_apartment = "shared_apartment"
+    bungalow = "bungalow"
+    duplex = "duplex"
+    luxury_villa = "luxury_villa"
+    townhouse = "townhouse"
+    waterfront = "waterfront"
+    new_development = "new_development"
+    affordable_home = "affordable_home"
 
 
 class AppointmentStatEnum(str, Enum):

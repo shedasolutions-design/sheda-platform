@@ -516,7 +516,7 @@ export default function PropertyDetailsPage() {
 
       <section className="p-5">
         <h1 className="text-lg font-medium">{raw.title || "No Title"}</h1>
-        <p className="text-xs capitalize text-secondaryText">{raw.property_type || "Unknown Type"}</p>
+        <p className="text-xs capitalize text-secondaryText">{raw.property_type ? String(raw.property_type).replace(/_/g, " ") : "Unknown Type"}</p>
         <p className="mt-1 flex items-center gap-1 text-sm text-secondaryText">
           <MapPin size={13} /> {raw.location || "No location"}
         </p>
