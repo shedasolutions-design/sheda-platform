@@ -19,6 +19,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import RouterBridge from "@/components/RouterBridge";
 import ProfileGate from "@/components/auth/ProfileGate";
 import Toast from "@/components/ui/Toast";
+import NetworkBanner from "@/components/NetworkBanner";
 
 /**
  * Everything the app needs on every page, in the same nesting order as the
@@ -32,6 +33,7 @@ export default function Providers({ children }: { children: ReactNode }) {
         <QueryClientProvider client={queryClient}>
           <ErrorBoundary>
             <RouterBridge />
+            <NetworkBanner />
             <CurrencyProvider>
               <ApiProvider>
                 <NotificationProvider>
