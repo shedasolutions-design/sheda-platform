@@ -70,7 +70,12 @@ if not ON_WORKERS:
         db_url = _driver_url(_raw_url, "asyncpg")
         connect_args = {"ssl": ssl.create_default_context()} if _wants_tls else {}
 
-    engine = create_async_engine(url=db_url, connect_args=connect_args)
+    # Neon suspends an idle database and closes its connections, so a pooled
+    # connection can be dead by the time it's reused ("connection is closed"
+    # on the first request after a quiet spell). Ping before use, and retire
+    # connections before Neon's idle cut-off.
+    pool_opts = {} if _is_sqlite else {"pool_pre_ping": True, "pool_recycle": 240}
+    engine = create_async_engine(url=db_url, connect_args=connect_args, **pool_opts)
     AsyncSessionLocal = async_sessionmaker(bind=engine, expire_on_commit=False)
 
 else:
