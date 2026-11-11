@@ -13,11 +13,11 @@ export const properties: HouseCardProps[] = [
     description:
       'This is a beautiful 4 bedroom bungalow located in Lekki, Lagos. It has a spacious living room, modern kitchen, and a large backyard.',
     extras: ['Air Conditioning', 'POP Ceiling', 'Funiture', 'Floor Tiles'],
-    image: require('../assets/images/apt-1.png'),
+    image: "/images/apt-1.png",
     seller: {
       name: 'Yusuf Adesina',
       phone: '07061926019',
-      photo: require('../assets/images/profile-image.png'),
+      photo: "/images/profile-image.png",
       rating: 4,
       isActive: true,
       reviews: [
@@ -51,11 +51,11 @@ export const properties: HouseCardProps[] = [
     description:
       'This is a modern 3 bedroom apartment located in Ikoyi, Lagos. It has a spacious living room, modern kitchen, and a large balcony.',
     extras: ['Air Conditioning', 'POP Ceiling', 'Running Water', 'Funiture', 'Floor Tiles'],
-    image: require('../assets/images/apt-2.png'),
+    image: "/images/apt-2.png",
     seller: {
       name: 'John Doe',
       phone: '08012345678',
-      photo: require('../assets/images/sheda-logo.png'),
+      photo: "/images/sheda-logo.png",
       isActive: true,
       rating: 3,
       reviews: [
@@ -87,12 +87,12 @@ export const properties: HouseCardProps[] = [
     mode: 'buy',
     description: 'This tastefully furnished modern self-contained apartment is located at km 20, lekki-ajah expressway, 5 minutes drive from moobil filling station.',
     extras: ['Air Conditioning', 'POP Ceiling', 'Running Water', 'Funiture', 'Floor Tiles'],
-    image: require('../assets/images/hero.png'),
+    image: "/images/hero.png",
     seller: {
       name: 'Jane Smith',
       phone: '09098765432',
       rating: 2,
-      photo: require('../assets/images/profile-image.png'),
+      photo: "/images/profile-image.png",
       isActive: true,
 
     },
@@ -110,7 +110,7 @@ export const properties: HouseCardProps[] = [
     mode: 'buy',
     description: 'A cozy 2 bedroom duplex in Ojota, Lagos. Close to major landmarks and easily accessible.',
     extras: ['Floor Tiles', 'Running Water'],
-    image: require('../assets/images/apt-1.png'),
+    image: "/images/apt-1.png",
     isFavorite: false,
   },
   {
@@ -124,7 +124,7 @@ export const properties: HouseCardProps[] = [
     mode: 'buy',
     description: 'A spacious 10 bedroom duplex located in Ikorodu, Lagos. Perfect for large families or investment.',
     extras: ['Air Conditioning', 'POP Ceiling', 'Running Water', 'Floor Tiles'],
-    image: require('../assets/images/apt-2.png'),
+    image: "/images/apt-2.png",
     isFavorite: false,
   },
 ];

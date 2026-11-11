@@ -11,11 +11,11 @@ const historyData = {
         description:
           'This is a beautiful 4 bedroom bungalow located in Lekki, Lagos. It has a spacious living room, modern kitchen, and a large backyard.',
         extras: ['Air Conditioning', 'POP Ceiling', 'Funiture', 'Floor Tiles'],
-        image: require('../assets/images/apt-1.png'),
+        image: "/images/apt-1.png",
         seller: {
           name: 'Yusuf Adesina',
           phone: '07061926019',
-          photo: require('../assets/images/profile-image.png'),
+          photo: "/images/profile-image.png",
           rating: 4,
           isActive: true,
           reviews: [
@@ -50,11 +50,11 @@ const historyData = {
         description:
           'This is a modern 3 bedroom apartment located in Ikoyi, Lagos. It has a spacious living room, modern kitchen, and a large balcony.',
         extras: ['Air Conditioning', 'POP Ceiling', 'Running Water', 'Funiture', 'Floor Tiles'],
-        image: require('../assets/images/apt-2.png'),
+        image: "/images/apt-2.png",
         seller: {
           name: 'John Doe',
           phone: '08012345678',
-          photo: require('../assets/images/sheda-logo.png'),
+          photo: "/images/sheda-logo.png",
           isActive: true,
           rating: 3,
           reviews: [
@@ -79,7 +79,7 @@ const historyData = {
   Cancelled: [
     {
       id: 'cancelled-1',
-      image: require('../assets/images/apt-1.png'), // You'll need a placeholder image
+      image: "/images/apt-1.png", // You'll need a placeholder image
       type: '1 Bedroom flat',
       location: 'Yaba, Lagos',
       price: '150000',
@@ -91,7 +91,7 @@ const historyData = {
     },
     {
       id: 'cancelled-2',
-      image: require('../assets/images/apt-2.png'), // Another placeholder image
+      image: "/images/apt-2.png", // Another placeholder image
       type: 'Studio apartment',
       location: 'Surulere, Lagos',
       price: '80000',
@@ -105,7 +105,7 @@ const historyData = {
   Expired: [
     {
       id: 'expired-1',
-      image: require('../assets/images/apt-2.png'), // Placeholder image
+      image: "/images/apt-2.png", // Placeholder image
       type: '2 Bedroom apartment',
       location: 'Ikeja, Lagos',
       price: '400000',

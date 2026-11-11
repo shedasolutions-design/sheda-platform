@@ -6,7 +6,7 @@ export const mockTokens = [
     price: 7.85,
     amount: 125.5,
     totalValue: 985.18,
-    icon: require("../assets/images/eth.png"), // Using ETH icon as placeholder
+    icon: "/images/eth.png", // Using ETH icon as placeholder
     iconColor: "#00C08B",
     contractAddress: "near",
   },
@@ -17,7 +17,7 @@ export const mockTokens = [
     price: 1.0,
     amount: 2500,
     totalValue: 2500,
-    icon: require("../assets/images/busd.png"), // Using BUSD icon as placeholder
+    icon: "/images/busd.png", // Using BUSD icon as placeholder
     iconColor: "#2775CA",
     contractAddress: "usn.testnet",
   },
@@ -28,7 +28,7 @@ export const mockTokens = [
     price: 0.45,
     amount: 500,
     totalValue: 225,
-    icon: require("../assets/images/eth.png"), // Using ETH icon as placeholder
+    icon: "/images/eth.png", // Using ETH icon as placeholder
     iconColor: "#78D64B",
     contractAddress: "aurora",
   },
@@ -39,7 +39,7 @@ export const mockTokens = [
     price: 0.12,
     amount: 1000,
     totalValue: 120,
-    icon: require("../assets/images/busd.png"), // Using BUSD icon as placeholder
+    icon: "/images/busd.png", // Using BUSD icon as placeholder
     iconColor: "#F7931E",
     contractAddress: "ref-finance-101.testnet",
   },
@@ -50,7 +50,7 @@ export const mockTokens = [
     price: 0.08,
     amount: 2000,
     totalValue: 160,
-    icon: require("../assets/images/eth.png"), // Using ETH icon as placeholder
+    icon: "/images/eth.png", // Using ETH icon as placeholder
     iconColor: "#FF6B35",
     contractAddress: "oct.beta",
   },
@@ -61,13 +61,13 @@ export const mockAssets = [
     id: "1",
     name: "Sunshine apartments",
     status: "Ongoing" as const,
-    image: require("../assets/images/apt-1.png"),
+    image: "/images/apt-1.png",
   },
   {
     id: "2",
     name: "Sunshine apartments",
     status: "Completed" as const,
-    image: require("../assets/images/apt-2.png"),
+    image: "/images/apt-2.png",
   },
 ];
 

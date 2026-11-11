@@ -1,5 +1,9 @@
 import AuthGuard from "@/components/auth/AuthGuard";
 
+// Content waits for the browser to restore the session (it lives in local
+// storage), so there is nothing for instant-navigation validation to check.
+export const instant = false;
+
 export default function WalletSetupLayout({ children }: LayoutProps<"/wallet-setup">) {
   return (
     <AuthGuard requireAuth>

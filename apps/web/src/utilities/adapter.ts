@@ -25,7 +25,7 @@ export const adaptPropertyToHouse = (property: PropertyShow): HouseProps => {
     ].filter(Boolean) as string[],
     image: primaryImage
       ? { uri: getFullImageUrl(primaryImage) }
-      : require("@/assets/images/apt-1.png"),
+      : { uri: "/images/apt-1.png" },
     isFavorite: false,
     status: property.status as "sold" | "rented" | "available" | undefined,
     agentId: property.agent_id,

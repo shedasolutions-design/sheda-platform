@@ -1,13 +1,13 @@
-const HOMEICON = require('../assets/icons/home-icon.svg');
-const HISTORYICON = require('../assets/icons/history-icon.svg');
-const INBOXICON = require('../assets/icons/inbox-icon.svg');
-const WALLETICON = require('../assets/icons/wallet-icon.svg');
+const HOMEICON = "/icons/home-icon.svg";
+const HISTORYICON = "/icons/history-icon.svg";
+const INBOXICON = "/icons/inbox-icon.svg";
+const WALLETICON = "/icons/wallet-icon.svg";
 
-const HERO = require('../assets/images/hero.png')
-const APT = require('../assets/images/apt-1.png')
-const PROFILE = require('../assets/images/profile-image.png')
-const BUSD = require('../assets/images/busd.png');
-const ETH = require('../assets/images/eth.png');
+const HERO = "/images/hero.png"
+const APT = "/images/apt-1.png"
+const PROFILE = "/images/profile-image.png"
+const BUSD = "/images/busd.png";
+const ETH = "/images/eth.png";
 
 
 export {
