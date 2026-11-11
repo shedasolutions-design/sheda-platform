@@ -9,6 +9,7 @@ import bs58 from "bs58";
 import { apiService } from "./api";
 import secureStorageService from "./secureStorage";
 import { NearIndexerService } from "./nearIndexer";
+import { ACTIVE_NETWORK } from "@/config/near";
 import { testnetTokenRegistry, mainnetTokenRegistry } from "./tokenRegistry";
 import nearContractService from "./nearContract";
 import { fetchExchangeRates, getCachedRates, type ExchangeRates } from "./priceService";
@@ -211,15 +212,15 @@ class NearWalletService {
   private initPromise: Promise<void> | null = null;
   private keyStore: InMemoryKeyStore;
   private accounts: Map<string, WalletAccount> = new Map();
-  private currentNetwork: NetworkType = "testnet";
+  private currentNetwork: NetworkType = ACTIVE_NETWORK;
   private indexerService: NearIndexerService;
   private tokenRegistry: typeof testnetTokenRegistry | typeof mainnetTokenRegistry;
   private currentRpcIndex: number = 0;
 
   constructor() {
     this.keyStore = new InMemoryKeyStore();
-    this.indexerService = new NearIndexerService("testnet");
-    this.tokenRegistry = testnetTokenRegistry;
+    this.indexerService = new NearIndexerService(ACTIVE_NETWORK);
+    this.tokenRegistry = ACTIVE_NETWORK === "testnet" ? testnetTokenRegistry : mainnetTokenRegistry;
 
   }
 

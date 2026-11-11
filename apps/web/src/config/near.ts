@@ -42,7 +42,11 @@ export const NEAR_CONFIG = {
     },
 } as const;
 
-// Only testnet is active — hardcode until mainnet is officially launched
-export const ACTIVE_NETWORK: 'testnet' | 'mainnet' = 'testnet';
+// Set per site (NEXT_PUBLIC_NEAR_NETWORK): testing.sheda.app stays on
+// testnet; market.sheda.app moves to mainnet at launch. Anything other than
+// exactly "mainnet" means testnet, so a missing or misspelt value can never
+// put real funds at stake.
+export const ACTIVE_NETWORK: 'testnet' | 'mainnet' =
+    process.env.NEXT_PUBLIC_NEAR_NETWORK === 'mainnet' ? 'mainnet' : 'testnet';
 export const CONTRACT_ID = SHEDA_CONTRACT[ACTIVE_NETWORK];
 export const NETWORK_CONFIG = NEAR_CONFIG[ACTIVE_NETWORK];
