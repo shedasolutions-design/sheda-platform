@@ -57,6 +57,12 @@ export default function LoginPage() {
     defaultValues: { identifier: "", password: "" },
   });
 
+  // Already signed in when the page opened: nothing to do here.
+  useEffect(() => {
+    if (isAuthenticated && !hasAttemptedLogin && !isSubmitting.current) router.replace("/home");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
+
   useEffect(() => {
     clearError();
     setHasAttemptedLogin(false);

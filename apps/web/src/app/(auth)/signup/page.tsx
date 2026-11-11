@@ -66,6 +66,12 @@ export default function SignupPage() {
     defaultValues: { email: "", password: "", confirmPassword: "" },
   });
 
+  // Already signed in when the page opened: nothing to do here.
+  useEffect(() => {
+    if (isAuthenticated && !hasAttemptedSignup && !isSubmitting.current) router.replace("/home");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
+
   useEffect(() => {
     clearError();
     setHasAttemptedSignup(false);
