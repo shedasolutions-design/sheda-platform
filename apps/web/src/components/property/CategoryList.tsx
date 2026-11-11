@@ -18,7 +18,7 @@ import { categories } from "@/constants/categories-mock";
 import { useApi } from "@/contexts/ApiContext";
 
 /** The mobile list names Material icons; these are their closest equivalents. */
-const ICONS: Record<string, LucideIcon> = {
+export const CATEGORY_ICONS: Record<string, LucideIcon> = {
   home: Home,
   apartment: Building2,
   landscape: Mountain,
@@ -39,7 +39,7 @@ export default function CategoryList() {
     <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 pt-2 [scrollbar-width:none]">
       {categories.map((c) => {
         const selected = selectedCategory === c.name;
-        const Icon = ICONS[c.icon] ?? Home;
+        const Icon = CATEGORY_ICONS[c.icon] ?? Home;
         return (
           <button
             key={c.id}
