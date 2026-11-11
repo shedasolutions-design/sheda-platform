@@ -276,8 +276,8 @@ function Portfolio() {
           <ButtonLink href="/wallet-setup" full>
             Set up wallet
           </ButtonLink>
-          <ButtonLink href="/wallet-recovery" variant="outline" full>
-            Recover a wallet
+          <ButtonLink href="/wallet-setup/import-wallet" variant="outline" full>
+            Import with a recovery phrase
           </ButtonLink>
         </div>
       </div>
