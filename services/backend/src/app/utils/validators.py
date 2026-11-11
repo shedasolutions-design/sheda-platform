@@ -214,15 +214,19 @@ class ValidatorMixin:
 
     @staticmethod
     def validate_bedroom_count(value: int) -> int:
-        """Validate bedroom count (1-100)."""
+        """Validate bedroom count (0-100).
+
+        0 is real: land has no bedrooms, and the app sends 0 for it. The old
+        1-100 rule refused every land listing.
+        """
         if value is None:
             return value
 
         if not isinstance(value, int):
             raise ValueError("Bedroom count must be an integer")
 
-        if value < 1 or value > 100:
-            raise ValueError("Bedroom count must be between 1 and 100")
+        if value < 0 or value > 100:
+            raise ValueError("Bedroom count must be between 0 and 100")
 
         return value
 
