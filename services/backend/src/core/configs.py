@@ -251,6 +251,10 @@ class Settings(BaseSettings):
 
     # Middleware
     ORIGINS: list[str] = Field(..., description="CORS allowed origins")
+    ORIGIN_REGEX: str = Field(
+        default="",
+        description="Extra CORS origins as a regex, e.g. a project's preview URLs",
+    )
     METHODS: list[str] = Field(
         default=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         description="CORS allowed methods",
