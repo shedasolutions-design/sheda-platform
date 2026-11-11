@@ -15,4 +15,5 @@ alembic upgrade heads > /dev/null && echo "Database migrations completed success
 BIND_ADDRESS=${BIND_ADDRESS:-0.0.0.0:${PORT:-8000}}
 
 echo "Starting application with Gunicorn ($WORKERS workers) on $BIND_ADDRESS..."
-exec gunicorn -k uvicorn.workers.UvicornWorker main:app --chdir src --bind "$BIND_ADDRESS"
+# Trust the X-Forwarded-* headers from the host's proxy, so redirects keep https.
+exec gunicorn -k uvicorn.workers.UvicornWorker main:app --chdir src --bind "$BIND_ADDRESS" --forwarded-allow-ips="*"

@@ -31,7 +31,8 @@ class BaseUser(Base):
     __tablename__ = "user"
     id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(
-        String(30),
+        # Wide enough for an email address, which the apps use as the username.
+        String(254),
         nullable=True,
         index=True,
     )

@@ -14,7 +14,7 @@ class BaseUserSchema(BaseModel):
         AfterValidator(decode_url),
         Field(examples=["https://example/img/user.jpg"], max_length=255),
     ] = None
-    username: Annotated[Optional[str], Field(example="Admin", max_length=30)] = None  # type: ignore
+    username: Annotated[Optional[str], Field(example="Admin", max_length=254)] = None  # type: ignore
     email: Annotated[Optional[EmailStr], Field(examples=["penivera655@gmail.com"])] = (
         None
     )
@@ -30,7 +30,7 @@ class BaseUserSchema(BaseModel):
 
 
 class UserCreate(BaseModel):
-    username: Annotated[str, Field(example="Admin", max_length=30)] = None  # type: ignore
+    username: Annotated[str, Field(example="Admin", max_length=254)] = None  # type: ignore
     email: Annotated[EmailStr, Field(examples=["penivera655@gmail.com"])]
     password: Annotated[str, BeforeValidator(hash_password), Field(examples=["admin"])]
     near_account_id: Annotated[str, Field(example="user.testnet", max_length=255)]
@@ -88,7 +88,7 @@ class UserUpdate(BaseUserSchema):
         AfterValidator(decode_url),
         Field(examples=["https://example/img/user.jpg"], max_length=255),
     ] = None
-    username: Annotated[Optional[str], Field(example="Admin", max_length=30)] = None  # type: ignore
+    username: Annotated[Optional[str], Field(example="Admin", max_length=254)] = None  # type: ignore
     email: Annotated[Optional[EmailStr], Field(examples=["penivera655@gmail.com"])] = (
         None
     )
