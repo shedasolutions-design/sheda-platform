@@ -92,7 +92,7 @@ export default function PropertyDetailsPage() {
     getAgentProfile,
     getProperties,
     getTransactions,
-    getPropertyRatings,
+    getUserRatings,
     properties,
     sendMessage,
     sendTransactionUpdate,
@@ -183,10 +183,11 @@ export default function PropertyDetailsPage() {
     };
   }, [raw?.blockchain_property_id]);
 
-  // Reviews
+  // Reviews are of the seller (ratings belong to an agent, not a listing).
   useEffect(() => {
-    if (!raw?.id) return;
-    getPropertyRatings(raw.id)
+    const sellerId = Number(raw?.agent_id || 0);
+    if (!sellerId) return;
+    getUserRatings(sellerId)
       .then((ratings: RatingShow[]) => {
         if (!ratings?.length) return;
         setReviews(
@@ -201,7 +202,7 @@ export default function PropertyDetailsPage() {
         setAvgRating(Math.round((ratings.reduce((s, r) => s + r.score, 0) / ratings.length) * 10) / 10);
       })
       .catch(() => {});
-  }, [raw?.id, getPropertyRatings]);
+  }, [raw?.agent_id, getUserRatings]);
 
   // Contact is unlocked once the viewer has a bid or payment on this property.
   useEffect(() => {
@@ -581,7 +582,7 @@ export default function PropertyDetailsPage() {
 
       <section className="border-t border-borderColor px-5 py-4">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm">Reviews ({reviews.length})</h2>
+          <h2 className="text-sm">Seller reviews ({reviews.length})</h2>
           <Stars rating={avgRating} size={15} />
         </div>
         <Reviews reviews={reviews} />

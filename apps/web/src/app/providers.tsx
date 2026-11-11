@@ -16,6 +16,7 @@ import { WalletProvider } from "@/contexts/WalletContext";
 import { ConnectedModeProvider } from "@/contexts/ConnectedModeProvider";
 import BlockchainListenerBridge from "@/components/BlockchainListenerBridge";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import RouterBridge from "@/components/RouterBridge";
 import ProfileGate from "@/components/auth/ProfileGate";
 import Toast from "@/components/ui/Toast";
 
@@ -30,6 +31,7 @@ export default function Providers({ children }: { children: ReactNode }) {
       <PersistGate loading={null} persistor={persistor}>
         <QueryClientProvider client={queryClient}>
           <ErrorBoundary>
+            <RouterBridge />
             <CurrencyProvider>
               <ApiProvider>
                 <NotificationProvider>

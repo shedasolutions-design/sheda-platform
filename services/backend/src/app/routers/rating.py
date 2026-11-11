@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.models.rating import Rating
@@ -26,7 +28,12 @@ async def create_rating(
     if not ratee:
         raise HTTPException(status_code=404, detail="Agent (Seller) not found")
         
-    if current_user.id == rating.ratee_id:
+    # One person owns two rows (a buyer and a seller profile, sharing an
+    # email), so comparing ids alone let someone rate their own seller
+    # profile from their buyer one.
+    if current_user.id == rating.ratee_id or (
+        current_user.email and ratee.email and current_user.email.lower() == ratee.email.lower()
+    ):
         raise HTTPException(status_code=400, detail="You cannot rate yourself")
 
     new_rating = Rating(
@@ -53,3 +60,15 @@ async def create_rating(
     await db.commit()
     
     return new_rating
+
+
+@router.get("/", response_model=List[RatingShow])
+async def list_ratings(
+    ratee_id: int = Query(..., description="The seller (agent) whose ratings to list"),
+    db: AsyncSession = Depends(get_db),
+):
+    """A seller's ratings, newest first. Public: they are shown on listings."""
+    result = await db.execute(
+        select(Rating).where(Rating.ratee_id == ratee_id).order_by(Rating.created_at.desc())
+    )
+    return result.scalars().all()
