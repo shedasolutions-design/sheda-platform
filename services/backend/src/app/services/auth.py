@@ -221,6 +221,7 @@ async def process_signup(
     return SignUpShow(
         token=Token(access_token=access_token, active_profile=active_profile),
         user_data=UserShow.model_validate(new_user),
+        is_new_user=True,
     )
 
 
@@ -239,6 +240,7 @@ async def process_social_login(
             )
         
         account_type = requested_account_type(payload.profile)
+        is_new_user = False
 
         # Check if user exists
         try:
@@ -251,6 +253,7 @@ async def process_social_login(
                 await db.refresh(user)
         except HTTPException:
             # User doesn't exist, create account
+            is_new_user = True
             username = idinfo.get("name") or idinfo.get("given_name") or email.split("@")[0]
             username = "".join(e for e in username if e.isalnum())[:30]
             if not username:
@@ -291,6 +294,7 @@ async def process_social_login(
         return SignUpShow(
             token=Token(access_token=access_token, active_profile=active_profile),
             user_data=UserShow.model_validate(user),
+            is_new_user=is_new_user,
         )
             
     except ValueError as e:

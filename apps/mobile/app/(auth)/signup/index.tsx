@@ -37,11 +37,15 @@ type SignupFormData = z.infer<typeof signupSchema>;
 
 const Signup = () => {
   const { signup, isLoading, error, clearError, isAuthenticated } = useAuth();
-  const { socialLogin, user } = useApi();
+  const { socialLogin } = useApi();
   const { signInWithGoogle } = useGoogleAuth();
   const [hasAttemptedSignup, setHasAttemptedSignup] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const isSubmitting = useRef(false);
+  // Google is also a sign-in route. If the account already existed, this
+  // person must not be handed a second wallet, so the success effect is
+  // suppressed and they go straight Home instead.
+  const existingGoogleUser = useRef(false);
   const [modalConfig, setModalConfig] = useState<{
     isVisible: boolean;
     type: "success" | "error" | "info" | "loading";
@@ -91,22 +95,22 @@ const Signup = () => {
 
   // ────── Navigate on signup success ──────
   useEffect(() => {
+    // Wait while Google is still resolving: socialLogin marks the session
+    // authenticated before it returns whether the account is new. Routing
+    // during that window would provision a wallet for a returning user.
+    if (isGoogleLoading || existingGoogleUser.current) return;
     if (isAuthenticated && hasAttemptedSignup) {
       isSubmitting.current = false;
-      showModal("success", "Account Created!", "Redirecting to wallet setup…");
+      showModal("success", "Account Created!", "Setting up your wallet…");
       const timer = setTimeout(() => {
         hideModal();
-        // Falls back to the authenticated user's email for the Google path,
-        // where the form was never filled in.
-        const email = control._formValues.email || user?.email;
-        router.replace({
-          pathname: "/wallet-setup",
-          params: { email },
-        });
+        // The provision screen creates the wallet automatically and owns the
+        // progress UI; it reads the email from the authenticated user.
+        router.replace("/wallet-setup/provision");
       }, 800);
       return () => clearTimeout(timer);
     }
-  }, [isAuthenticated, hasAttemptedSignup, user?.email]);
+  }, [isAuthenticated, hasAttemptedSignup, isGoogleLoading]);
 
   // ────── Handle API errors ──────
   useEffect(() => {
@@ -191,7 +195,14 @@ const Signup = () => {
       // it fires on isAuthenticated + hasAttemptedSignup, and socialLogin
       // dispatches SET_AUTHENTICATED just like signup() does.
       setHasAttemptedSignup(true);
-      await socialLogin({ token: idToken, provider: "google" });
+      const result = await socialLogin({ token: idToken, provider: "google" });
+      if (!result?.isNewUser) {
+        // Already had an account: no wallet to provision. Keep the previous
+        // returning-user destination (create/import/restore) and suppress the
+        // new-account effect.
+        existingGoogleUser.current = true;
+        router.replace("/wallet-setup");
+      }
     } catch (err: any) {
       showModal("error", "Google Sign-In Failed", err?.message || "Please try again.");
     } finally {

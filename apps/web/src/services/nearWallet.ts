@@ -568,32 +568,6 @@ class NearWalletService {
     return buildAccountId(username, this.currentNetwork);
   }
 
-  /**
-   * Find a unique account ID by appending numeric suffixes if the base name
-   * is already taken.
-   */
-  private async findUniqueAccountId(
-    baseUsername: string
-  ): Promise<string> {
-    // Try the base name first
-    let accountId = buildAccountId(baseUsername, this.currentNetwork);
-    let exists = await this.withRetry(() => this.accountExists(accountId), "checkAccountExists");
-
-    if (!exists) return accountId;
-
-    // Try appending numeric suffix: username2, username3, etc.
-    for (let suffix = 2; suffix <= 99; suffix++) {
-      const candidateUsername = `${baseUsername}${suffix}`;
-      accountId = buildAccountId(candidateUsername, this.currentNetwork);
-      exists = await this.withRetry(() => this.accountExists(accountId), "checkAccountExists");
-      if (!exists) return accountId;
-    }
-
-    throw new Error(
-      `All variations of ${baseUsername} are taken. Please use a different email.`
-    );
-  }
-
   // ── Wallet Creation ───────────────────────────────────────────────────
 
   async createWallet(
@@ -661,20 +635,34 @@ class NearWalletService {
         // to the free rungs cannot leave the user with two wallets.
         let reason = "Sheda couldn't fund a new account just now.";
         try {
-          const id = await this.withRetry(
-            () => this.findUniqueAccountId(username),
-            "findUniqueAccountId"
-          );
-          progress(this.currentNetwork === "testnet" ? "funding_wallet" : "setting_up");
-          const sponsored = await requestSponsoredAccount(id, subAccountPublicKey);
-          if (sponsored.ok) {
-            console.log("NearWalletService: sponsored account created on-chain");
-            return { id: sponsored.accountId, kind: "sponsored", needsFunding: false };
+          // The server already checks whether the name is free before it
+          // writes, so a separate client-side accountExists() read here was a
+          // second, slower round trip that could only race the check it was
+          // duplicating. Ask the server directly; on a rare collision it says
+          // "taken" and we try the next suffix.
+          const suffix = FUNDING_ACCOUNTS[this.currentNetwork].walletSuffix;
+          const base = sanitizeUsername(username) || "shedauser";
+          let candidate = buildAccountId(base, this.currentNetwork);
+
+          for (let attempt = 0; attempt < 10; attempt++) {
+            progress(this.currentNetwork === "testnet" ? "funding_wallet" : "setting_up");
+            const sponsored = await requestSponsoredAccount(
+              candidate,
+              subAccountPublicKey
+            );
+            if (sponsored.ok) {
+              console.log("NearWalletService: sponsored account created on-chain");
+              return { id: sponsored.accountId, kind: "sponsored", needsFunding: false };
+            }
+            if (sponsored.code === "ambiguous") {
+              throw new Error(`${AMBIGUOUS_WRITE_ERROR} ${sponsored.message}`);
+            }
+            if (sponsored.code !== "taken") {
+              reason = sponsored.message;
+              break;
+            }
+            candidate = `${base}${attempt + 2}${suffix}`;
           }
-          if (sponsored.code === "ambiguous") {
-            throw new Error(`${AMBIGUOUS_WRITE_ERROR} ${sponsored.message}`);
-          }
-          reason = sponsored.message;
           console.warn("NearWalletService: sponsored creation unavailable, falling back:", reason);
         } catch (sponsorError: any) {
           const message = sponsorError?.message || String(sponsorError);

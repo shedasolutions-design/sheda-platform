@@ -42,7 +42,7 @@ interface ModalState {
 export default function SignupPage() {
   const router = useRouter();
   const { signup, isLoading, error, clearError, isAuthenticated } = useAuth();
-  const { socialLogin, user } = useApi();
+  const { socialLogin } = useApi();
   const { signInWithGoogle } = useGoogleAuth();
   const [hasAttemptedSignup, setHasAttemptedSignup] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -57,7 +57,6 @@ export default function SignupPage() {
   const {
     register,
     handleSubmit,
-    getValues,
     setError: setFormError,
     clearErrors,
     formState: { errors },
@@ -78,19 +77,19 @@ export default function SignupPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A new account goes straight to wallet setup.
+  // A new account goes straight to automatic wallet provisioning. The
+  // provision page owns the creation work and sends the user on to Home.
   useEffect(() => {
     if (isAuthenticated && hasAttemptedSignup) {
       isSubmitting.current = false;
-      showModal("success", "Account Created!", "Redirecting to wallet setup…");
+      showModal("success", "Account Created!", "Setting up your wallet…");
       const timer = setTimeout(() => {
         hideModal();
-        const email = getValues("email") || user?.email || "";
-        router.replace(`/wallet-setup${email ? `?email=${encodeURIComponent(email)}` : ""}`);
+        router.replace("/wallet-setup/provision");
       }, 800);
       return () => clearTimeout(timer);
     }
-  }, [isAuthenticated, hasAttemptedSignup, user?.email, router, getValues, showModal, hideModal]);
+  }, [isAuthenticated, hasAttemptedSignup, router, showModal, hideModal]);
 
   useEffect(() => {
     if (!error || !hasAttemptedSignup) return;

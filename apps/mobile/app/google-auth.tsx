@@ -107,11 +107,18 @@ export default function GoogleAuthRedirect() {
       }
 
       try {
-        await socialLogin({ token: idToken, provider: "google" });
+        const result = await socialLogin({ token: idToken, provider: "google" });
         clearMarkers();
+        // The backend says whether this request created the account. Only a
+        // brand-new account gets a wallet; a returning user must never be
+        // handed a second one. Returning users keep the old behaviour and go
+        // straight home.
+        const autoProvision = result?.isNewUser === true;
         // Replace, not push: the URL still carries the token in its fragment
         // and must not be reachable with Back.
-        router.replace("/(tabs)/home");
+        router.replace(
+          autoProvision ? "/wallet-setup/provision" : "/(tabs)/home"
+        );
       } catch (err) {
         clearMarkers();
         setError(
