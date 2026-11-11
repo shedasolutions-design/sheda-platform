@@ -1419,8 +1419,13 @@ class NearWalletService {
       const signer = new KeyPairSigner(keyPair);
       const account = new Account(accountId, this.provider, signer);
 
-      const factor = Math.pow(10, decimals);
-      const atomicAmount = Math.round(parseFloat(amount) * factor).toString();
+      // Exact string maths: floats turn 1 wNEAR (24 decimals) into "1e+24",
+      // which the contract rejects, and lose digits on larger amounts.
+      const clean = String(amount).replace(/,/g, "").trim();
+      if (!/^\d*\.?\d*$/.test(clean) || !/\d/.test(clean)) throw new Error("Invalid amount");
+      const [whole = "0", fraction = ""] = clean.split(".");
+      const atomicAmount = (whole + fraction.slice(0, decimals).padEnd(decimals, "0")).replace(/^0+/, "") || "0";
+      if (atomicAmount === "0") throw new Error("Amount must be greater than zero");
 
       const result = await this.withRetry(async () => {
         return await account.functionCall({
