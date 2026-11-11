@@ -132,9 +132,11 @@ Retrieve a paginated list of available properties using cursor-based pagination.
 )
 async def property_feed(
     filter_query: Annotated[FilterParams, Query()],
-    _current_user: ActiveUser,
     db: DBSession,
 ):
+    # Public: browsing is open to everyone, and the home page loads this for
+    # signed-out visitors. A listing carries no contact details (those sit
+    # behind /agent-profile), only what is already public on the chain.
     return await filtered_property(filter_query, db)
 
 
@@ -146,9 +148,9 @@ async def property_feed(
 )
 async def get_property(
     property_id: int,
-    current_user: ActiveUser,
     db: DBSession,
 ):
+    # Public, like the feed: a shared listing link should open for anyone.
     return await get_property_by_id(property_id, db)
 
 
