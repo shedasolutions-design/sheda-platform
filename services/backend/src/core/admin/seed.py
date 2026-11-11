@@ -55,7 +55,7 @@ async def seed_superadmin() -> None:
             if not existing.email:
                 existing.email = email
             if not existing.near_account_id:
-                existing.near_account_id = f"{username.lower()}.testnet"
+                existing.near_account_id = f"{username.lower()}{settings.near_account_suffix}"
             await session.commit()
             return
 
@@ -64,7 +64,7 @@ async def seed_superadmin() -> None:
             email=email,
             password=hash_password(password),
             is_superuser=True,
-            near_account_id=f"{username.lower()}.testnet",
+            near_account_id=f"{username.lower()}{settings.near_account_suffix}",
         )
         session.add(admin)
         await session.commit()
