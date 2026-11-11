@@ -31,7 +31,7 @@
 		"VERIFICATION_CODE_EXP_MIN": "15",
 		"DEBUG_MODE": "False",
 		"DEV_URL": "http://localhost:8787",
-		"PROD_URL": "https://sheda-api.workers.dev",
+		"PROD_URL": "https://sheda-api.shedasolution.workers.dev",
 		"ORIGINS": "[\"*\"]",
 		"SMTP_HOST": "smtp-relay.brevo.com",
 		"SMTP_PORT": "2525",
