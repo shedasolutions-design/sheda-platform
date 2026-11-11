@@ -3,22 +3,17 @@
 /**
  * Which backend the app talks to, and what to do when it stops answering.
  *
- * There are two deployments — Cloudflare Workers and Render — sharing one
- * database. Sharing the database is what makes this safe: the same accounts,
- * listings and appointments are visible either way, so moving between them is
- * a change of route, not a change of world.
- *
- * Cloudflare is primary because it is consistently faster and does not cold
- * start. Render is kept as the way back: if Cloudflare stops answering, the
- * app keeps working instead of showing everyone an error.
+ * The API runs on Railway against Sheda's Neon database. A fallback base can
+ * be set with NEXT_PUBLIC_API_URL_FALLBACK, but ONLY to a deployment that
+ * shares the same database: failing over to one with a different database
+ * would quietly show a different set of users and listings. There is none by
+ * default. (The old Cloudflare and Render backends use the previous database,
+ * so they must not be listed here.)
  */
 
-const PRIMARY =
-  process.env.NEXT_PUBLIC_API_URL || "https://sheda.peni.dev";
+const PRIMARY = process.env.NEXT_PUBLIC_API_URL || "https://api-production-1e044370.up.railway.app";
 
-const FALLBACK =
-  process.env.NEXT_PUBLIC_API_URL_FALLBACK ??
-  "https://sheda-backend-1.onrender.com";
+const FALLBACK = process.env.NEXT_PUBLIC_API_URL_FALLBACK ?? "";
 
 /** Every base worth trying, best first, with duplicates collapsed. */
 export const API_BASES: string[] = [...new Set([PRIMARY, FALLBACK])].filter(Boolean);

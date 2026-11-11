@@ -20,7 +20,7 @@ import {
 // when it is unreachable — see services/apiEndpoints.ts — so this is the right
 // value for building a URL, but not a promise about which host answered.
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "https://sheda.peni.dev";
+  process.env.NEXT_PUBLIC_API_URL || "https://api-production-1e044370.up.railway.app";
 
 // Types based on OpenAPI specification
 export interface UserCreate {
