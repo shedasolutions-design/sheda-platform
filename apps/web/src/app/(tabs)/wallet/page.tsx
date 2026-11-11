@@ -2,6 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- property media comes from arbitrary hosts */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { ArrowDownToLine, ArrowUpFromLine, Copy, ExternalLink, Eye, EyeOff, RefreshCw, Send, Wallet as WalletIcon, Zap } from "lucide-react";
 import AuthGuard from "@/components/auth/AuthGuard";
 import Button, { ButtonLink } from "@/components/ui/Button";
@@ -340,6 +341,9 @@ function Portfolio() {
         >
           {short(walletState.account.accountId, 28)} <Copy size={12} />
         </button>
+        <Link href="/wallet-recovery" className="mt-1 inline-block text-xs font-medium text-primary hover:underline">
+          Backup &amp; recovery
+        </Link>
         <div className="mt-5 grid grid-cols-2 gap-3">
           <Button variant="outline" onClick={() => setDepositOpen(true)}>
             <ArrowDownToLine size={18} /> Deposit

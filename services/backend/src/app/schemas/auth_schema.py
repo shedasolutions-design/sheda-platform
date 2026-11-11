@@ -37,6 +37,10 @@ from app.schemas.user_schema import UserShow
 class SignUpShow(BaseModel):
     token: Token
     user_data: UserShow
+    # True only when this request created the account. Google is both a
+    # sign-up and a sign-in route, so a returning user authenticating through
+    # it must not be handed a second wallet by the client's auto-provisioning.
+    is_new_user: bool = False
 
     class Config:
         from_attributes = True

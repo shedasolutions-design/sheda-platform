@@ -239,6 +239,7 @@ async def send_transaction_notification_async(
 async def confirm_payment_endpoint(
     contract_id: int,
     transaction_hash: str,
+    db: DBSession,
     current_user: BaseUser = Depends(get_current_user),
 ):
     """
@@ -254,6 +255,14 @@ async def confirm_payment_endpoint(
     Returns:
         {"status": "confirming", "contract_id": int}
     """
+    # Only the contract's buyer may report paying it; anyone else gets the
+    # same answer as for a contract that doesn't exist.
+    from app.models.property import Contract
+
+    contract = await db.get(Contract, contract_id)
+    if contract is None or contract.client_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contract not found")
+
     if not CELERY_AVAILABLE:
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,

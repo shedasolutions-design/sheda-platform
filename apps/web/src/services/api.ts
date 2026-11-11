@@ -1680,8 +1680,10 @@ class ApiService {
 
   // ---- Social Login ----
 
-  async socialLogin(payload: SocialLoginRequest): Promise<ApiResponse<{ token: Token; user_data: UserShow }>> {
-    return this.request<{ token: Token; user_data: UserShow }>("/api/v1/auth/social-login", {
+  async socialLogin(
+    payload: SocialLoginRequest
+  ): Promise<ApiResponse<{ token: Token; user_data: UserShow; is_new_user?: boolean }>> {
+    return this.request<{ token: Token; user_data: UserShow; is_new_user?: boolean }>("/api/v1/auth/social-login", {
       method: "POST",
       body: JSON.stringify(payload),
     });

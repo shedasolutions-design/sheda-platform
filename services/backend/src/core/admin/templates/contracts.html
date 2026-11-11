@@ -1,0 +1,402 @@
+{% extends "layout.html" %}
+{% block header %}
+<div class="page-header d-print-none">
+  <div class="container-xl">
+    <div class="row g-2 align-items-center">
+      <div class="col">
+        <div class="page-pretitle">Sheda · {{ network }}</div>
+        <h2 class="page-title">Smart contracts</h2>
+      </div>
+      <div class="col-auto ms-auto">
+        <div class="btn-group" role="group" aria-label="Network">
+          <a href="?network=testnet" class="btn {{ 'btn-primary' if network == 'testnet' else '' }}">Testnet</a>
+          <a href="?network=mainnet" class="btn {{ 'btn-primary' if network == 'mainnet' else '' }}">Mainnet</a>
+        </div>
+        <button type="button" class="btn ms-1" id="refresh"><i class="fa-solid fa-rotate me-1"></i>Refresh</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="container-xl">
+  {% if not contracts.market %}
+  <div class="alert alert-info">Nothing is deployed on {{ network }} yet. The forms below still work, so you can prepare commands ahead of launch.</div>
+  {% endif %}
+
+  <div class="alert alert-secondary d-flex gap-3">
+    <i class="fa-solid fa-shield-halved fa-lg mt-1 text-danger"></i>
+    <div>
+      <strong>This panel never holds the contract owner's key.</strong>
+      Each action below builds the exact command to sign it. Run it on your own computer with
+      <a href="https://github.com/near/near-cli-rs" target="_blank" rel="noopener">NEAR CLI</a>
+      (<span class="mono">npm i -g near-cli-rs</span>), after adding the owner or admin account once with
+      <span class="mono">near account import-account</span>. A server holding that key would be one break-in away from the escrow.
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div class="row row-cards" id="status">
+    <div class="col-12 col-lg-7">
+      <div class="card h-100">
+        <div class="card-header">
+          <h3 class="card-title"><i class="fa-solid fa-store me-2 text-danger"></i>Marketplace</h3>
+          <div class="card-actions mono"><a href="{{ explorer }}/address/{{ contracts.market }}" target="_blank" rel="noopener">{{ contracts.market or '—' }}</a></div>
+        </div>
+        <div class="card-body">
+          <div class="row g-3" id="market-stats"><div class="text-secondary">Loading…</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-5">
+      <div class="card h-100">
+        <div class="card-header"><h3 class="card-title"><i class="fa-solid fa-coins me-2 text-danger"></i>Money held</h3></div>
+        <div class="list-group list-group-flush" id="balances"><div class="list-group-item text-secondary">Loading…</div></div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6">
+      <div class="card h-100">
+        <div class="card-header"><h3 class="card-title"><i class="fa-solid fa-user-shield me-2 text-danger"></i>Owner and admins</h3></div>
+        <div class="list-group list-group-flush" id="admins"><div class="list-group-item text-secondary">Loading…</div></div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6">
+      <div class="card h-100">
+        <div class="card-header"><h3 class="card-title"><i class="fa-solid fa-clock me-2 text-danger"></i>Timings</h3></div>
+        <div class="list-group list-group-flush" id="timings"><div class="list-group-item text-secondary">Loading…</div></div>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title"><i class="fa-solid fa-scale-balanced me-2 text-danger"></i>Disputed bids</h3></div>
+        <div class="table-responsive">
+          <table class="table table-vcenter card-table">
+            <thead><tr><th>Bid</th><th>Property</th><th>Bidder</th><th>Amount</th><th></th></tr></thead>
+            <tbody id="disputes"><tr><td colspan="5" class="text-secondary">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6">
+      <div class="card h-100"><div class="card-body">
+        <h3 class="card-title"><i class="fa-solid fa-layer-group me-2 text-danger"></i>Collections raise</h3>
+        <div class="mono mb-2"><a href="{{ explorer }}/address/{{ contracts.raise }}" target="_blank" rel="noopener">{{ contracts.raise or 'Not deployed' }}</a></div>
+        <div id="raise-state" class="text-secondary">Loading…</div>
+      </div></div>
+    </div>
+    <div class="col-12 col-md-6">
+      <div class="card h-100"><div class="card-body">
+        <h3 class="card-title"><i class="fa-solid fa-hand-holding-dollar me-2 text-danger"></i>Stake registry</h3>
+        <div class="mono mb-2"><a href="{{ explorer }}/address/{{ contracts.stake }}" target="_blank" rel="noopener">{{ contracts.stake or 'Not deployed' }}</a></div>
+        <div id="stake-state" class="text-secondary">Loading…</div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <h2 class="mt-4 mb-2">Admin actions</h2>
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-md-6">
+      <label class="form-label" for="signer">Sign as</label>
+      <input class="form-control mono" id="signer" placeholder="owner or admin account" autocomplete="off">
+      <small class="form-hint">Filled with the contract owner. Most actions accept any admin; ones marked <span class="badge bg-red-lt">owner</span> need the owner.</small>
+    </div>
+    <div class="col-12 col-md-6">
+      <label class="form-label" for="filter">Find an action</label>
+      <input class="form-control" id="filter" placeholder="e.g. dispute, stablecoin, delist" autocomplete="off">
+    </div>
+  </div>
+  <div class="row row-cards" id="actions"></div>
+</div>
+
+<!-- The generated command -->
+<div class="modal modal-blur fade" id="cmd-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-fullscreen-sm-down">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title" id="cmd-title">Command</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+      <div class="modal-body">
+        <div id="cmd-warning"></div>
+        <label class="form-label">Run this on your own computer</label>
+        <textarea class="form-control mono" id="cmd-text" rows="5" readonly></textarea>
+        <button type="button" class="btn btn-primary mt-2" id="cmd-copy"><i class="fa-solid fa-copy me-1"></i>Copy command</button>
+        <details class="mt-3"><summary class="text-secondary">What it sends</summary><pre class="mono mt-2 p-2 bg-light rounded" id="cmd-json"></pre></details>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+(() => {
+  const NETWORK = {{ network | tojson }};
+  const RPC = {{ rpc | tojson }};
+  const EXPLORER = {{ explorer | tojson }};
+  const C = {{ contracts | tojson }};
+  const NS = { second: 1000000000n, minute: 60000000000n, hour: 3600000000000n, day: 86400000000000n };
+
+  // ── Reading the chain ──
+  async function view(contract, method, args = {}) {
+    const r = await fetch(RPC, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      jsonrpc: "2.0", id: 1, method: "query",
+      params: { request_type: "call_function", finality: "final", account_id: contract, method_name: method, args_base64: btoa(JSON.stringify(args)) } }) });
+    const j = await r.json();
+    if (j.error || j.result?.error) throw new Error(j.error?.cause?.name || j.result?.error || "RPC error");
+    return JSON.parse(new TextDecoder().decode(new Uint8Array(j.result.result)));
+  }
+  async function account(id) {
+    const r = await fetch(RPC, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      jsonrpc: "2.0", id: 1, method: "query", params: { request_type: "view_account", finality: "final", account_id: id } }) });
+    const j = await r.json();
+    if (j.error) throw new Error(j.error?.cause?.name || "RPC error");
+    return j.result;
+  }
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const acct = (id) => `<a class="mono" href="${EXPLORER}/address/${esc(id)}" target="_blank" rel="noopener">${esc(id)}</a>`;
+  const near = (yocto) => (Number(BigInt(yocto) / 10n ** 20n) / 10000).toLocaleString(undefined, { maximumFractionDigits: 4 });
+  const duration = (ns) => {
+    let s = Number(BigInt(ns) / NS.second);
+    if (s % 86400 === 0) return `${s / 86400} day${s === 86400 ? "" : "s"}`;
+    if (s % 3600 === 0) return `${s / 3600} hour${s === 3600 ? "" : "s"}`;
+    if (s % 60 === 0) return `${s / 60} min`;
+    return `${s} s`;
+  };
+  const tokenDecimals = (t) => (/usdc|usdt|tether|a0b86991|dac17f95/i.test(t) ? 6 : t.includes("wrap") ? 24 : 6);
+  const units = (amt, dec) => { const b = BigInt(amt); const d = 10n ** BigInt(dec); return (Number(b / d) + Number(b % d) / Number(d)).toLocaleString(undefined, { maximumFractionDigits: 2 }); };
+  const stat = (label, value) => `<div class="col-6 col-sm-4"><div class="text-secondary small">${label}</div><div class="h3 m-0">${value}</div></div>`;
+  const fail = (el, e) => { el.innerHTML = `<div class="list-group-item text-danger">Couldn't read: ${esc(e.message)}</div>`; };
+
+  let owner = "";
+
+  async function load() {
+    const ms = document.getElementById("market-stats"), bal = document.getElementById("balances"),
+      adm = document.getElementById("admins"), tim = document.getElementById("timings"), dis = document.getElementById("disputes");
+    if (!C.market) {
+      [ms, bal, adm, tim].forEach((el) => (el.innerHTML = '<div class="list-group-item text-secondary">Not deployed on this network.</div>'));
+      dis.innerHTML = '<tr><td colspan="5" class="text-secondary">Not deployed on this network.</td></tr>';
+    } else {
+      try {
+        const [props, bids, leases, active, version, acc] = await Promise.all([
+          view(C.market, "get_property_counter"), view(C.market, "get_bid_counter"), view(C.market, "get_lease_counter"),
+          view(C.market, "get_active_leases_count"), view(C.market, "get_version").catch(() => "?"), account(C.market)]);
+        ms.innerHTML = stat("Properties minted", props) + stat("Bids placed", bids) + stat("Leases", leases) +
+          stat("Leases running", active) + stat("Contract version", version) + stat("NEAR for storage", near(acc.amount));
+      } catch (e) { ms.innerHTML = `<div class="text-danger">Couldn't read: ${esc(e.message)}</div>`; }
+
+      try {
+        const coins = await view(C.market, "supported_stablecoins");
+        const rows = await Promise.all(coins.map(async (t) => {
+          const b = await view(C.market, "get_stablecoin_balance", { token_account: t }).catch(() => null);
+          return `<div class="list-group-item d-flex justify-content-between gap-2"><span class="text-truncate">${acct(t)}</span><strong class="text-nowrap">${b == null ? "?" : units(b, tokenDecimals(t))}</strong></div>`;
+        }));
+        bal.innerHTML = rows.join("") || '<div class="list-group-item text-secondary">No stablecoins accepted yet.</div>';
+      } catch (e) { fail(bal, e); }
+
+      try {
+        const [o, admins] = await Promise.all([view(C.market, "get_owner_id"), view(C.market, "get_all_admins")]);
+        owner = o;
+        const signer = document.getElementById("signer");
+        if (!signer.value) signer.value = o;
+        adm.innerHTML = `<div class="list-group-item d-flex justify-content-between"><span>${acct(o)}</span><span class="badge bg-red-lt">owner</span></div>` +
+          (admins.filter((a) => a !== o).map((a) => `<div class="list-group-item d-flex justify-content-between"><span>${acct(a)}</span><span class="badge bg-blue-lt">admin</span></div>`).join("") ||
+            '<div class="list-group-item text-secondary">No other admins.</div>');
+      } catch (e) { fail(adm, e); }
+
+      try {
+        const [tl, cw] = await Promise.all([view(C.market, "get_time_lock_config"), view(C.market, "get_cancellation_windows")]);
+        const names = ["Buyer cancel window (path A)", "Seller response, stage 1", "Seller response, stage 2", "Stalled deal timeout", "Dispute time lock", "Lease early termination"];
+        tim.innerHTML = [["Bid expiry", tl[0]], ["Escrow release delay", tl[1]], ["Lost-bid claim delay", tl[2]], ...names.map((n, i) => [n, cw[i]])]
+          .map(([k, v]) => `<div class="list-group-item d-flex justify-content-between"><span>${k}</span><strong>${duration(v)}</strong></div>`).join("");
+      } catch (e) { fail(tim, e); }
+
+      try {
+        const d = await view(C.market, "get_disputed_bids");
+        dis.innerHTML = d.length ? d.map((b) => `<tr><td>#${b.id}</td><td>#${b.property_id}</td><td>${acct(b.bidder_id)}</td><td>${b.bid_amount ? units(b.bid_amount, 6) : "?"}</td>
+          <td class="text-end"><button class="btn btn-sm btn-primary" data-prefill='${esc(JSON.stringify({ method: "admin_resolve_bid_dispute", property_id: b.property_id, bid_id: b.id }))}'>Resolve</button></td></tr>`).join("")
+          : '<tr><td colspan="5" class="text-secondary">No disputed bids. 🎉</td></tr>';
+      } catch (e) { dis.innerHTML = `<tr><td colspan="5" class="text-danger">Couldn't read: ${esc(e.message)}</td></tr>`; }
+    }
+    for (const [key, el] of [["raise", "raise-state"], ["stake", "stake-state"]]) {
+      const box = document.getElementById(el);
+      if (!C[key]) { box.textContent = "Not deployed on this network."; continue; }
+      account(C[key]).then((a) => (box.innerHTML = `Live · ${near(a.amount)} NEAR held for storage and fees`)).catch((e) => (box.textContent = `Couldn't read: ${e.message}`));
+    }
+  }
+
+  // ── Actions ──
+  // payable: the contract demands exactly 1 yoctoNEAR; sending it to the others makes the call fail.
+  const F = {
+    account: (name, label) => ({ name, label, kind: "account" }),
+    id: (name, label) => ({ name, label, kind: "u64" }),
+    text: (name, label, opt) => ({ name, label, kind: "text", ...opt }),
+    pick: (name, label, options) => ({ name, label, kind: "select", options }),
+    dur: (name, label, optional) => ({ name, label, kind: "duration", optional }),
+    amount: (name, label, raw) => ({ name, label, kind: raw ? "u128raw" : "u128" }),
+  };
+  const ACTIONS = [
+    { group: "Disputes", method: "admin_resolve_bid_dispute", label: "Resolve a bid dispute", payable: true,
+      help: "Buyer wins: refund the buyer and unwind the deal. Seller wins: return the bid to 'documents confirmed'. Split: share the escrow.",
+      fields: [F.id("property_id", "Property ID"), F.id("bid_id", "Bid ID"), F.pick("resolution", "Outcome", ["BuyerWins", "SellerWins", "Split"])] },
+    { group: "Disputes", method: "resolve_dispute", label: "Resolve a lease dispute", payable: true,
+      fields: [F.id("lease_id", "Lease ID"), F.pick("winner", "In favour of", ["Tenant", "Owner"]), F.amount("payout_amount", "Payout (smallest units, e.g. 1 USDC = 1000000)"), F.text("resolution_notes", "Notes for the record", { multiline: true })] },
+    { group: "Listings", method: "admin_delist_property", label: "Take a property off the market",
+      fields: [F.id("property_id", "Property ID")] },
+    { group: "Listings", method: "refund_bids", label: "Refund every open bid on a property", payable: true,
+      fields: [F.id("property_id", "Property ID")] },
+    { group: "Listings", method: "admin_delete_property", label: "Delete a property (burns its NFT)", payable: true, danger: true,
+      fields: [F.id("property_id", "Property ID")] },
+    { group: "People", method: "add_admin", label: "Add an admin", payable: true, owner: true,
+      fields: [F.account("new_admin_id", "Account to make admin")] },
+    { group: "People", method: "remove_admin", label: "Remove an admin", payable: true, owner: true, danger: true,
+      fields: [F.account("admin_id", "Admin account to remove")] },
+    { group: "Money", method: "add_supported_stablecoin", label: "Accept a stablecoin", payable: true, owner: true,
+      fields: [F.account("token_account", "Token contract")] },
+    { group: "Money", method: "remove_supported_stablecoin", label: "Stop accepting a stablecoin", owner: true, danger: true,
+      fields: [F.account("token_account", "Token contract")] },
+    { group: "Money", method: "withdraw_stablecoin", label: "Withdraw platform fees", owner: true, danger: true,
+      help: "This contract method takes a plain number, so very large amounts can lose precision. Keep withdrawals below 9,007,199,254 USDC.",
+      fields: [F.account("token_account", "Token contract"), F.amount("amount", "Amount (smallest units)", true)] },
+    { group: "Money", method: "emergency_withdraw", label: "Emergency: withdraw ALL stablecoins", payable: true, owner: true, danger: true,
+      help: "Moves every stablecoin the contract holds, including buyers' escrow, to one account. Only for a real emergency.",
+      fields: [F.account("to_account", "Send everything to")] },
+    { group: "Settings", method: "set_time_lock_config", label: "Bid and escrow timings", owner: true,
+      fields: [F.dur("bid_expiry_ns", "Bids expire after"), F.dur("escrow_release_delay_ns", "Escrow release delay"), F.dur("lost_bid_claim_delay_ns", "Losing bidders can claim after")] },
+    { group: "Settings", method: "set_cancellation_windows", label: "Cancellation windows", payable: true, owner: true,
+      help: "Leave a field empty to keep its current value.",
+      fields: [F.dur("path_a_ns", "Buyer cancel window (path A)", true), F.dur("path_b_stage1_ns", "Seller response, stage 1", true), F.dur("path_b_stage2_ns", "Seller response, stage 2", true),
+        F.dur("stalled_deal_timeout_ns", "Stalled deal timeout", true), F.dur("dispute_timelock_ns", "Dispute time lock", true), F.dur("lease_early_termination_ns", "Lease early termination", true)] },
+    { group: "Settings", method: "admin_change_nft_metadata", label: "NFT collection name and icon", payable: true, owner: true,
+      fields: [F.text("name", "Collection name"), F.text("symbol", "Symbol"), F.text("image_url", "Icon image URL")] },
+  ];
+
+  const input = (a, f) => {
+    const id = `${a.method}-${f.name}`;
+    if (f.kind === "select")
+      return `<select class="form-select" id="${id}" name="${f.name}">${f.options.map((o) => `<option>${o}</option>`).join("")}</select>`;
+    if (f.kind === "duration")
+      return `<div class="input-group"><input class="form-control" id="${id}" name="${f.name}" inputmode="decimal" placeholder="${f.optional ? "keep current" : ""}">
+        <select class="form-select" style="max-width:7.5rem" name="${f.name}__unit"><option value="day">days</option><option value="hour">hours</option><option value="minute">minutes</option><option value="second">seconds</option></select></div>`;
+    if (f.multiline) return `<textarea class="form-control" id="${id}" name="${f.name}" rows="2"></textarea>`;
+    const mode = f.kind === "u64" || f.kind.startsWith("u128") ? 'inputmode="numeric"' : 'autocapitalize="off" spellcheck="false"';
+    return `<input class="form-control ${f.kind === "account" ? "mono" : ""}" id="${id}" name="${f.name}" ${mode} autocomplete="off">`;
+  };
+
+  document.getElementById("actions").innerHTML = ACTIONS.map((a) => `
+    <div class="col-12 col-md-6 col-xl-4 action" data-search="${esc((a.group + " " + a.label + " " + a.method).toLowerCase())}">
+      <form class="card h-100" data-method="${a.method}">
+        <div class="card-header">
+          <div><div class="text-secondary small">${a.group}</div><h3 class="card-title">${a.label}</h3></div>
+          <div class="card-actions">${a.owner ? '<span class="badge bg-red-lt">owner</span>' : '<span class="badge bg-blue-lt">admin</span>'}</div>
+        </div>
+        <div class="card-body">
+          ${a.help ? `<p class="text-secondary small">${a.help}</p>` : ""}
+          ${a.fields.map((f) => `<div class="mb-2"><label class="form-label" for="${a.method}-${f.name}">${f.label}</label>${input(a, f)}</div>`).join("")}
+          <div class="small text-secondary mono mt-2">${a.method}</div>
+        </div>
+        <div class="card-footer"><button class="btn ${a.danger ? "btn-danger" : "btn-primary"} w-100" type="submit"><i class="fa-solid fa-terminal me-1"></i>Build command</button></div>
+      </form>
+    </div>`).join("");
+
+  // JSON with u64/u128 values written as exact integers (never through a JS float).
+  function buildArgs(a, form) {
+    const parts = [], shown = {};
+    const bigint = (v, label) => { if (!/^\d+$/.test(v)) throw new Error(`${label} must be a whole number`); return BigInt(v); };
+    for (const f of a.fields) {
+      const raw = (form.elements[f.name]?.value ?? "").trim();
+      let lit;
+      if (f.kind === "duration") {
+        if (!raw) { if (f.optional) { lit = "null"; } else throw new Error(`${f.label} is required`); }
+        else {
+          const unit = form.elements[f.name + "__unit"].value;
+          const [w, frac = ""] = raw.split(".");
+          if (!/^\d+$/.test(w || "0") || !/^\d*$/.test(frac)) throw new Error(`${f.label} must be a number`);
+          const scale = NS[unit], fracNs = frac ? (BigInt(frac.padEnd(9, "0").slice(0, 9)) * scale) / 1000000000n : 0n;
+          const ns = BigInt(w || "0") * scale + fracNs;
+          if (ns <= 0n) throw new Error(`${f.label} must be more than zero`);
+          lit = ns.toString();
+        }
+      } else if (!raw) {
+        throw new Error(`${f.label} is required`);
+      } else if (f.kind === "u64" || f.kind === "u128raw") {
+        lit = bigint(raw, f.label).toString();
+      } else if (f.kind === "u128") {
+        lit = JSON.stringify(bigint(raw, f.label).toString());
+      } else if (f.kind === "account") {
+        const v = raw.toLowerCase();
+        if (!/^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/.test(v) || v.length < 2 || v.length > 64) throw new Error(`${f.label} isn't a valid NEAR account`);
+        lit = JSON.stringify(v);
+      } else {
+        lit = JSON.stringify(raw);
+      }
+      parts.push(`${JSON.stringify(f.name)}:${lit}`);
+      // Big integers are shown as text so the preview can't round them.
+      shown[f.name] = lit === "null" ? null : /^\d+$/.test(lit) ? lit : JSON.parse(lit);
+    }
+    return { json: `{${parts.join(",")}}`, shown };
+  }
+
+  // Tabler ships Bootstrap's modal; fall back to plain show/hide if it isn't exposed.
+  const modal = () => {
+    const el = document.getElementById("cmd-modal");
+    if (window.bootstrap?.Modal) return window.bootstrap.Modal.getOrCreateInstance(el);
+    return {
+      show() {
+        el.classList.add("show"); el.style.display = "block"; el.removeAttribute("aria-hidden");
+        el.querySelectorAll("[data-bs-dismiss]").forEach((b) => (b.onclick = () => { el.classList.remove("show"); el.style.display = "none"; }));
+      },
+    };
+  };
+  document.getElementById("actions").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const form = e.target, a = ACTIONS.find((x) => x.method === form.dataset.method);
+    const signer = document.getElementById("signer").value.trim().toLowerCase();
+    try {
+      if (!C.market) throw new Error(`The marketplace contract isn't deployed on ${NETWORK} yet.`);
+      if (!signer) throw new Error("Fill in 'Sign as' first.");
+      const { json, shown } = buildArgs(a, form);
+      const b64 = btoa(unescape(encodeURIComponent(json)));
+      const cmd = `near contract call-function as-transaction ${C.market} ${a.method} base64-args ${b64} prepaid-gas '100.0 Tgas' attached-deposit '${a.payable ? "1 yoctoNEAR" : "0 NEAR"}' sign-as ${signer} network-config ${NETWORK} sign-with-keychain send`;
+      document.getElementById("cmd-title").textContent = a.label;
+      document.getElementById("cmd-text").value = cmd;
+      document.getElementById("cmd-json").textContent = JSON.stringify(shown, null, 2);
+      const warn = [];
+      if (a.owner && owner && signer !== owner) warn.push(`Only the owner (<span class="mono">${esc(owner)}</span>) can do this; signing as someone else will fail.`);
+      if (a.danger) warn.push("This can't be undone. Double-check every value before you run it.");
+      if (NETWORK === "mainnet") warn.push("This is <strong>mainnet</strong>: real money.");
+      document.getElementById("cmd-warning").innerHTML = warn.map((w) => `<div class="alert alert-warning py-2">${w}</div>`).join("");
+      modal().show();
+    } catch (err) {
+      form.querySelector(".action-error")?.remove();
+      form.querySelector(".card-body").insertAdjacentHTML("beforeend", `<div class="text-danger small mt-2 action-error">${esc(err.message)}</div>`);
+    }
+  });
+  document.getElementById("actions").addEventListener("input", (e) => e.target.closest("form")?.querySelector(".action-error")?.remove());
+
+  document.getElementById("cmd-copy").addEventListener("click", async (e) => {
+    const t = document.getElementById("cmd-text");
+    try { await navigator.clipboard.writeText(t.value); } catch { t.select(); document.execCommand("copy"); }
+    e.currentTarget.innerHTML = '<i class="fa-solid fa-check me-1"></i>Copied';
+    setTimeout(() => (e.currentTarget.innerHTML = '<i class="fa-solid fa-copy me-1"></i>Copy command'), 1600);
+  });
+
+  document.getElementById("filter").addEventListener("input", (e) => {
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll(".action").forEach((el) => (el.style.display = !q || el.dataset.search.includes(q) ? "" : "none"));
+  });
+
+  // "Resolve" in the disputes table fills the matching form and scrolls to it.
+  document.getElementById("disputes").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-prefill]");
+    if (!btn) return;
+    const p = JSON.parse(btn.dataset.prefill), form = document.querySelector(`form[data-method="${p.method}"]`);
+    for (const [k, v] of Object.entries(p)) if (form.elements[k]) form.elements[k].value = v;
+    form.scrollIntoView({ behavior: "smooth", block: "center" });
+    form.classList.add("border-danger");
+    setTimeout(() => form.classList.remove("border-danger"), 1500);
+  });
+
+  document.getElementById("refresh").addEventListener("click", load);
+  load();
+})();
+</script>
+{% endblock %}

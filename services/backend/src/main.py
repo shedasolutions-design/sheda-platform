@@ -113,9 +113,16 @@ def create_base_app() -> FastAPI:
     # cause (an IntegrityError deleting a property) was invisible.
     #
     # Keep CORSMiddleware last.
+    # Which sites may call the API from a browser comes from ORIGINS. It was
+    # hard-coded to "*", and with credentials allowed Starlette echoes back
+    # any origin, so every website could call the API as a signed-in visitor.
+    # ORIGINS=["*"] still opens it up for local use.
+    origins = [o.rstrip("/") for o in settings.ORIGINS]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=origins,
+        # This project's own Vercel preview links (one per branch and build).
+        allow_origin_regex=settings.ORIGIN_REGEX or None,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

@@ -63,26 +63,30 @@ export function useGoogleAuth() {
       ? `${window.location.origin}${GOOGLE_REDIRECT_PATH}`
       : GOOGLE_REDIRECT_PATH;
 
-  const signInWithGoogle = useCallback(async (): Promise<string> => {
-    if (!GOOGLE_WEB_CLIENT_ID) {
-      throw new Error(
-        "Google Sign-In isn't configured yet (missing NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID)."
+  const signInWithGoogle = useCallback(
+    async (): Promise<string> => {
+      if (!GOOGLE_WEB_CLIENT_ID) {
+        throw new Error(
+          "Google Sign-In isn't configured yet (missing NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID)."
+        );
+      }
+      try {
+        window.sessionStorage.setItem(GOOGLE_REDIRECT_STATE, state);
+        window.sessionStorage.setItem(GOOGLE_REDIRECT_PENDING, "1");
+      } catch {
+        // Storage disabled (private mode). The redirect still works; the
+        // return leg just cannot verify state and will say so.
+      }
+      window.location.assign(
+        buildGoogleAuthUrl({ clientId: GOOGLE_WEB_CLIENT_ID, redirectUri, nonce, state })
       );
-    }
-    try {
-      window.sessionStorage.setItem(GOOGLE_REDIRECT_STATE, state);
-      window.sessionStorage.setItem(GOOGLE_REDIRECT_PENDING, "1");
-    } catch {
-      // Storage disabled (private mode). The redirect still works; the return
-      // leg just cannot verify state and will say so.
-    }
-    window.location.assign(
-      buildGoogleAuthUrl({ clientId: GOOGLE_WEB_CLIENT_ID, redirectUri, nonce, state })
-    );
-    // The page is being torn down. A never-settling promise keeps the caller's
-    // spinner up during navigation instead of flashing a false failure.
-    return new Promise<string>(() => {});
-  }, [nonce, state, redirectUri]);
+      // The page is being torn down. A never-settling promise keeps the
+      // caller's spinner up during navigation instead of flashing a false
+      // failure.
+      return new Promise<string>(() => {});
+    },
+    [nonce, state, redirectUri]
+  );
 
   /**
    * Google sign-in without leaving the page, for flows that must keep their

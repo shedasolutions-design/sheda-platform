@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, Eye, KeyRound, ShieldAlert } from "lucide-react";
+import { CloudUpload, Copy, Eye, KeyRound, ShieldAlert } from "lucide-react";
+import BackupPrompt from "@/components/BackupPrompt";
 import AuthGuard from "@/components/auth/AuthGuard";
 import PageHeader from "@/components/ui/PageHeader";
 import Button from "@/components/ui/Button";
@@ -43,7 +44,9 @@ function Secret({ label, value }: { label: string; value: string }) {
  * with their transaction PIN if they set one, otherwise their password.
  */
 function WalletRecovery() {
-  const { walletState, getStoredSeedPhrase, getPrivateKeyFromStoredSeedPhrase, hasTransactionPin, getAuthorizedPrivateKey } = useWallet();
+  const { walletState, getStoredSeedPhrase, getPrivateKeyFromStoredSeedPhrase, hasTransactionPin, getAuthorizedPrivateKey, isCloudBackupAvailable, hasCloudBackup } = useWallet();
+  const [showBackup, setShowBackup] = useState(false);
+  const [backedUp, setBackedUp] = useState(false);
   const { user } = useApi();
   const accountId = walletState.account?.accountId;
   const [usesPin, setUsesPin] = useState<boolean | null>(null);
@@ -105,7 +108,7 @@ function WalletRecovery() {
 
   return (
     <>
-      <PageHeader title="Wallet recovery" fallback="/profile-setting" />
+      <PageHeader title="Backup & recovery" fallback="/profile-setting" />
       <div className="mx-auto max-w-xl px-5 py-6">
         <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-800">
           <p className="mb-1 flex items-center gap-2 font-semibold">
@@ -123,6 +126,24 @@ function WalletRecovery() {
               <span className="block text-xs uppercase tracking-wide text-secondaryText">Connected wallet</span>
               <span className="break-all font-medium">{accountId}</span>
             </p>
+
+            {/* Encrypted in this browser with a passphrase only you know, then
+                stored against your Google account, so a lost device isn't a lost wallet. */}
+            {isCloudBackupAvailable && (
+              <section className="mb-6 rounded-xl border border-borderColor p-4">
+                <h2 className="mb-1 flex items-center gap-2 font-semibold">
+                  <CloudUpload size={18} className="text-primary" /> Google backup
+                </h2>
+                <p className="mb-3 text-sm text-secondaryText">
+                  {hasCloudBackup || backedUp
+                    ? "This wallet is backed up to your Google account. You can back it up again, for example with a new passphrase."
+                    : "Save an encrypted copy of this wallet to your Google account, so you can restore it on a new device. It's locked with a passphrase only you know."}
+                </p>
+                <Button variant={hasCloudBackup || backedUp ? "outline" : "primary"} full onClick={() => setShowBackup(true)}>
+                  {hasCloudBackup || backedUp ? "Back up again" : "Back up to Google"}
+                </Button>
+              </section>
+            )}
 
             {!revealed ? (
               <form
@@ -159,6 +180,18 @@ function WalletRecovery() {
           </>
         )}
       </div>
+      {accountId && (
+        <BackupPrompt
+          visible={showBackup}
+          mode="backup"
+          accountId={accountId}
+          onClose={() => setShowBackup(false)}
+          onDone={() => {
+            setBackedUp(true);
+            setShowBackup(false);
+          }}
+        />
+      )}
     </>
   );
 }

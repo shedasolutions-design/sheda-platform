@@ -101,7 +101,7 @@ async def update_account_info(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Account info not found or not owned by you",
         )
-    for key, value in update_data.model_dump(exclude_unset=True):
+    for key, value in update_data.model_dump(exclude_unset=True).items():
         setattr(account_info, key, value)
 
     db.add(account_info)
@@ -128,5 +128,4 @@ async def run_account_info_deletion(
         )
     await db.delete(account_info)
     await db.commit()
-    await db.refresh(account_info)
     return {"detail": "Account Info Deleted Succesfully"}

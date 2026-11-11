@@ -45,8 +45,51 @@ function fundingKey(): string | null {
   return key && key.startsWith("ed25519:") ? key : null;
 }
 
-function provider(): JsonRpcProvider {
-  return new JsonRpcProvider({ url: getRpcEndpoints(NETWORK)[0].url });
+/**
+ * Read the two facts sponsorship needs, trying each RPC endpoint in turn.
+ *
+ * This used to pin every call to `getRpcEndpoints(NETWORK)[0]`. The public
+ * endpoints are shared and rate-limited; when the first one throttled, signup
+ * reported "Sheda couldn't fund a new account just now" while the second
+ * endpoint was healthy the whole time. Sheda's server is not subject to the
+ * browser's CORS constraint, so it can simply move to the next endpoint.
+ *
+ * Returns the provider that answered as well as the facts, so the write that
+ * follows goes to an endpoint we already know is reachable.
+ */
+async function readSponsorFacts(
+  accountId: string,
+  fundingId: string
+): Promise<
+  | { ok: true; provider: JsonRpcProvider; exists: boolean; fundingAmount: bigint }
+  | { ok: false }
+> {
+  let lastError: unknown;
+  for (const endpoint of getRpcEndpoints(NETWORK)) {
+    const p = new JsonRpcProvider({ url: endpoint.url });
+    try {
+      // Independent reads: issuing them together keeps the slow public
+      // endpoints from costing two round trips in series.
+      const [exists, state] = await Promise.all([
+        accountExists(p, accountId),
+        p.viewAccount(fundingId),
+      ]);
+      return {
+        ok: true,
+        provider: p,
+        exists,
+        fundingAmount: BigInt(state?.amount ?? 0),
+      };
+    } catch (error) {
+      lastError = error;
+      console.warn(
+        `Sheda sponsor: ${endpoint.label} read failed, trying next endpoint:`,
+        error
+      );
+    }
+  }
+  if (lastError) console.warn("Sheda sponsor: every RPC endpoint failed to read:", lastError);
+  return { ok: false };
 }
 
 async function accountExists(p: JsonRpcProvider, accountId: string): Promise<boolean> {
@@ -95,28 +138,27 @@ export async function sponsorAccount(
     };
   }
 
-  const p = provider();
   const fundingId = FUNDING_ACCOUNTS[NETWORK].accountId;
-
-  try {
-    if (await accountExists(p, accountId)) {
-      return { ok: false, code: "taken", message: "That account name is already taken." };
-    }
-    const state: any = await p.viewAccount(fundingId);
-    const required =
-      BigInt(NEAR.toUnits(INITIAL_BALANCE_NEAR)) + BigInt(NEAR.toUnits(RESERVE_NEAR));
-    if (BigInt(state?.amount ?? 0) < required) {
-      return { ok: false, code: "unavailable", message: "Sheda's funding account is out of NEAR." };
-    }
-  } catch {
-    // Reads failed: nothing has been written yet, so falling through is safe.
+  const facts = await readSponsorFacts(accountId, fundingId);
+  if (!facts.ok) {
+    // Reads failed everywhere: nothing has been written yet, so falling
+    // through to the free path is safe.
     return {
       ok: false,
       code: "unavailable",
       message: "Sheda couldn't fund a new account just now.",
     };
   }
+  if (facts.exists) {
+    return { ok: false, code: "taken", message: "That account name is already taken." };
+  }
+  const required =
+    BigInt(NEAR.toUnits(INITIAL_BALANCE_NEAR)) + BigInt(NEAR.toUnits(RESERVE_NEAR));
+  if (facts.fundingAmount < required) {
+    return { ok: false, code: "unavailable", message: "Sheda's funding account is out of NEAR." };
+  }
 
+  const p = facts.provider;
   const funding = new Account(
     fundingId,
     p,

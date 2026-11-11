@@ -2,6 +2,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status, Qu
 from typing import Annotated, List, Optional
 
 from cloudinary import uploader
+from app.utils.uploads import read_checked, unique_name
 
 from app.schemas.transaction_schema import (
     TimeoutCandidatesResponse,
@@ -56,13 +57,16 @@ async def upload_transaction_documents(
     for upload in images:
         if not upload.filename:
             continue
-        file_content = await upload.read()
+        # Checked, and stored under a random name with overwrite off: the old
+        # bid-id/filename path let any signed-in user replace another deal's
+        # agreement while the link recorded on chain stayed the same.
+        file_content = await read_checked(upload)
+        safe_bid = "".join(ch for ch in bid_id if ch.isalnum() or ch in "-_")[:40] or "bid"
         try:
             result = uploader.upload(
                 file_content,
-                public_id=f"transactions/{bid_id}/{upload.filename}",
-                folder="transactions",
-                overwrite=True,
+                public_id=f"transactions/{safe_bid}/{unique_name(upload.filename)}",
+                overwrite=False,
             )
             uploaded_urls.append(result.get("secure_url"))
         except Exception as exc:

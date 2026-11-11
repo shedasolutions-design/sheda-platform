@@ -4,7 +4,7 @@
 
 A full real estate platform on NEAR. Search verified listings, book an inspection, agree terms, sign on chain and pay, all in one place, with no intermediary taking a cut between the two people doing the deal.
 
-**Live:** https://sheda-solution-mobile--sheda-tt.expo.app · **Network:** NEAR · **Site:** https://sheda.app
+**App:** https://market.sheda.app · **Testnet:** https://testing.sheda.app · **Site:** https://sheda.app · **Network:** NEAR
 
 <p align="left">
   <img src="docs/screenshots/welcome.png" width="260" alt="Sheda" />
@@ -119,16 +119,16 @@ Below a minimum history there is no score at all. A builder with one finished jo
 
 ```
 sheda-platform/
-├── apps/web/             Next.js web app. Where the product is built now.
-│                         See apps/web/README.md for what has moved so far.
-├── apps/mobile/          Expo app. Being replaced by apps/web, screen by screen.
-│   ├── app/(tabs)/           home, saved, activity, inbox, portfolio, invest
-│   ├── app/collections/      the Collections screens
-│   ├── services/collections/ money, chain reads, the ranking
-│   └── contexts/WalletContext.tsx   the built-in NEAR wallet
+├── apps/web/             Next.js 16 web app. THE product: every screen is here.
+│   ├── src/app/              routes: (auth), (tabs), collections, wallet-setup …
+│   ├── src/app/api/near/     server-only routes (wallet funding holds a key)
+│   ├── src/contexts/         API, wallet, currency, mode
+│   ├── src/services/         backend client, NEAR wallet/contracts, Firebase backup
+│   └── next.config.ts        browser security rules (CSP and headers)
+├── apps/mobile/          The old Expo app. Kept for reference; not deployed from here.
 ├── apps/collection-app/  Expo app. Collections as a standalone product.
-├── services/backend/     FastAPI. What a contract is the wrong place for.
-├── services/backend-cloudflare/  The same API as a Python Worker (served first).
+├── services/backend/     FastAPI + Postgres. One deployment per network.
+│   └── src/core/admin/       the admin panel and its Smart contracts page
 ├── contracts/            NEAR. What has to be true without trusting us.
 │   ├── market/               listings, bids, escrow, deposits, disputes
 │   ├── vault/                one flat, its shares, its rent
@@ -148,7 +148,46 @@ One rule decides every placement:
 
 ---
 
-## Deployed
+## Live
+
+Testnet and mainnet are completely separate: each has its own backend, its own
+database, its own secrets and its own admin login. The same email can hold an
+account on both without the two ever meeting.
+
+| | Testnet | Mainnet |
+| --- | --- | --- |
+| Web app | https://testing.sheda.app (branch `TT`) | https://market.sheda.app (branch `main`) · app.sheda.app redirects here |
+| Backend | https://api-testnet.sheda.app (Railway service `api`) | https://api.sheda.app (Railway service `api-mainnet`) |
+| Database | Neon `sheda-platform`, London | Neon `sheda-mainnet`, London |
+| Admin panel | api-testnet.sheda.app/sheda-backend | api.sheda.app/sheda-backend |
+| Wallets accepted | `*.testnet` only | `*.near` only |
+
+**Until mainnet launches, market.sheda.app runs on testnet** and talks to
+api-testnet: the mainnet contracts are not deployed and the mainnet funding
+account is empty. Switching it is two Vercel settings and a rebuild:
+`NEXT_PUBLIC_API_URL=https://api.sheda.app` and `NEXT_PUBLIC_NEAR_NETWORK=mainnet`.
+
+- **Web hosting:** Vercel project `sheda-web`, root directory `apps/web`. Its
+  settings live in Vercel only: public ones (`NEXT_PUBLIC_*`, API address,
+  network, Google client ID, Firebase web config) and server-only secrets
+  (`NEAR_TESTNET_FUNDING_PRIVATE_KEY`, `NEAR_MAINNET_FUNDING_PRIVATE_KEY`,
+  stored as *sensitive*).
+- **Backends:** Railway project `sheda-platform`, EU West. Deploy from
+  `services/backend` with `railway up --service api` (testnet) or
+  `--service api-mainnet`. Migrations run on start. Each backend sets
+  `NEAR_NETWORK`, `ORIGINS` (the only sites allowed to call it) and its own
+  `SECRET_KEY`/`ADMIN_SECRET_KEY`.
+- **DNS:** sheda.app is on Vercel DNS. `api` and `api-testnet` are CNAMEs to Railway.
+- **Google:** one OAuth web client for sign-in; its redirect URIs are
+  `https://market.sheda.app/google-auth` and `https://testing.sheda.app/google-auth`.
+  Firebase project `sheda-app` holds the encrypted wallet backups.
+
+**Secrets never go in this repository.** They live in Railway and Vercel
+settings, and locally only in git-ignored `.env.local` files.
+
+---
+
+## Contracts
 
 NEAR testnet. Built by CI and deployed from that wasm, so the binary is one anyone can reproduce.
 
@@ -163,6 +202,10 @@ The registry's controller is the raise contract. That is the entire authority to
 The marketplace deploys from [`.github/workflows/deploy-market-production.yml`](.github/workflows/deploy-market-production.yml); [contracts/market/DEPLOYMENT.md](contracts/market/DEPLOYMENT.md) covers the first deploy, migrations and the required variables.
 
 Nothing is on mainnet. **None of this has been audited**, and an address there would be a claim that it had.
+
+**Admin functions** (resolving disputes, delisting, stablecoins, timings, admins) are on the
+admin panel's *Smart contracts* page. It shows live contract state and turns each action into
+the exact NEAR CLI command to sign on your own computer. The panel never holds the owner key.
 
 ---
 
@@ -180,21 +223,17 @@ cargo clippy -p sheda-collection-raise -p sheda-collection-vault \
 cargo clippy -p sheda-contract --all-targets -- -W clippy::all
 cargo build --workspace --target wasm32-unknown-unknown --release
 
-# Backend: docs at /sheda-docs
+# Backend: 131 tests; API docs at /sheda-docs, admin panel at /sheda-backend
 cd services/backend
-cp .env.example .env && pip install -r requirements-server.txt
+cp .env.example .env.local && pip install -r requirements-server.txt
 alembic upgrade head && uvicorn main:app --reload --app-dir src
+pytest -q
 
-# Web app (the product, going forward)
+# Web app
 cd apps/web
 cp .env.example .env.local && npm install
 npm run dev        # http://localhost:3000
-
-# Mobile app: 424 tests (being replaced by apps/web)
-cd apps/mobile
-cp .env.example .env && npm install
-npm test
-npm start          # a for Android, i for iOS, w for web
+npx tsc --noEmit && npx next build
 
 # Collections app: standalone
 cd apps/collection-app
@@ -202,6 +241,9 @@ npm install
 npm test
 npm start
 ```
+
+The web app's security headers only apply to production builds (`next build`);
+development needs `eval` and live-reload sockets they would block.
 
 ---
 
@@ -217,7 +259,15 @@ npm start
 
 **A share claim is derived, never requested.** An earlier version let the caller name their own share count and their own vault, which would have let anyone who committed the smallest amount mint as many shares as they liked. Both now come from contract state.
 
-**Two backends share one database.** Reads fail over between them; writes never do. A write that failed at the transport layer may still have been applied, and retrying it elsewhere writes to the same database, so the buyer gets two bids.
+**Testnet and mainnet never share anything.** One database with a "network" column would need every query to remember to filter by it, and one that forgot would show test balances next to real ones. Two databases make that impossible. Each backend also refuses a wallet from the other network at sign-up.
+
+**Writes are never retried against another server.** A write that failed at the transport layer may still have been applied, so retrying it elsewhere can make two bids out of one.
+
+**The owner key of a contract never sits on a server.** The key that resolves a dispute is the same key that can empty the escrow, so the admin panel builds the signing command instead of holding it.
+
+**The browser only talks to servers we name.** The wallet's keys live in the browser, so `next.config.ts` sets a Content-Security-Policy listing every server the app calls. A new service has to be added there, or the browser blocks it.
+
+**Every record lookup checks it is yours.** Ids are sequential, so an endpoint that returns a record by id without checking the caller hands out everyone's. Contact details go only to the person and to someone they have a viewing with.
 
 ---
 
@@ -225,15 +275,19 @@ npm start
 
 | | |
 | --- | --- |
+| Web app: every screen, on market.sheda.app and testing.sheda.app | Working |
 | Marketplace: listings, inspections, offers, escrow, leases, documents, disputes | Working |
-| Built-in wallet: creation, import, recovery, cloud backup, biometrics | Working |
+| Built-in wallet: created and funded automatically at sign-up; import, recovery, Google backup | Working |
 | Collections: browse, rank, register as a builder, open a raise | Working |
+| Admin panel: dashboard, every table, Smart contracts | Working |
 | Contracts: vault, raise, stake registry | Deployed to testnet, 71 tests |
+| Mainnet | **Not live.** Backend and database are ready; contracts aren't deployed and the funding account is empty. |
 | Per-unit vault deployment | **Not built.** The raise records where a vault lives and mints against it; nothing creates the account. |
 | Cross-contract tests | **Partial.** The marketplace contract has integration tests under `contracts/market/tests`; the vault/raise paths that call it have none, including the failure paths that assume a failed transfer means the money never left. |
 | Manager screens | **None.** A manager can register and then cannot attest a phase, which is the step the release schedule turns on. |
 | Chain-event indexer | **Not built.** Nothing populates the counts the ranking reads, so every profile currently reads "Not rated yet". |
-| Security audit | **Not done.** |
+| Security | Code review done (Nov 2026): data leaks, upload overwrites and unchecked payment actions fixed; admin lockout and authenticator codes; browser security rules. **External contract audit not done.** |
+| Email | **Not configured.** No Brevo key yet, so sign-up codes and notifications aren't emailed. |
 
 Still ahead on the Sheda roadmap: real estate services integration (management, legal, insurance), and on-chain importation of existing property.
 
@@ -241,13 +295,15 @@ Still ahead on the Sheda roadmap: real estate services integration (management, 
 
 ## Where development happens
 
-This repository is the monorepo and the source of truth. It consolidates the
-code that was previously developed separately in:
+This repository is the monorepo and the source of truth. Work happens on
+`TT`, which deploys to testing.sheda.app on every push. When it is ready,
+`TT` is merged into `main`, which deploys to market.sheda.app.
+It consolidates the code that was previously developed separately in:
 
-- `shedasolutions-design/sheda-solution-mobile` → `apps/mobile/`
+- `shedasolutions-design/sheda-solution-mobile` → `apps/mobile/` (reference only)
 - `shedasolutions-design/Sheda-Collection-app` → `apps/collection-app/`
-- `shedasolutions-design/Sheda-Backend` → `services/backend/` (`main`), and
-  `services/backend-cloudflare/` (the `cloudflare` branch)
+- `shedasolutions-design/Sheda-Backend` → `services/backend/`. A Cloudflare
+  Workers copy was tried and removed; it is in this repo's history.
 - `shedasolutions-design/sheda-new-contract` → `contracts/market/`
 - `shedasolutions-design/sheda-collection-app-contract` → `contracts/{raise,vault,stake-registry}/`
 

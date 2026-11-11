@@ -103,4 +103,5 @@ Still to move. Each shows a placeholder that links to the same page on the curre
 - [x] Support, support feedback, user profile
 - [x] Release document, wallet recovery
 - [ ] Tests: move the logic tests from `apps/mobile/__tests__` (most are plain TypeScript)
-- [ ] Deployment on Vercel, and the CI job for this app
+- [x] Deployment on Vercel (project `sheda-web`: market.sheda.app from `main`, testing.sheda.app from `TT`)
+- [ ] A CI job for this app (type-check and build on every push)

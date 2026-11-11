@@ -69,8 +69,40 @@ async def get_me(current_user: ActiveUser):
 
 @router.get("/{user_id}", response_model=UserShow, status_code=status.HTTP_200_OK)
 async def get_user_by_id(user_id: int, current_user: ActiveVerifiedUser, db: DBSession):
+    """
+    Someone else's profile. Ids are sequential, so this used to let any
+    signed-in user walk 1, 2, 3... and collect every email, phone number and
+    push token. Contact details now go only to the person themselves and to
+    someone they have a viewing with (the same rule the profile page shows
+    them under); the push token never leaves.
+    """
+    from sqlalchemy import and_, or_, select
+
+    from app.models.property import Appointment
+
     user = await db.get(BaseUser, user_id)
-    return user
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    shown = UserShow.model_validate(user, from_attributes=True)
+    if user.id == current_user.id:
+        return shown
+
+    shared = (
+        await db.execute(
+            select(Appointment.id)
+            .where(
+                or_(
+                    and_(Appointment.client_id == current_user.id, Appointment.agent_id == user.id),
+                    and_(Appointment.agent_id == current_user.id, Appointment.client_id == user.id),
+                )
+            )
+            .limit(1)
+        )
+    ).first() is not None
+    hidden = {"device_token": None}
+    if not shared:
+        hidden.update(email=None, phone_number=None)
+    return shown.model_copy(update=hidden)
 
 
 update_desc = """pick the target field and exclude the rest,
@@ -226,7 +258,7 @@ async def get_contract_payment_info(
 ):
     from app.services.listing import get_payment_info as get_payment_info_service
 
-    return await get_payment_info_service(contract_id, db)
+    return await get_payment_info_service(contract_id, db, current_user.id)
 
 
 # NOTE create availability
@@ -286,7 +318,7 @@ async def delete_schedule(
 async def confirm_client_payment(
     contract_id: int, db: DBSession, user: ActiveVerifiedClient
 ):
-    return await confirm_payment(contract_id, db)
+    return await confirm_payment(contract_id, db, user.id)
 
 
 @router.post(
@@ -295,7 +327,7 @@ async def confirm_client_payment(
     response_model=dict,
 )
 async def approve_payment(contract_id: int, db: DBSession, user: ActiveAgent):
-    return await proccess_approve_payment(contract_id, db)
+    return await proccess_approve_payment(contract_id, db, user.id)
 
 
 @router.post(

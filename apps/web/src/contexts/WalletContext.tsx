@@ -32,6 +32,7 @@ import {
   type WalletMetadata,
 } from "@/services/platformAdapter";
 import { WALLET_EPOCH } from "@/config/walletConfig";
+import { ACTIVE_NETWORK } from "@/config/near";
 import { encryptSecret, decryptSecret } from "@/services/walletCrypto";
 import * as cloudBackup from "@/services/cloudBackup";
 import type { BackupRecord } from "@/services/cloudBackup";
@@ -222,7 +223,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     account: null,
   });
   const [currentNetwork, setCurrentNetworkState] =
-    useState<NetworkType>("testnet");
+    useState<NetworkType>(ACTIVE_NETWORK);
   const [loading, setLoading] = useState(false);
   const [readiness, setReadiness] = useState<WalletReadiness>("idle");
   const [localWalletMetadata, setLocalWalletMetadata] =

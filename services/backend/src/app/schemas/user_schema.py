@@ -117,7 +117,9 @@ FileDir = Literal["profile", "property"]
 class AgentFeed(BaseModel):
     avatar_url: Optional[Union[AnyUrl, str]] = None
     username: Optional[str] = None
-    email: EmailStr
+    # Contact details are only filled in for someone with a viewing booked
+    # with this seller; see routers/listing.agent_profile.
+    email: Optional[EmailStr] = None
     phone_number: Optional[PhoneStr] = None
     agency_name: Optional[str] = None
     location: Optional[str] = None

@@ -484,7 +484,7 @@ async def update_agent_availabilty(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Schedule not found or you are not the owner",
         )
-    for key, value in update.model_dump(exclude_unset=True):
+    for key, value in update.model_dump(exclude_unset=True).items():
         setattr(schedule, key, value)
     db.add(schedule)
     await db.commit()
@@ -565,48 +565,65 @@ async def cancel_appointment_by_id(
     return {"detail": "Appointment Canceled"}
 
 
-async def get_payment_info(contract_id: int, db: AsyncSession):
+async def _contract_for(contract_id: int, db: AsyncSession, user_id: int, role: str | None = None):
+    """The contract, if `user_id` is its buyer or seller (or the named side)."""
     contract = await db.get(Contract, contract_id)
-    if not contract:
+    allowed = contract is not None and (
+        (role in (None, "client") and contract.client_id == user_id)
+        or (role in (None, "agent") and contract.agent_id == user_id)
+    )
+    if not allowed:
+        # Same answer whether it doesn't exist or isn't theirs, so ids
+        # can't be probed.
         raise HTTPException(status_code=404, detail="Contract not found")
+    return contract
 
-    account_info = await db.get(AccountInfo, contract.agent_id)
+
+async def get_payment_info(contract_id: int, db: AsyncSession, user_id: int):
+    """The seller's bank details, for the two people on this contract only.
+
+    Was open to any signed-in user, and looked the details up by the seller's
+    user id used as an account-info row id, which could return a stranger's
+    bank account."""
+    contract = await _contract_for(contract_id, db, user_id)
+    account_info = (
+        await db.execute(select(AccountInfo).where(AccountInfo.user_id == contract.agent_id))
+    ).scalar_one_or_none()
     if not account_info:
         raise HTTPException(status_code=404, detail="Agent account details not found")
-
     return account_info
 
 
-async def confirm_payment(contract_id: int, db: AsyncSession):
-    contract = await db.get(Contract, contract_id)
-    if not contract:
-        raise HTTPException(status_code=404, detail="Contract not found")
-
+async def confirm_payment(contract_id: int, db: AsyncSession, user_id: int):
+    """The buyer says they have paid. Only this contract's buyer can."""
+    contract = await _contract_for(contract_id, db, user_id, role="client")
     payment_confirmation = PaymentConfirmation(
         contract_id=contract.id,
         client_id=contract.client_id,
         agent_id=contract.agent_id,
         is_confirmed=True,
     )
-
     db.add(payment_confirmation)
     await db.commit()
-
     return {"message": "Payment confirmed, waiting for agent approval"}
 
 
-async def proccess_approve_payment(contract_id: int, db: AsyncSession):
-    payment_confirmation = await db.get(PaymentConfirmation, contract_id)
+async def proccess_approve_payment(contract_id: int, db: AsyncSession, user_id: int):
+    """The seller confirms the money arrived. Only this contract's seller can,
+    and only after the buyer has confirmed paying."""
+    contract = await _contract_for(contract_id, db, user_id, role="agent")
+    payment_confirmation = (
+        await db.execute(
+            select(PaymentConfirmation)
+            .where(PaymentConfirmation.contract_id == contract.id)
+            .order_by(PaymentConfirmation.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
     if not payment_confirmation or not payment_confirmation.is_confirmed:
         raise HTTPException(status_code=400, detail="Payment not confirmed by client")
-
-    contract = await db.get(Contract, contract_id)
-    if not contract:
-        raise HTTPException(status_code=404, detail="Contract not found")
-
     contract.is_active = True  # Activate contract upon approval
     await db.commit()
-
     return {"message": "Payment approved, contract signed"}
 
 

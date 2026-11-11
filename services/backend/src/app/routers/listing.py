@@ -158,7 +158,30 @@ async def get_property(
     status_code=status.HTTP_200_OK,
 )
 async def agent_profile(agent_id: int, current_user: ActiveUser, db: DBSession):
-    return await get_agent_by_id(agent_id, db)
+    """A seller's public profile. Email and phone only go to someone with a
+    viewing booked with them; ids are sequential, so otherwise anyone could
+    collect every seller's contact details."""
+    from sqlalchemy import and_, or_, select
+
+    from app.models.property import Appointment
+
+    agent = await get_agent_by_id(agent_id, db)
+    feed = AgentFeed.model_validate(agent, from_attributes=True)
+    if agent.id == current_user.id:
+        return feed
+    shared = (
+        await db.execute(
+            select(Appointment.id)
+            .where(
+                or_(
+                    and_(Appointment.client_id == current_user.id, Appointment.agent_id == agent.id),
+                    and_(Appointment.agent_id == current_user.id, Appointment.client_id == agent.id),
+                )
+            )
+            .limit(1)
+        )
+    ).first() is not None
+    return feed if shared else feed.model_copy(update={"email": None, "phone_number": None})
 
 
 @router.delete(

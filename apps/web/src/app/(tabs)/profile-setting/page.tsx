@@ -66,7 +66,7 @@ function Settings() {
   const items: MenuItem[] = [
     { key: "info", icon: User, label: "Profile Info", href: "/personal-info" },
     { key: "notifications", icon: Bell, label: "Notification settings", href: "/notification-setting" },
-    { key: "recovery", icon: Wallet, label: "Wallet recovery", href: "/wallet-recovery" },
+    { key: "recovery", icon: Wallet, label: "Wallet backup & recovery", href: "/wallet-recovery" },
     { key: "pin", icon: KeyRound, label: pinConfigured ? "Change transaction PIN" : "Set up transaction PIN", onClick: handlePin },
     { key: "password", icon: Lock, label: "Change password", href: "/change-password" },
     {

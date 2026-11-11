@@ -1,0 +1,73 @@
+{% extends "@starlette-admin/base.html" %}
+{#
+  Sheda's look on top of starlette-admin's own page. Only the head_meta
+  block is used, because the package's list/detail/edit pages fill head_css
+  themselves and would replace anything put there.
+#}
+{% block head_meta %}
+<meta name="theme-color" content="#C1272D">
+<style>
+  :root {
+    --sheda: #C1272D;
+    --sheda-dark: #a82227;
+    --sheda-tint: #fdf4f4;
+    --tblr-primary: #C1272D;
+    --tblr-primary-rgb: 193, 39, 45;
+    --tblr-primary-darken: #a82227;
+    --tblr-link-color: #C1272D;
+    --tblr-link-color-rgb: 193, 39, 45;
+    --tblr-border-radius: 10px;
+  }
+  body { background: #f6f6f7; }
+
+  /* Sidebar: Sheda dark with a red accent on the open page. */
+  .navbar-vertical { background: #111214 !important; }
+  .navbar-vertical .nav-link { border-radius: 8px; margin: 1px 8px; padding: .5rem .75rem; }
+  .navbar-vertical .nav-link:hover { background: rgba(255,255,255,.06); }
+  .navbar-vertical .nav-item.active > .nav-link,
+  .navbar-vertical .dropdown-item.active { background: rgba(193,39,45,.22) !important; color: #fff !important; }
+  .navbar-vertical .dropdown-menu { background: transparent; border: 0; padding-left: .5rem; }
+  .navbar-vertical .dropdown-item { border-radius: 8px; color: rgba(255,255,255,.72); }
+  .navbar-vertical .dropdown-item:hover { background: rgba(255,255,255,.06); color: #fff; }
+  .navbar-vertical .nav-link-icon { color: rgba(255,255,255,.55); }
+  .navbar-logo { height: 2.25rem !important; }
+
+  /* Buttons and focus in brand colour. */
+  .btn-primary { --tblr-btn-bg: var(--sheda); --tblr-btn-border-color: var(--sheda); --tblr-btn-hover-bg: var(--sheda-dark); --tblr-btn-hover-border-color: var(--sheda-dark); --tblr-btn-active-bg: var(--sheda-dark); }
+  .form-control:focus, .form-select:focus { border-color: var(--sheda); box-shadow: 0 0 0 .2rem rgba(193,39,45,.15); }
+  .page-item.active .page-link { background: var(--sheda); border-color: var(--sheda); }
+
+  /* Cards and tables: softer, easier to scan. */
+  .card { border-radius: 14px; border-color: #e7e8ea; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+  .table thead th { background: #fafafa; font-size: .7rem; letter-spacing: .04em; color: #6f7276; white-space: nowrap; position: sticky; top: 0; z-index: 2; }
+  .table tbody tr { transition: background-color .12s ease; }
+  .table tbody tr:hover { background: var(--sheda-tint); }
+  .table td { vertical-align: middle; max-width: 22rem; overflow: hidden; text-overflow: ellipsis; }
+  .table-responsive, .dataTables_wrapper { -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }
+  .dataTables_wrapper .table-responsive { max-height: 70vh; }
+  div.dataTables_processing { border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.12); }
+
+  /* Phones: tighter spacing, swipeable tables with the first two columns
+     (checkbox + id) pinned so you never lose which row you're on. */
+  @media (max-width: 767.98px) {
+    .page-body { margin-top: .75rem; }
+    .container-xl { padding-left: .75rem; padding-right: .75rem; }
+    .card-header, .card-body { padding: .75rem; }
+    .table { font-size: .82rem; }
+    .table td, .table th { padding: .5rem .55rem; max-width: 14rem; }
+    .table tbody td:nth-child(-n+2), .table thead th:nth-child(-n+2) { position: sticky; background: #fff; z-index: 1; }
+    .table thead th:nth-child(-n+2) { background: #fafafa; z-index: 3; }
+    .table tbody td:nth-child(1), .table thead th:nth-child(1) { left: 0; }
+    .table tbody td:nth-child(2), .table thead th:nth-child(2) { left: 2.25rem; box-shadow: 2px 0 0 #eee; }
+    .dataTables_wrapper .row > div { justify-content: center !important; text-align: center; }
+    .page-header .btn-list { flex-wrap: wrap; }
+    .page-title { font-size: 1.1rem; }
+  }
+
+  /* Shared bits for Sheda's own pages. */
+  .stat-card .stat-value { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+  .stat-card .stat-label { color: #6f7276; font-size: .8rem; }
+  .stat-icon { width: 2.5rem; height: 2.5rem; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: var(--sheda-tint); color: var(--sheda); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .8rem; word-break: break-all; }
+</style>
+{% endblock %}

@@ -204,66 +204,71 @@ export function useGoogleAuth() {
   }, []);
 
   /** Prompts Google sign-in and resolves the id_token, or throws. */
-  const signInWithGoogle = useCallback(async (): Promise<string> => {
-    if (!GOOGLE_WEB_CLIENT_ID) {
-      // Previously unreachable: callers returned early on !isReady, and
-      // without a client ID the request never becomes ready — so the button
-      // sat disabled forever and this explanation never ran.
-      throw new Error(
-        "Google Sign-In isn't configured yet (missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID)."
-      );
-    }
-
-    // ── Mobile web: navigate NOW, on this press ──────────────────────────
-    // Deliberately ahead of any readiness check. Everything needed is computed
-    // locally, so this branch never waits and the first press always moves.
-    if (shouldUseRedirectFlow()) {
-      const state = redirectState;
-      try {
-        // The CSRF check parseReturnUrl would have done in the popup flow —
-        // the request object that knew the state does not survive the reload,
-        // so it is stashed for app/google-auth.tsx to compare on return.
-        window.sessionStorage.setItem(GOOGLE_REDIRECT_STATE, state);
-        window.sessionStorage.setItem(GOOGLE_REDIRECT_PENDING, "1");
-      } catch {
-        // Private mode with storage disabled — the redirect still works, the
-        // return leg just cannot verify state and will say so.
+  const signInWithGoogle = useCallback(
+    async (): Promise<string> => {
+      if (!GOOGLE_WEB_CLIENT_ID) {
+        // Previously unreachable: callers returned early on !isReady, and
+        // without a client ID the request never becomes ready — so the button
+        // sat disabled forever and this explanation never ran.
+        throw new Error(
+          "Google Sign-In isn't configured yet (missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID)."
+        );
       }
 
-      window.location.assign(
-        buildGoogleAuthUrl({
-          clientId: GOOGLE_WEB_CLIENT_ID,
-          redirectUri,
-          nonce,
-          state,
-        })
-      );
-      // The page is being torn down; nothing after this runs. A never-settling
-      // promise keeps the caller's spinner up during the navigation rather
-      // than flashing a false failure.
-      return new Promise<string>(() => {});
-    }
+      // ── Mobile web: navigate NOW, on this press ────────────────────────
+      // Deliberately ahead of any readiness check. Everything needed is
+      // computed locally, so this branch never waits and the first press
+      // always moves.
+      if (shouldUseRedirectFlow()) {
+        const state = redirectState;
+        try {
+          // The CSRF check parseReturnUrl would have done in the popup flow —
+          // the request object that knew the state does not survive the
+          // reload, so it is stashed for app/google-auth.tsx to compare on
+          // return.
+          window.sessionStorage.setItem(GOOGLE_REDIRECT_STATE, state);
+          window.sessionStorage.setItem(GOOGLE_REDIRECT_PENDING, "1");
+        } catch {
+          // Private mode with storage disabled — the redirect still works, the
+          // return leg just cannot verify state and will say so.
+        }
 
-    // Native and desktop web keep the popup, where it works and preserves page
-    // state. Only here does readiness matter, and only here do we wait.
-    if (!isReadyRef.current) {
-      await waitForReady();
-    }
-    const result = await promptRef.current();
-    if (result.type !== "success") {
-      if (result.type === "cancel" || result.type === "dismiss") {
-        throw new Error("Sign-in was cancelled.");
+        window.location.assign(
+          buildGoogleAuthUrl({
+            clientId: GOOGLE_WEB_CLIENT_ID,
+            redirectUri,
+            nonce,
+            state,
+          })
+        );
+        // The page is being torn down; nothing after this runs. A
+        // never-settling promise keeps the caller's spinner up during the
+        // navigation rather than flashing a false failure.
+        return new Promise<string>(() => {});
       }
-      throw new Error(
-        (result as any).error?.message || "Google sign-in failed."
-      );
-    }
-    const idToken = result.params?.id_token;
-    if (!idToken) {
-      throw new Error("Google didn't return an id_token.");
-    }
-    return idToken;
-  }, [waitForReady]);
+
+      // Native and desktop web keep the popup, where it works and preserves
+      // page state. Only here does readiness matter, and only here do we wait.
+      if (!isReadyRef.current) {
+        await waitForReady();
+      }
+      const result = await promptRef.current();
+      if (result.type !== "success") {
+        if (result.type === "cancel" || result.type === "dismiss") {
+          throw new Error("Sign-in was cancelled.");
+        }
+        throw new Error(
+          (result as any).error?.message || "Google sign-in failed."
+        );
+      }
+      const idToken = result.params?.id_token;
+      if (!idToken) {
+        throw new Error("Google didn't return an id_token.");
+      }
+      return idToken;
+    },
+    [waitForReady]
+  );
 
   return { signInWithGoogle, isReady, redirectUri };
 }

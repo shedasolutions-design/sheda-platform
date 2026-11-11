@@ -39,6 +39,9 @@ const Login = () => {
   const [hasAttemptedLogin, setHasAttemptedLogin] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const isSubmitting = useRef(false);
+  // Google can create the account on this screen too. That is a sign-up in
+  // every way that matters, so it gets the same automatic wallet.
+  const provisioningNewUser = useRef(false);
   const [modalConfig, setModalConfig] = useState<{
     isVisible: boolean;
     type: "success" | "error" | "info" | "loading";
@@ -84,6 +87,9 @@ const Login = () => {
 
   // ────── Navigation on success ──────
   useEffect(() => {
+    // Wait while Google resolves: socialLogin authenticates before it reports
+    // whether the account is new, and routing in that window would miss it.
+    if (isGoogleLoading || provisioningNewUser.current) return;
     if (isAuthenticated && hasAttemptedLogin) {
       isSubmitting.current = false;
       showModal("success", "Welcome Back!", "Login successful. Redirecting…");
@@ -100,7 +106,7 @@ const Login = () => {
       }, 800);
       return () => clearTimeout(timer);
     }
-  }, [isAuthenticated, hasAttemptedLogin, hasLocalWallet]);
+  }, [isAuthenticated, hasAttemptedLogin, hasLocalWallet, isGoogleLoading]);
 
   // ────── Handle API errors ──────
   useEffect(() => {
@@ -162,7 +168,14 @@ const Login = () => {
       // it fires on isAuthenticated + hasAttemptedLogin, and socialLogin
       // dispatches SET_AUTHENTICATED just like login() does.
       setHasAttemptedLogin(true);
-      await socialLogin({ token: idToken, provider: "google" });
+      const result = await socialLogin({ token: idToken, provider: "google" });
+      if (result?.isNewUser) {
+        // Signing in with Google on an email with no account creates one.
+        // That is a first-time user, so provision their wallet instead of
+        // dropping them on the returning-user wallet options.
+        provisioningNewUser.current = true;
+        router.replace("/wallet-setup/provision");
+      }
     } catch (err: any) {
       showModal("error", "Google Sign-In Failed", err?.message || "Please try again.");
     } finally {

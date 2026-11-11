@@ -23,6 +23,9 @@ export default function GoogleAuthReturnPage() {
   const { hasLocalWallet } = useWallet();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // Whether this sign-in created the account. Google is both sign-up and
+  // sign-in; only a genuinely new account may auto-provision a wallet.
+  const [isNewUser, setIsNewUser] = useState(false);
   // Strict mode runs effects twice; the token is single-use.
   const handled = useRef(false);
 
@@ -88,8 +91,11 @@ export default function GoogleAuthReturnPage() {
         return setError("Sign-in could not be verified. Please try again from the login screen.");
       }
       try {
-        await socialLogin({ token: idToken, provider: "google" });
+        const result = await socialLogin({ token: idToken, provider: "google" });
         clearMarkers();
+        // The backend says whether this request created the account; only a
+        // brand-new account gets a wallet.
+        setIsNewUser(result?.isNewUser === true);
         setDone(true);
       } catch (err) {
         clearMarkers();
@@ -98,10 +104,16 @@ export default function GoogleAuthReturnPage() {
     })();
   }, [socialLogin]);
 
-  // Route once the wallet context has had a chance to see this account.
   useEffect(() => {
-    if (done) router.replace(hasLocalWallet ? "/home" : "/wallet-setup");
-  }, [done, hasLocalWallet, router]);
+    if (!done) return;
+    // A brand-new sign-up is provisioned automatically; returning users keep
+    // the old behaviour (home if a wallet is already here, setup if not).
+    if (isNewUser && !hasLocalWallet) {
+      router.replace("/wallet-setup/provision");
+      return;
+    }
+    router.replace(hasLocalWallet ? "/home" : "/wallet-setup");
+  }, [done, isNewUser, hasLocalWallet, router]);
 
   if (error) {
     return (

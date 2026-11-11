@@ -442,7 +442,7 @@ interface ApiContextType extends ApiState {
   getUserRatings: (rateeId: number) => Promise<RatingShow[]>;
 
   // Social Login
-  socialLogin: (payload: SocialLoginRequest) => Promise<void>;
+  socialLogin: (payload: SocialLoginRequest) => Promise<{ isNewUser: boolean }>;
 
   // Forgot Password
   forgotPassword: (email: string) => Promise<void>;
@@ -1702,6 +1702,9 @@ export function ApiProvider({ children }: ApiProviderProps) {
       }
     }
     console.log("✅ Social login completed successfully");
+    // Older backends do not send this. `false` is the safe default: it means
+    // "don't auto-create a wallet", which for a returning user is correct.
+    return { isNewUser: result?.is_new_user === true };
   }, [apiCall, dispatch, getMe]);
 
   // ---- Forgot Password ----

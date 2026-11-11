@@ -90,6 +90,14 @@ async def create_account(user_data: UserCreate, db: AsyncSession):
     # `profile` says which row the caller wants a token for; it is not a
     # column on either model, so it must not reach the constructors.
     columns = user_data.model_dump(exclude={"profile"})
+    # A wallet from the other network would point this account at a chain
+    # this backend never reads.
+    wallet = columns.get("near_account_id") or ""
+    if wallet and not wallet.endswith(settings.near_account_suffix):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"This is the {settings.NEAR_NETWORK} service; use a {settings.near_account_suffix} wallet.",
+        )
     columns["near_account_id"] = await _free_near_account_id(
         db, columns.get("near_account_id")
     )
@@ -213,6 +221,7 @@ async def process_signup(
     return SignUpShow(
         token=Token(access_token=access_token, active_profile=active_profile),
         user_data=UserShow.model_validate(new_user),
+        is_new_user=True,
     )
 
 
@@ -231,6 +240,7 @@ async def process_social_login(
             )
         
         account_type = requested_account_type(payload.profile)
+        is_new_user = False
 
         # Check if user exists
         try:
@@ -243,6 +253,7 @@ async def process_social_login(
                 await db.refresh(user)
         except HTTPException:
             # User doesn't exist, create account
+            is_new_user = True
             username = idinfo.get("name") or idinfo.get("given_name") or email.split("@")[0]
             username = "".join(e for e in username if e.isalnum())[:30]
             if not username:
@@ -253,7 +264,7 @@ async def process_social_login(
                 username=username,
                 email=email,
                 password=generate_random_password(),
-                near_account_id=f"{username.lower()}-{uuid.uuid4().hex[:6]}.testnet",
+                near_account_id=f"{username.lower()}-{uuid.uuid4().hex[:6]}{settings.near_account_suffix}",
                 profile=payload.profile,
             )
 
@@ -283,6 +294,7 @@ async def process_social_login(
         return SignUpShow(
             token=Token(access_token=access_token, active_profile=active_profile),
             user_data=UserShow.model_validate(user),
+            is_new_user=is_new_user,
         )
             
     except ValueError as e:
