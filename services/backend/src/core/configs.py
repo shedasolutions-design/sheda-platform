@@ -230,6 +230,12 @@ class Settings(BaseSettings):
     ADMIN_SEED_PASSWORD: str | None = Field(
         default=None, description="Password for seeded superadmin"
     )
+    # Admin sign-in hardening. With ADMIN_TOTP_SECRET set (base32), sign-in
+    # also needs a 6-digit authenticator code. ADMIN_ALLOWED_IPS, if set, is a
+    # comma-separated list of the only addresses the panel answers.
+    ADMIN_TOTP_SECRET: str = Field(default="", description="Base32 TOTP secret for admin sign-in")
+    ADMIN_ALLOWED_IPS: str = Field(default="", description="Comma-separated admin IP allow-list")
+
     ADMIN_SEED_EMAIL: str | None = Field(
         default=None, description="Email for seeded superadmin"
     )
@@ -284,6 +290,8 @@ class Settings(BaseSettings):
     # Each backend serves exactly one network: testnet (api-testnet.sheda.app)
     # or mainnet (api.sheda.app), each with its own database, so the same
     # email can hold an account on both without the two ever meeting.
+    # How many new wallets the web app may fund per day, across everyone.
+    SPONSOR_DAILY_CAP: int = Field(default=100, description="Funded wallets per day")
     NEAR_NETWORK: Literal["testnet", "mainnet"] = Field(default="testnet", description="testnet or mainnet")
     # Empty means the network default (FastNEAR; rpc.*.near.org is retired).
     NEAR_RPC_URL: str = Field(default="", description="Near RPC URL")

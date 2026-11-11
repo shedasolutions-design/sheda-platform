@@ -10,6 +10,7 @@ from typing import List
 from app.utils.utils import read_media_dir
 from cloudinary import uploader
 from cloudinary.utils import cloudinary_url
+from app.utils.uploads import read_checked, unique_name
 from app.schemas.media import IPFSResponse
 
 
@@ -33,13 +34,16 @@ async def upload_file(
     for file in files:
         if not file.filename:
             continue  # Skip files without filename
+        # Checked first (type, size, real contents). A wrong file is the
+        # caller's mistake, so it fails the request rather than being skipped.
+        file_content = await read_checked(file)
         try:
-            file_content = await file.read()
+            # Unique name, never overwrite: two listings' phone photos both
+            # called image.jpg used to replace each other.
             upload_result = uploader.upload(
                 file_content,
-                public_id=f"{type}/{current_user.id}/{file.filename}",
-                overwrite=True,
-                folder=type,
+                public_id=f"{type}/{current_user.id}/{unique_name(file.filename)}",
+                overwrite=False,
             )
             results.append(FileShow(file_url=upload_result.get("secure_url")))  # type: ignore
         except Exception as e:
@@ -109,7 +113,7 @@ async def upload_to_ipfs(
                 continue  # Skip files without filename
 
             try:
-                content = await file.read()
+                content = await read_checked(file)
                 if not content:
                     logger.warning(f"Skipping empty file: {file.filename}")
                     continue
@@ -155,6 +159,9 @@ async def upload_to_ipfs(
                     ipfs_url = f"{gateway_base}/ipfs/{ipfs_hash}"
 
                 results.append(IPFSResponse(IpfsUrl=ipfs_url, IpfsHash=ipfs_hash))  # type: ignore
+            except HTTPException:
+                # A rejected file (wrong type, too big) is reported, not skipped.
+                raise
             except Exception as e:
                 logger.error(f"IPFS upload failed for {file.filename}: {e}")
                 continue  # Continue processing remaining files

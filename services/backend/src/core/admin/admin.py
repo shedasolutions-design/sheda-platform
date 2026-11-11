@@ -40,7 +40,18 @@ admin = StarletteAdmin(
     logo_url="/static/sheda-solutions.png" if _static else None,
     login_logo_url="/static/sheda-solutions.png" if _static else None,
     auth_provider=AdminAuthProvider(),
-    middlewares=[Middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)],
+    # Its own key (not the API token key), 8-hour sessions, and HTTPS-only
+    # cookies wherever the panel is served over HTTPS.
+    middlewares=[
+        Middleware(
+            SessionMiddleware,
+            secret_key=settings.ADMIN_SECRET_KEY,
+            session_cookie="sheda_admin",
+            max_age=8 * 3600,
+            same_site="lax",
+            https_only=not settings.DEBUG_MODE,
+        )
+    ],
     index_view=DashboardView(label="Dashboard", icon="fa fa-gauge", path="/", template_path="dashboard.html"),
 )
 
