@@ -457,7 +457,8 @@ class NearWalletService {
           errorMsg.includes("key is missing") ||
           errorMsg.includes("insufficient") ||
           errorMsg.includes("not enough balance") ||
-          errorMsg.includes("does not exist")
+          errorMsg.includes("does not exist") ||
+          errorMsg.includes("doesn't exist")
         ) {
           throw error;
         }

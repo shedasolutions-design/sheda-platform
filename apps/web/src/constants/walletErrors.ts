@@ -161,7 +161,7 @@ export function classifyWalletError(errorMessage: string): WalletErrorCode {
     // ── Account-level errors ────────────────────────────────────────────────
     if (msg.includes("already exists") || msg.includes("already taken"))
         return "ERR_ACCOUNT_EXISTS";
-    if (msg.includes("does not exist") || msg.includes("account not found"))
+    if (msg.includes("does not exist") || msg.includes("doesn't exist") || msg.includes("account not found"))
         return "ERR_ACCOUNT_NOT_FOUND";
     if (msg.includes("does not match") || msg.includes("mismatch"))
         return "ERR_IMPORT_MISMATCH";
