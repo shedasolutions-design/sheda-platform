@@ -6,6 +6,30 @@ Backend for sheda solution
 
 This is the backend for a real estate platform built with **FastAPI**. The platform supports different user roles (e.g., clients, agents, agents), property listings, user authentication, and secure transactions.
 
+## Where it runs
+
+| | |
+| --- | --- |
+| API | Railway, project `sheda-platform`, service `api`, region EU West. https://api-production-1e044370.up.railway.app |
+| Database | Neon, project `sheda-platform` (`little-king-44612931`), London, org `org-curly-hall-99199877` |
+| Redis | Not used. Without `REDIS_URL`, OTP codes and revoked tokens live in the `kv_store` table and background tasks run in-process. |
+
+Code lives in `src/`. Run locally with `uvicorn main:app --app-dir src --reload`.
+
+**Deploy:** from this folder, `railway up --service api`. Railway builds the
+`Dockerfile`; `entrypoint.sh` runs `alembic upgrade heads` and starts gunicorn
+on `$PORT`. Configuration and secrets are Railway service variables, never
+files in this repo. `.railwayignore` and `.dockerignore` keep local secret
+files (`.env.local`, `.dev.vars`) out of uploads and images.
+
+**Database:** `neon init` wrote `DATABASE_URL` to `.env.local` (git-ignored),
+which the settings read. Migrations: `alembic upgrade head`.
+
+**Cloudflare Workers:** `wrangler.jsonc` and `src/worker.py` deploy the same
+code as a Python Worker. It does not fit the Workers Free plan (start-up
+memory and the ~2 s CPU cap per request), so it is not the live API; it would
+need Workers Paid with a raised `limits.cpu_ms`.
+
 ## **Features**
 
 - **User Authentication & Management**
@@ -82,7 +106,7 @@ This is the backend for a real estate platform built with **FastAPI**. The platf
 3. **Install dependencies**
 
    ```sh
-   pip install -r requirements.txt
+   pip install -r requirements-server.txt
    ```
 
 4. **Set up environment variables**  
@@ -93,7 +117,7 @@ This is the backend for a real estate platform built with **FastAPI**. The platf
 6. **Start the server**
 
    ```sh
-   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+   uvicorn main:app --app-dir src --host 0.0.0.0 --port 8000 --reload
    ```
 
 # Real Estate Backend API

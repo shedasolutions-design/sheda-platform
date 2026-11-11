@@ -355,7 +355,7 @@ interface ApiContextType extends ApiState {
   logout: (options?: { loading?: boolean }) => Promise<void>;
   verifyAccount: () => Promise<void>;
   resetPassword: (password: string) => Promise<void>;
-  changePassword: (password: string) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   sendOtp: (email: string) => Promise<void>;
   verifyOtp: (email: string, otp: string | number) => Promise<void>;
   refreshToken: () => Promise<void>;
@@ -393,7 +393,7 @@ interface ApiContextType extends ApiState {
 
   // Schedule methods
   createAvailableTime: (availability: AgentAvailabilitySchema) => Promise<void>;
-  getSchedule: () => Promise<void>;
+  getSchedule: () => Promise<AvailabilityShow[]>;
   updateSchedule: (
     scheduleId: number,
     availability: AgentAvailabilitySchema
@@ -1070,11 +1070,16 @@ export function ApiProvider({ children }: ApiProviderProps) {
     console.log("✅ Logout completed successfully");
   }, [apiCall, dispatch]);
 
-  const changePassword = useCallback(async (password: string) => {
-    console.log("🔐 Starting change password process...");
-    await apiCall(() => apiService.resetPassword(password));
-    console.log("✅ Change password completed successfully");
-  }, [apiCall]);
+  // Requires the current password (POST /auth/change-password), so an open
+  // session alone cannot be used to lock the owner out. The response carries
+  // a fresh token, which replaces the old one.
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    const token = await apiCall(() => apiService.changePassword(currentPassword, newPassword));
+    if (token?.access_token) {
+      await apiService.setToken(token.access_token);
+      dispatch({ type: "SET_TOKEN", payload: token.access_token });
+    }
+  }, [apiCall, dispatch]);
 
   const verifyAccount = useCallback(async () => {
     const token = await apiCall(() => apiService.verifyAccount());
@@ -1549,6 +1554,7 @@ export function ApiProvider({ children }: ApiProviderProps) {
   const getSchedule = useCallback(async () => {
     const schedule = await apiCall(() => apiService.getSchedule());
     dispatch({ type: "SET_SCHEDULE", payload: schedule });
+    return (schedule ?? []) as AvailabilityShow[];
   }, [apiCall, dispatch]);
 
   const updateSchedule = useCallback(async (

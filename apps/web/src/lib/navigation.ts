@@ -19,3 +19,22 @@ export function safeNextPath(fallback: string): string {
   if (next && next.startsWith("/") && !next.startsWith("//")) return next;
   return fallback;
 }
+
+/**
+ * A route written for the mobile app (expo-router) as a web path:
+ * "/(tabs)/history" -> "/history", "/wallet-setup/index" -> "/wallet-setup".
+ * Notifications and stored links still carry the mobile form.
+ */
+export function toWebPath(route: string, params?: Record<string, unknown>): string {
+  let path = route.replace(/\/\([^/)]+\)/g, "").replace(/\/index$/, "") || "/";
+  if (!path.startsWith("/")) path = `/${path}`;
+  // Dynamic segments: "/details/[id]" with { id: 5 } -> "/details/5".
+  const rest: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params ?? {})) {
+    if (v == null) continue;
+    if (path.includes(`[${k}]`)) path = path.replace(`[${k}]`, encodeURIComponent(String(v)));
+    else rest[k] = String(v);
+  }
+  const q = new URLSearchParams(rest).toString();
+  return q ? `${path}?${q}` : path;
+}

@@ -15,6 +15,13 @@ const CATEGORY_TO_PROPERTY_TYPE: Record<string, string> = {
   Land: "land",
   Shortlets: "shortlet",
   "Shared Apartments": "shared_apartment",
+  Bungalows: "bungalow",
+  Duplexes: "duplex",
+  "Luxury Villas": "luxury_villa",
+  Townhouses: "townhouse",
+  "Waterfront Properties": "waterfront",
+  "New Developments": "new_development",
+  "Affordable Homes": "affordable_home",
 };
 
 /**
@@ -34,12 +41,9 @@ export const PROPERTY_CATEGORIES = Object.keys(CATEGORY_TO_PROPERTY_TYPE);
 /**
  * Whether a property belongs in a category chip.
  *
- * Only four of the twelve chips correspond to a `PropertyTypeEnum` value. The
- * rest — Bungalows, Duplexes, Luxury Villas, Townhouses, Waterfront
- * Properties, New Developments, Affordable Homes — have no backend type at
- * all, and are matched against the listing's title instead. Loose, but it is
- * what those chips have always done, and dropping it would quietly empty
- * seven of the twelve.
+ * Every chip maps to a backend type. A listing whose title names the
+ * category (say "Duplex" saved as an apartment before the backend knew
+ * duplexes) still matches, so older listings don't drop out of their chip.
  *
  * Applied on top of backend results as well as local ones, so a search with a
  * chip selected narrows the same way whichever list is on screen.
@@ -51,7 +55,7 @@ export function matchesCategory(
   if (!category || category === "All") return true;
 
   const categoryLower = category.toLowerCase();
-  const typeLower = property.property_type?.toLowerCase().replace("_", " ");
+  const typeLower = property.property_type?.toLowerCase().replace(/_/g, " ");
 
   if (categoryLower === "apartments" && typeLower === "apartment") return true;
   if (categoryLower === "land" && typeLower === "land") return true;

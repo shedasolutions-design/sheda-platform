@@ -28,7 +28,7 @@ fi
 # Install dependencies
 echo ""
 echo "2. Installing dependencies..."
-pip install -r requirements.txt > /dev/null 2>&1
+pip install -r requirements-server.txt > /dev/null 2>&1
 echo "✓ Dependencies installed"
 
 # Run database migrations
@@ -76,4 +76,4 @@ echo ""
 echo "Starting server..."
 echo ""
 
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+uvicorn main:app --app-dir src --reload --host 0.0.0.0 --port 8000

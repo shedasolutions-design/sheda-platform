@@ -87,7 +87,7 @@ interface UseScheduleReturn {
   isLoading: boolean;
   error: string | null;
   createAvailableTime: (availability: AgentAvailabilitySchema) => Promise<void>;
-  getSchedule: () => Promise<void>;
+  getSchedule: () => Promise<unknown>;
   updateSchedule: (
     scheduleId: number,
     availability: AgentAvailabilitySchema

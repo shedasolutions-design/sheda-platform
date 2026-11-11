@@ -19,3 +19,10 @@ htmlcov
 .claude
 .playwright*
 .wrangler
+
+# Local secrets: never ship them inside an image
+.env.*
+!.env.example
+.dev.vars
+.neon
+node_modules

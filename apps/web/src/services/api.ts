@@ -20,7 +20,7 @@ import {
 // when it is unreachable — see services/apiEndpoints.ts — so this is the right
 // value for building a URL, but not a promise about which host answered.
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "https://sheda.peni.dev";
+  process.env.NEXT_PUBLIC_API_URL || "https://api-production-1e044370.up.railway.app";
 
 // Types based on OpenAPI specification
 export interface UserCreate {
@@ -1168,6 +1168,14 @@ class ApiService {
     });
     await this.clearToken();
     return res;
+  }
+
+  /** Signed-in password change; the backend checks the current password. */
+  async changePassword(currentPassword: string, newPassword: string): Promise<ApiResponse<Token>> {
+    return this.request<Token>("/api/v1/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
   }
 
   async resetPassword(password: string): Promise<ApiResponse<Token>> {

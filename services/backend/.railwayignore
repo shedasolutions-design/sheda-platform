@@ -1,0 +1,11 @@
+# Never upload local secrets to Railway. Its variables hold the real ones.
+.env
+.env.*
+!.env.example
+.dev.vars
+.neon
+node_modules
+.venv*
+.wrangler
+python_modules
+__pycache__

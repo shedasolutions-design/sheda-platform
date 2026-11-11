@@ -36,7 +36,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements-server.txt
 
       - name: Provide config
         # Settings are loaded from a .env file and most fields are required,

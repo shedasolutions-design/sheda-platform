@@ -65,6 +65,13 @@ const BACKEND_PROPERTY_TYPES = new Set([
   "land",
   "shortlet",
   "shared_apartment",
+  "bungalow",
+  "duplex",
+  "luxury_villa",
+  "townhouse",
+  "waterfront",
+  "new_development",
+  "affordable_home",
 ]);
 
 /**
@@ -88,10 +95,7 @@ export function filtersToSearchParams(
     narrowed = true;
   }
 
-  // Only the four types the backend stores. The screen also offers Bungalows,
-  // Duplexes and the rest, which have no type on the backend — filtering on
-  // those server-side would match nothing, so they are left to the title
-  // matching the home screen already does.
+  // Every type the screen offers is a backend type now.
   const type = filters.propertyType?.trim().toLowerCase().replace(/\s+/g, "_");
   if (type && BACKEND_PROPERTY_TYPES.has(type)) {
     params.property_type = type;
