@@ -127,8 +127,7 @@ sheda-platform/
 │   ├── services/collections/ money, chain reads, the ranking
 │   └── contexts/WalletContext.tsx   the built-in NEAR wallet
 ├── apps/collection-app/  Expo app. Collections as a standalone product.
-├── services/backend/     FastAPI. What a contract is the wrong place for.
-├── services/backend-cloudflare/  The same API as a Python Worker (served first).
+├── services/backend/     FastAPI on Railway: api.sheda.app (mainnet), api-testnet.sheda.app (testnet).
 ├── contracts/            NEAR. What has to be true without trusting us.
 │   ├── market/               listings, bids, escrow, deposits, disputes
 │   ├── vault/                one flat, its shares, its rent
@@ -246,8 +245,9 @@ code that was previously developed separately in:
 
 - `shedasolutions-design/sheda-solution-mobile` → `apps/mobile/`
 - `shedasolutions-design/Sheda-Collection-app` → `apps/collection-app/`
-- `shedasolutions-design/Sheda-Backend` → `services/backend/` (`main`), and
-  `services/backend-cloudflare/` (the `cloudflare` branch)
+- `shedasolutions-design/Sheda-Backend` → `services/backend/` (`main`). A
+  Cloudflare Workers copy (the `cloudflare` branch) was tried and removed;
+  it is in this repo's history.
 - `shedasolutions-design/sheda-new-contract` → `contracts/market/`
 - `shedasolutions-design/sheda-collection-app-contract` → `contracts/{raise,vault,stake-registry}/`
 
