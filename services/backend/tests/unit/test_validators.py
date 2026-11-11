@@ -43,18 +43,17 @@ class TestValidatorMixin:
         assert result == 3
 
     def test_validate_bedroom_count_zero(self):
-        """Test bedroom count of zero."""
-        with pytest.raises(ValueError, match="Bedroom count must be between 1 and 100"):
-            ValidatorMixin.validate_bedroom_count(0)
+        """Zero is allowed: land has no bedrooms."""
+        assert ValidatorMixin.validate_bedroom_count(0) == 0
 
     def test_validate_bedroom_count_negative(self):
         """Test negative bedroom count."""
-        with pytest.raises(ValueError, match="Bedroom count must be between 1 and 100"):
+        with pytest.raises(ValueError, match="Bedroom count must be between 0 and 100"):
             ValidatorMixin.validate_bedroom_count(-1)
 
     def test_validate_bedroom_count_too_high(self):
         """Test bedroom count exceeds maximum."""
-        with pytest.raises(ValueError, match="Bedroom count must be between 1 and 100"):
+        with pytest.raises(ValueError, match="Bedroom count must be between 0 and 100"):
             ValidatorMixin.validate_bedroom_count(101)
 
     def test_validate_bathroom_count_valid(self):
