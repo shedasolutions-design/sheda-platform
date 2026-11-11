@@ -57,6 +57,15 @@ class PasswordReset(BaseModel):
     password: Annotated[str, BeforeValidator(hash_password), Field(examples=["admin"])]
 
 
+class PasswordChange(BaseModel):
+    """A signed-in user changing their password. Unlike PasswordReset (the
+    forgot-password flow, where the emailed code is the proof), this requires
+    the current password, so a stolen session cannot lock the owner out."""
+
+    current_password: Annotated[str, Field(min_length=1)]
+    new_password: Annotated[str, Field(min_length=8)]
+
+
 class SwitchAccountType(BaseModel):
     switch_to: Annotated[AccountTypeEnum, Field(default=AccountTypeEnum.agent)]
 

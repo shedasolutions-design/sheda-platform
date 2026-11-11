@@ -17,6 +17,7 @@ from app.schemas.auth_schema import (
     Token,
     OtpSchema,
     PasswordReset,
+    PasswordChange,
     SwitchAccountType,
     TokenData,
     ForgotPasswordVerifyRequest,
@@ -108,6 +109,37 @@ async def login_for_access_token(
 @router.post("/logout", status_code=status.HTTP_202_ACCEPTED)
 async def logout(current_user: GetUser, credential: HTTPBearerDependency):
     return await process_logout(credential.credentials)
+
+
+@router.post(
+    "/change-password",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=Token,
+    description="Change password; requires the current password",
+)
+async def change_pwd(
+    current_user: ActiveUser,
+    payload: PasswordChange,
+    db: DBSession,
+):
+    from app.utils.utils import hash_password, verify_password
+
+    if not verify_password(payload.current_password, current_user.password):  # type: ignore
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Your current password is incorrect",
+        )
+    await reset_password(current_user, db, hash_password(payload.new_password))
+    scopes = [current_user.account_type.value]  # type: ignore
+    active_profile = account_type_to_profile(current_user.account_type)  # type: ignore
+    token = await create_access_token(
+        data=TokenData(  # type: ignore
+            sub=current_user.id,  # type: ignore
+            scopes=scopes,
+            active_profile=active_profile,
+        )
+    )
+    return Token(access_token=token, active_profile=active_profile)
 
 
 @router.put(

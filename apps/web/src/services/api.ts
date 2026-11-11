@@ -1170,6 +1170,14 @@ class ApiService {
     return res;
   }
 
+  /** Signed-in password change; the backend checks the current password. */
+  async changePassword(currentPassword: string, newPassword: string): Promise<ApiResponse<Token>> {
+    return this.request<Token>("/api/v1/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+  }
+
   async resetPassword(password: string): Promise<ApiResponse<Token>> {
     return this.request<Token>("/api/v1/auth/reset-password", {
       method: "PUT",
