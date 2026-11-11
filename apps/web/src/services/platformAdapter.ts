@@ -36,6 +36,8 @@ export interface WalletMetadata {
   hasCloudBackup?: boolean;
   /** ms epoch of the last successful cloud backup. */
   lastBackupAt?: number;
+  /** ms epoch the user confirmed writing their recovery phrase down. */
+  phraseSavedAt?: number;
   /**
    * The WALLET_EPOCH this wallet was created under (config/walletConfig.ts).
    *

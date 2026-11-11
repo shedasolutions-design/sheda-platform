@@ -33,7 +33,7 @@ export default function ImportWalletPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showBackupPrompt, setShowBackupPrompt] = useState(false);
   const [importedAccountId, setImportedAccountId] = useState("");
-  const { importWallet, importWalletByPrivateKey, isCloudBackupAvailable, currentNetwork, getPreviewAccountId } =
+  const { importWallet, importWalletByPrivateKey, isCloudBackupAvailable, currentNetwork, getPreviewAccountId, markPhraseSaved } =
     useWallet();
   const { user } = useApi();
   const userEmail = user?.email;
@@ -117,6 +117,9 @@ export default function ImportWalletPage() {
         method === "seedPhrase"
           ? await importWallet(seedPhrase.trim(), target)
           : await importWalletByPrivateKey(privateKey.trim(), target);
+      // They just typed their phrase or key, so they already hold a copy:
+      // no "back up your wallet" reminder for this one.
+      await markPhraseSaved(wallet.accountId).catch(() => {});
 
       setFeedback({
         visible: true,

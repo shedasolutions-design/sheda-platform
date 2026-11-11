@@ -198,6 +198,14 @@ interface WalletContextType {
   ) => Promise<WalletAccount>;
   /** True when a backup for the signed-in user is known to exist. */
   hasCloudBackup: boolean;
+  /**
+   * True once the wallet can be recovered without this browser: backed up to
+   * Google, or the user confirmed writing the recovery phrase down. Drives
+   * the backup reminder.
+   */
+  isWalletSafe: boolean;
+  /** Records that the user has written their recovery phrase down. */
+  markPhraseSaved: (accountId?: string) => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -1111,6 +1119,16 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
   const isCloudBackupAvailable = isFirebaseConfigured() && FEATURE_CLOUD_BACKUP;
 
+  const isWalletSafe = hasCloudBackup || Boolean(localWalletMetadata?.phraseSavedAt);
+
+  const markPhraseSaved = async (forAccountId?: string): Promise<void> => {
+    // Passed explicitly right after create/import, when state hasn't caught up.
+    const accountId = forAccountId ?? walletState.account?.accountId ?? localWalletMetadata?.accountId;
+    if (!userEmail || !accountId) return;
+    const meta = await patchWalletMetadata(userEmail, { accountId, phraseSavedAt: Date.now() });
+    setLocalWalletMetadata(meta);
+  };
+
   const connectBackupAccount = async (googleIdToken: string): Promise<void> => {
     await cloudBackup.signInWithGoogleIdToken(googleIdToken);
   };
@@ -1344,6 +1362,8 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     listCloudBackups,
     restoreFromCloud,
     hasCloudBackup,
+    isWalletSafe,
+    markPhraseSaved,
   };
 
   return (

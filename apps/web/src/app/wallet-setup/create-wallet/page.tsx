@@ -56,6 +56,7 @@ export default function CreateWalletPage() {
     currentNetwork,
     getPreviewAccountId,
     isCloudBackupAvailable,
+    markPhraseSaved,
   } = useWallet();
   const { user } = useApi();
   const userEmail = user?.email;
@@ -397,8 +398,16 @@ export default function CreateWalletPage() {
             )}
           </div>
 
-          <Button full onClick={() => router.push("/wallet-setup/created-successfully")}>
-            I&apos;ve Saved My Recovery Phrase
+          <Button
+            full
+            onClick={async () => {
+              // Saving a phrase you never looked at isn't saving it.
+              if (!showSeedPhrase) return setShowSeedPhrase(true);
+              await markPhraseSaved(createdAccountId).catch(() => {});
+              router.push("/wallet-setup/created-successfully");
+            }}
+          >
+            {showSeedPhrase ? "I've Saved My Recovery Phrase" : "Show My Recovery Phrase"}
           </Button>
           <button
             type="button"
