@@ -198,7 +198,7 @@ export function AuthorizeListingForm({
       : selectedCurrency === "USD"
         ? dollars
         : `${formatPrice(usd)} (≈ ${dollars})`;
-  const term = isRentStatus(formData.status) && formData.rentDurationDays ? ` for ${formData.rentDurationDays} days` : "";
+  const term = isRentStatus(formData.status) && formData.rentDurationDays ? ` for ${formData.rentDurationDays} day${formData.rentDurationDays === 1 ? "" : "s"}` : "";
   const rows: [string, string][] = [
     ["Price", priceText + term],
     ["Negotiable", formData.isNegotiable ? "Yes" : "No"],
