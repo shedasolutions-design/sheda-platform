@@ -1906,6 +1906,24 @@ class ApiService {
     );
   }
 
+  /** A builder's or manager's own papers (licences, registration). Public. */
+  async getProfileDocuments(profileId: number): Promise<ApiResponse<CollectionDocument[]>> {
+    return this.request<CollectionDocument[]>(
+      `/api/v1/collections/profiles/${profileId}/documents`,
+      { method: "GET" }
+    );
+  }
+
+  async addProfileDocument(
+    profileId: number,
+    payload: { label: string; file_url: string }
+  ): Promise<ApiResponse<CollectionDocument>> {
+    return this.request<CollectionDocument>(
+      `/api/v1/collections/profiles/${profileId}/documents`,
+      { method: "POST", body: JSON.stringify(payload) }
+    );
+  }
+
   async getPhaseUpdates(
     phaseId: number,
     options?: RequestInit & { timeout?: number; silent?: boolean }

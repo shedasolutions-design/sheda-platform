@@ -27,8 +27,10 @@ import { useCollections, useUnitPositions } from "@/hooks/useCollections";
 import { scoreFor } from "@/services/collections/ranking";
 import { formatWithSymbol } from "@/services/collections/money";
 import { DEFAULT_TOKEN } from "@/config/tokens";
+import { useApi } from "@/contexts/ApiContext";
+import apiService from "@/services/api";
+import { DocumentList, DocumentUploader, PhotoAdder, PhotoGallery } from "@/components/collections/Attachments";
 import type {
-  CollectionDocumentStatus,
   CollectionPhase,
   CollectionProfile,
   CollectionProjectDetail,
@@ -46,6 +48,7 @@ import type {
 export default function ProjectDetail() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const { getProject, loading, error, connected } = useCollections();
+  const { user } = useApi();
   const [project, setProject] = useState<CollectionProjectDetail | null>(null);
 
   const load = useCallback(async () => {
@@ -85,6 +88,10 @@ export default function ProjectDetail() {
   }
 
   const released = project.phases_released_bps;
+  // The builder who owns this raise can add its photos and documents here.
+  const isOwner = !!user?.id && project.builder?.user_id === Number(user.id);
+  const errorOf = (r: { ok: boolean; error?: any }) =>
+    r.ok ? null : String(r.error?.detail ?? r.error?.message ?? r.error ?? "That did not save. Please try again.");
 
   return (
     <>
@@ -95,6 +102,20 @@ export default function ProjectDetail() {
           <InterRegular style={{ ...TYPE.label, color: C.textSecondary }}>
             {project.location} · {project.units} units
           </InterRegular>
+          <PhotoGallery urls={project.image_urls ?? []} alt={project.name} />
+          {isOwner ? (
+            <PhotoAdder
+              onAttach={async (urls) => {
+                const start = project.image_urls?.length ?? 0;
+                for (let i = 0; i < urls.length; i++) {
+                  const err = errorOf(await apiService.addCollectionImage(project.slug, { image_url: urls[i], position: start + i }));
+                  if (err) return err;
+                }
+                await load();
+                return null;
+              }}
+            />
+          ) : null}
           {project.description ? (
             <InterRegular style={{ ...TYPE.body, color: C.text }}>
               {project.description}
@@ -144,30 +165,22 @@ export default function ProjectDetail() {
           ) : null}
         </Section>
 
-        {project.documents.length > 0 ? (
+        {project.documents.length > 0 || isOwner ? (
           <Section title="Documents">
-            <Card>
-              <View style={{ gap: 13 }}>
-                {project.documents.map((doc, i) => (
-                  <View key={doc.id} style={{ gap: 13 }}>
-                    {i > 0 ? <Divider /> : null}
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 10,
-                      }}
-                    >
-                      <InterMedium style={{ ...TYPE.body, color: C.text, flexShrink: 1 }}>
-                        {doc.label}
-                      </InterMedium>
-                      <Badge label={DOC_LABEL[doc.status]} tone={DOC_TONE[doc.status]} />
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </Card>
+            <DocumentList
+              documents={project.documents}
+              empty="The builder has not attached any documents yet. Ask for the plans, budget and title before you invest."
+            />
+            {isOwner ? (
+              <DocumentUploader
+                kinds={RAISE_DOCUMENT_KINDS}
+                onAttach={async (label, fileUrl) => {
+                  const err = errorOf(await apiService.addCollectionDocument(project.slug, { label, file_url: fileUrl }));
+                  if (!err) await load();
+                  return err;
+                }}
+              />
+            ) : null}
           </Section>
         ) : null}
 
@@ -364,17 +377,17 @@ function PersonRow({ profile, role }: { profile: CollectionProfile; role: string
   );
 }
 
-const DOC_LABEL: Record<CollectionDocumentStatus, string> = {
-  verified: "Verified by Sheda",
-  uploaded: "Uploaded, not verified",
-  missing: "Not provided",
-};
-
-const DOC_TONE = {
-  verified: "positive",
-  uploaded: "caution",
-  missing: "critical",
-} as const;
+/** What a builder is asked to attach to a raise. */
+const RAISE_DOCUMENT_KINDS = [
+  "Building plans (architectural drawings)",
+  "Budget / bill of quantities",
+  "Title document (C of O, Governor's Consent)",
+  "Building approval / permit",
+  "Survey plan",
+  "Structural drawings",
+  "Environmental impact assessment",
+  "Other",
+];
 
 const PHASE_LABEL: Record<CollectionPhase["state"], string> = {
   locked: "Not started",
