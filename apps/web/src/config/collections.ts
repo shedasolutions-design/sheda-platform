@@ -32,6 +32,12 @@ export const COLLECTIONS_CONTRACTS = {
      * sheda-collection-app-contract, code hash
      * 6XiSfG7MHr2LyruXZ726rvPwAeBVSYpJktUUwtHkcHjX. Owner and treasury are
      * the contract's own account on testnet.
+     *
+     * That build predates `set_unit_vault`, `shares_owed` and the unit
+     * list on `get_project`, so shares cannot be claimed against it. Deploy
+     * the current wasm and point `NEXT_PUBLIC_RAISE_CONTRACT_ID` at the new
+     * account, or change this id, before demonstrating the full loop.
+     * docs/DEPLOY_COLLECTIONS.md has the exact steps.
      */
     raise: "sheda-raise-v1.testnet",
     /**
@@ -52,8 +58,23 @@ export const COLLECTIONS_CONTRACTS = {
   },
 } as const;
 
-export const RAISE_CONTRACT_ID = COLLECTIONS_CONTRACTS[ACTIVE_NETWORK].raise;
-export const STAKE_REGISTRY_ID = COLLECTIONS_CONTRACTS[ACTIVE_NETWORK].stakeRegistry;
+/**
+ * An override for a deployment that has not been promoted into the table
+ * above yet.
+ *
+ * Deploying a contract is a separate act from shipping the web app, and
+ * the person doing it should not have to edit a source file and wait for a
+ * rebuild to point the demo at it. Empty or unset falls back to the table,
+ * so local development and a plain `next build` behave exactly as before.
+ */
+const override = (value: string | undefined): string => value?.trim() || "";
+
+export const RAISE_CONTRACT_ID =
+  override(process.env.NEXT_PUBLIC_RAISE_CONTRACT_ID) ||
+  COLLECTIONS_CONTRACTS[ACTIVE_NETWORK].raise;
+export const STAKE_REGISTRY_ID =
+  override(process.env.NEXT_PUBLIC_STAKE_REGISTRY_ID) ||
+  COLLECTIONS_CONTRACTS[ACTIVE_NETWORK].stakeRegistry;
 
 /** The marketplace a vault lists its unit on. The same one the app uses. */
 export const COLLECTIONS_MARKETPLACE_ID = CONTRACT_ID;
@@ -78,6 +99,7 @@ export const hasStakeRegistry = (): boolean => STAKE_REGISTRY_ID.length > 0;
  */
 export const COLLECTIONS_GAS = {
   CLAIM: 100n,
+  CLAIM_SHARES: 100n,
   SYNC_INCOME: 80n,
   FT_TRANSFER_CALL: 100n,
   STAKE_WITHDRAW: 50n,

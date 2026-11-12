@@ -188,6 +188,20 @@ function scoreManager(r: CollectionChainRecord): Score {
     };
   }
 
+  // Occupancy and rent are the two things this score is mostly made of.
+  // With neither indexed, every manager would score as weak on the same
+  // missing data, which reads as a verdict on them rather than a gap in
+  // what Sheda has read. Wait for the first rent period instead.
+  if (r.periods_due === 0) {
+    return {
+      total: 0,
+      tier: "unrated",
+      components: [],
+      unratedBecause:
+        "No rent periods have been indexed for their mandates yet. A rank needs at least one.",
+    };
+  }
+
   // Occupancy. The one thing a holder feels directly, because an empty flat
   // pays nothing however well it is looked after.
   const occupancy = clamp(r.let_months / r.mandate_months, 0, 1) * 40;

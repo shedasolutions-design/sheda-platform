@@ -179,6 +179,13 @@ class TestRouteOrdering:
             "/collections/projects/{slug}"
         )
 
+    def test_projects_managed_is_declared_before_the_slug_pattern(self):
+        """Otherwise it fetches a raise whose slug happens to be "managed"."""
+        paths = [p for p, _ in self._paths()]
+        assert paths.index("/collections/projects/managed") < paths.index(
+            "/collections/projects/{slug}"
+        )
+
     def test_profiles_me_is_declared_before_the_id_pattern(self):
         paths = [p for p, _ in self._paths()]
         assert paths.index("/collections/profiles/me") < paths.index(

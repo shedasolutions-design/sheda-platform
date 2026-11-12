@@ -349,10 +349,15 @@ export class NearContractService {
         return await operation();
       } catch (error: any) {
         lastError = error;
-        const errorMsg = (error?.message || String(error)).toLowerCase();
+        // near-js puts the kind of failure on `type` ("MethodNotFound") and a
+        // sentence in `message` ("Contract method is not found"), so match
+        // both; checking the message alone missed this and retried a call
+        // that can never succeed four times, with growing waits.
+        const errorMsg = `${error?.type ?? ""} ${error?.message || String(error)}`.toLowerCase();
 
         // Don't retry non-transient errors — these are genuine outcomes, not RPC flakiness
         if (
+          errorMsg.includes("method is not found") ||
           errorMsg.includes("smart contract panicked") ||
           errorMsg.includes("prohibitedinview") ||
           errorMsg.includes("accountdoesnotexist") ||

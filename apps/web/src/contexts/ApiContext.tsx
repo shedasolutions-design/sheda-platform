@@ -762,6 +762,29 @@ export function ApiProvider({ children }: ApiProviderProps) {
             console.log("⏹️ Init request was canceled, skipping cleanup");
             return;
           }
+          // Couldn't reach the server at all (offline, a dropped connection,
+          // a request cut off by navigation). That says nothing about the
+          // token, so keep the stored session instead of signing the user
+          // out; the next request that reaches the server settles it.
+          const msg = String(error?.message ?? error ?? "");
+          const unreachable =
+            error?.name === "TypeError" ||
+            /failed to fetch|networkerror|network request failed|load failed|timed? ?out|unreachable/i.test(msg);
+          if (unreachable) {
+            let storedUser: any = null;
+            try {
+              storedUser = JSON.parse(userDataString);
+            } catch {
+              // Unreadable stored profile: fall through to a clean sign-out.
+            }
+            if (storedUser) {
+              console.warn("Couldn't reach the server to check the session; keeping it:", msg);
+              dispatch({ type: "SET_TOKEN", payload: token });
+              dispatch({ type: "SET_USER", payload: storedUser });
+              dispatch({ type: "SET_AUTHENTICATED", payload: true });
+              return;
+            }
+          }
           // Token might be expired, clear everything
           console.log(
             "❌ Token expired or invalid, clearing auth data:",

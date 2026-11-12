@@ -208,6 +208,17 @@ class UnitCreate(BaseModel):
     total_shares: str = _ATOMIC
 
 
+class UnitVaultUpdate(BaseModel):
+    """Record the vault account deployed for one flat.
+
+    Admin only. The raise contract is the authority on which vault a flat
+    mints into, and this endpoint only caches the same address so the app
+    can warn a holder before they sign a claim that has nowhere to land.
+    """
+
+    vault_account_id: str = Field(min_length=2, max_length=64)
+
+
 # ---- projects --------------------------------------------------------------
 
 

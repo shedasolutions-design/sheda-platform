@@ -6,9 +6,14 @@ import apiService, {
   type CollectionProjectDetail,
   type CollectionProjectSummary,
   type CollectionRole,
+  type CollectionUnit,
 } from "@/services/api";
 import * as chain from "@/services/collections/chain";
-import { NotDeployedError, type Holding } from "@/services/collections/chain";
+import {
+  NotDeployedError,
+  type Holding,
+  type UnitPosition,
+} from "@/services/collections/chain";
 import { hasRaiseContract, hasStakeRegistry } from "@/config/collections";
 import { describeApiError } from "@/services/collections/errors";
 import type { ContractCallResult } from "@/types/contract";
@@ -169,6 +174,14 @@ export function useCollections() {
       [run, accountId]
     ),
 
+    getUnitPosition: useCallback(
+      (slug: string, unitCode: string) =>
+        run(async () =>
+          accountId ? chain.getUnitPosition(slug, unitCode, accountId) : null
+        ),
+      [run, accountId]
+    ),
+
     // ---- writes ----
     claim: useCallback(
       (vaultId: string) => signed((id, key) => chain.claim(id, key, vaultId)),
@@ -205,6 +218,18 @@ export function useCollections() {
     requestInspection: useCallback(
       (slug: string, phaseIndex: number) =>
         signed((id, key) => chain.requestInspection(id, key, slug, phaseIndex)),
+      [signed]
+    ),
+
+    attest: useCallback(
+      (slug: string, phaseIndex: number) =>
+        signed((id, key) => chain.attestPhase(id, key, slug, phaseIndex)),
+      [signed]
+    ),
+
+    claimShares: useCallback(
+      (slug: string, unitCode: string) =>
+        signed((id, key) => chain.claimShares(id, key, slug, unitCode)),
       [signed]
     ),
 
@@ -272,4 +297,74 @@ export function useMyCollectionProfiles() {
   );
 
   return { profiles, builder, manager, loading, reload: load, actingAccountMatches };
+}
+
+/**
+ * The signed-in account's commitments in one raise, flat by flat.
+ *
+ * Kept out of `useCollections` because it fans out one view per flat and
+ * should fail softly. The live v1 raise contract predates `shares_owed`;
+ * against it every read fails with MethodNotFound, and the screen must say
+ * nothing rather than paint an error over a project page that otherwise
+ * works. A network failure is kept apart from that, because it is worth
+ * retrying.
+ */
+export function useUnitPositions(projectSlug: string, units: CollectionUnit[]) {
+  const { walletState } = useWallet();
+  const accountId = walletState.account?.accountId ?? null;
+  const codes = useMemo(() => units.map((u) => u.code), [units]);
+
+  const [positions, setPositions] = useState<Record<string, UnitPosition>>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [unsupported, setUnsupported] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!accountId || codes.length === 0) {
+      setPositions({});
+      setError(null);
+      setUnsupported(false);
+      return;
+    }
+    if (!hasRaiseContract()) {
+      setPositions({});
+      setUnsupported(true);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    const results = await Promise.allSettled(
+      codes.map((code) => chain.getUnitPosition(projectSlug, code, accountId))
+    );
+
+    const next: Record<string, UnitPosition> = {};
+    let missingMethod = false;
+    let firstError: string | null = null;
+
+    results.forEach((result, i) => {
+      if (result.status === "fulfilled") {
+        next[codes[i]] = result.value;
+        return;
+      }
+      const message =
+        result.reason instanceof Error ? result.reason.message : String(result.reason);
+      if (/MethodNotFound|method\b.*\bnot found|not found\b.*\bmethod/i.test(message)) {
+        missingMethod = true;
+      } else if (!firstError) {
+        firstError = message;
+      }
+    });
+
+    setPositions(next);
+    setUnsupported(missingMethod);
+    setError(firstError);
+    setLoading(false);
+  }, [accountId, projectSlug, codes]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return { positions, loading, error, unsupported, reload: load };
 }

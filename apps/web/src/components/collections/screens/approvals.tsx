@@ -61,20 +61,39 @@ interface Row {
 }
 
 export default function Approvals() {
-  const { builder } = useMyCollectionProfiles();
-  const { requestInspection, capabilities, loading, error } = useCollections();
+  const { builder, manager, actingAccountMatches } = useMyCollectionProfiles();
+  const { requestInspection, attest, capabilities, error } = useCollections();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
 
   const load = useCallback(async () => {
-    const mine = await apiService.getMyCollectionProjects();
-    if (!mine.ok) {
+    if (!builder && !manager) {
       setRows([]);
       return;
     }
-    const summaries = mine.data as CollectionProjectSummary[];
+
+    // A project can reach this screen from either side. The builder is
+    // asking for an inspection; the manager is the one who performs it.
+    // Both lists are read and deduped on the slug so a person holding both
+    // profiles sees each phase once.
+    const responses: Awaited<
+      ReturnType<typeof apiService.getMyCollectionProjects>
+    >[] = [];
+    if (builder) responses.push(await apiService.getMyCollectionProjects());
+    if (manager) responses.push(await apiService.getManagedCollectionProjects());
+
+    const summaries = new Map<string, CollectionProjectSummary>();
+    responses.forEach((response) => {
+      if (!response.ok) return;
+      (response.data as CollectionProjectSummary[]).forEach((summary) => {
+        summaries.set(summary.slug, summary);
+      });
+    });
+
     const details = await Promise.all(
-      summaries.map((s) => apiService.getCollectionProject(s.slug))
+      Array.from(summaries.values()).map((s) =>
+        apiService.getCollectionProject(s.slug)
+      )
     );
     const collected: Row[] = [];
     details.forEach((d) => {
@@ -83,7 +102,7 @@ export default function Approvals() {
       project.phases.forEach((phase) => collected.push({ project, phase }));
     });
     setRows(collected);
-  }, []);
+  }, [builder, manager]);
 
   useEffect(() => {
     load();
@@ -95,6 +114,35 @@ export default function Approvals() {
     setBusy(null);
     if (result.success) load();
   };
+
+  const onAttest = async (row: Row) => {
+    setBusy(row.phase.id);
+    const result = await attest(row.project.slug, row.phase.position);
+    setBusy(null);
+    if (result.success) load();
+  };
+
+  const roleFor = (project: CollectionProjectDetail): Viewer => {
+    if (manager && project.manager?.id === manager.id) return "manager";
+    if (builder && project.builder?.id === builder.id) return "builder";
+    return "viewer";
+  };
+
+  const canRequestOn = (project: CollectionProjectDetail): boolean =>
+    Boolean(
+      builder &&
+        project.builder?.id === builder.id &&
+        actingAccountMatches(builder) &&
+        capabilities.raises
+    );
+
+  const canAttestOn = (project: CollectionProjectDetail): boolean =>
+    Boolean(
+      manager &&
+        project.manager?.id === manager.id &&
+        actingAccountMatches(manager) &&
+        capabilities.raises
+    );
 
   const active = (rows ?? []).filter(
     (r) => r.phase.state !== "released" && r.phase.state !== "locked"
@@ -108,21 +156,21 @@ export default function Approvals() {
       <Screen>
         <PageTitle
           title="Sign-offs"
-          subtitle="Money is released a phase at a time. Each one is inspected by the property manager, then holders have seven days to object."
+          subtitle="Money is released a phase at a time. The builder asks for an inspection, the property manager signs it off, then holders have seven days to object."
         />
 
         <Note>
           You cannot sign off your own phases. An inspection is carried out by the property
-          manager on the project, who must be independent of you, and the money moves only after
-          the objection window closes.
+          manager on the project, who must be independent of the builder, and the money moves
+          only after the objection window closes.
         </Note>
 
         {error ? <Note tone="critical">{error}</Note> : null}
 
-        {!builder ? (
+        {!builder && !manager ? (
           <Empty
-            title="You do not have a builder profile"
-            body="Sign-offs belong to a raise, and a raise belongs to a builder profile."
+            title="You do not have a Collections profile"
+            body="Sign-offs belong to a raise. A builder requests an inspection and a property manager performs it."
           />
         ) : rows === null ? (
           <View style={{ paddingVertical: 40, alignItems: "center" }}>
@@ -131,7 +179,7 @@ export default function Approvals() {
         ) : rows.length === 0 ? (
           <Empty
             title="No phases yet"
-            body="Open a raise with a phase schedule and each step will appear here."
+            body="A raise with a phase schedule will list each step here."
           />
         ) : (
           <>
@@ -146,9 +194,13 @@ export default function Approvals() {
                   <PhaseCard
                     key={row.phase.id}
                     row={row}
+                    viewer={roleFor(row.project)}
                     busy={busy === row.phase.id}
-                    canAct={capabilities.raises}
+                    live={capabilities.raises}
+                    canRequest={canRequestOn(row.project)}
+                    canAttest={canAttestOn(row.project)}
                     onRequest={() => onRequest(row)}
+                    onAttest={() => onAttest(row)}
                   />
                 ))
               )}
@@ -175,7 +227,7 @@ export default function Approvals() {
         {!capabilities.raises && rows && rows.length > 0 ? (
           <NotLiveYet
             what="Acting on a phase is not live yet"
-            body="The schedule above is real and holders can read it. Requesting an inspection writes to the raise contract, which is not deployed, so the buttons stay out until they can do what they say."
+            body="The schedule above is real and holders can read it. Acting on a phase writes to the raise contract, which is not deployed on this network, so the buttons stay out until they can do what they say."
           />
         ) : null}
 
@@ -188,21 +240,35 @@ export default function Approvals() {
   );
 }
 
+type Viewer = "builder" | "manager" | "viewer";
+
 function PhaseCard({
   row,
   compact = false,
   busy = false,
-  canAct = false,
+  live = false,
+  viewer = "viewer",
+  canRequest = false,
+  canAttest = false,
   onRequest,
+  onAttest,
 }: {
   row: Row;
   compact?: boolean;
   busy?: boolean;
-  canAct?: boolean;
+  live?: boolean;
+  viewer?: Viewer;
+  canRequest?: boolean;
+  canAttest?: boolean;
   onRequest?: () => void;
+  onAttest?: () => void;
 }) {
   const { project, phase } = row;
-  const manager = project.manager?.display_name ?? "the property manager";
+  const managerName = project.manager?.display_name ?? "the property manager";
+  const wrongAccount =
+    live &&
+    ((viewer === "manager" && phase.state === "awaiting_inspection" && !canAttest) ||
+      (viewer === "builder" && phase.state === "building" && !canRequest));
 
   return (
     <Card>
@@ -221,14 +287,30 @@ function PhaseCard({
           <>
             <Divider />
             <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
-              {waitingOn(phase.state, manager)}
+              {waitingOn(phase.state, managerName, viewer)}
             </InterRegular>
-            {phase.state === "building" && canAct && onRequest ? (
+
+            {wrongAccount ? (
+              <Note>
+                This profile points at a different NEAR account from the one signed in.
+                Connect the account this profile belongs to before acting on the phase.
+              </Note>
+            ) : null}
+
+            {phase.state === "building" && canRequest && onRequest ? (
               <CollectionsButton
                 label="Mark finished and request inspection"
                 variant="quiet"
                 loading={busy}
                 onPress={onRequest}
+              />
+            ) : null}
+
+            {phase.state === "awaiting_inspection" && canAttest && onAttest ? (
+              <CollectionsButton
+                label="I have inspected this — sign it off"
+                loading={busy}
+                onPress={onAttest}
               />
             ) : null}
           </>
@@ -238,12 +320,20 @@ function PhaseCard({
   );
 }
 
-function waitingOn(state: CollectionPhaseState, manager: string): string {
+function waitingOn(
+  state: CollectionPhaseState,
+  manager: string,
+  viewer: Viewer
+): string {
   switch (state) {
     case "building":
-      return "Yours to finish. Request an inspection once it is done.";
+      return viewer === "manager"
+        ? "Waiting on the builder to finish this phase. You cannot inspect it until they submit it."
+        : "Yours to finish. Request an inspection once it is done.";
     case "awaiting_inspection":
-      return `Waiting on ${manager} to inspect and sign off. You cannot move this along yourself.`;
+      return viewer === "manager"
+        ? "Yours to inspect. Sign it off once you have seen the work; holders then have seven days to object."
+        : `Waiting on ${manager} to inspect and sign off. You cannot move this along yourself.`;
     case "objection_window":
       return `${manager} has signed this off. Holders have seven days to object, and a quarter of them objecting holds the payment.`;
     case "held":

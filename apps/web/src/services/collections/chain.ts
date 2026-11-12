@@ -57,6 +57,19 @@ export interface Holding {
   claimable: string;
 }
 
+/**
+ * What one account put into one flat, and what it is still owed in shares.
+ *
+ * Two different questions rather than one, because the answer after a
+ * claim is not "nothing happened". The commitment stays on chain as the
+ * record of what was paid; `sharesOwed` falls to zero once the vault has
+ * minted, so the screen can tell "claimed" apart from "never committed".
+ */
+export interface UnitPosition {
+  committedAtomic: string;
+  sharesOwed: string;
+}
+
 /** Mirrors the stake registry's ProfileView. */
 export interface StakeProfile {
   total: string;
@@ -118,6 +131,44 @@ export async function getClaimable(
   return nearContractService.viewOn<string>(vaultId, "claimable", {
     account_id: accountId,
   });
+}
+
+/**
+ * What one account is owed in a flat, before it has claimed.
+ *
+ * `shares_owed` is the contract's own arithmetic, so the figure shown is
+ * what a claim would mint rather than a second calculation that can round
+ * differently. The commitment is read alongside it because a claimed
+ * position still has a commitment and no shares owed, which is how the
+ * screen distinguishes "already claimed" from "never invested".
+ *
+ * The live v1 raise contract predates both views. Callers that see a
+ * missing method should treat the position as unavailable, not as zero.
+ */
+export async function getUnitPosition(
+  projectSlug: string,
+  unitCode: string,
+  accountId: string
+): Promise<UnitPosition> {
+  if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
+
+  const [committed, shares] = await Promise.all([
+    nearContractService.viewOn<string>(RAISE_CONTRACT_ID, "get_commitment", {
+      project_id: projectSlug,
+      account_id: accountId,
+      unit: unitCode,
+    }),
+    nearContractService.viewOn<string>(RAISE_CONTRACT_ID, "shares_owed", {
+      project_id: projectSlug,
+      unit: unitCode,
+      account_id: accountId,
+    }),
+  ]);
+
+  return {
+    committedAtomic: String(committed ?? "0"),
+    sharesOwed: String(shares ?? "0"),
+  };
 }
 
 export async function getHolding(
@@ -347,6 +398,57 @@ export async function requestInspection(
     gas: tgas(COLLECTIONS_GAS.MANAGER_ACTION),
     attachedDeposit: ONE_YOCTO,
     dedupeKey: `inspect:${projectSlug}:${phaseIndex}`,
+  });
+}
+
+/**
+ * Turn a commitment into shares once the raise has funded.
+ *
+ * The vault address is not passed in. The raise contract remembers where
+ * each flat's vault was deployed and checks that the caller committed to
+ * that flat; letting the app name the vault would let it name someone
+ * else's. Deduped on the position because a double tap must not become a
+ * second mint attempt after the first one has marked the position claimed.
+ */
+export async function claimShares(
+  accountId: string,
+  privateKey: string,
+  projectSlug: string,
+  unitCode: string
+): Promise<ContractCallResult<void>> {
+  if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
+  return nearContractService.callOn(accountId, privateKey, {
+    contractId: RAISE_CONTRACT_ID,
+    methodName: "claim_shares",
+    args: { project_id: projectSlug, unit: unitCode },
+    gas: tgas(COLLECTIONS_GAS.CLAIM_SHARES),
+    attachedDeposit: ONE_YOCTO,
+    dedupeKey: `claim-shares:${accountId}:${projectSlug}:${unitCode}`,
+  });
+}
+
+/**
+ * The property manager signing off a finished phase.
+ *
+ * The contract refuses this from the builder and from anyone else, so the
+ * screen's check is a courtesy rather than the rule. Sending it anyway
+ * would produce a rejected transaction and no explanation the holder can
+ * act on, which is why the button only appears for the manager's account.
+ */
+export async function attestPhase(
+  accountId: string,
+  privateKey: string,
+  projectSlug: string,
+  phaseIndex: number
+): Promise<ContractCallResult<void>> {
+  if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
+  return nearContractService.callOn(accountId, privateKey, {
+    contractId: RAISE_CONTRACT_ID,
+    methodName: "attest",
+    args: { project_id: projectSlug, phase: phaseIndex },
+    gas: tgas(COLLECTIONS_GAS.MANAGER_ACTION),
+    attachedDeposit: ONE_YOCTO,
+    dedupeKey: `attest:${accountId}:${projectSlug}:${phaseIndex}`,
   });
 }
 
