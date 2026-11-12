@@ -413,6 +413,14 @@ export default function PropertyDetailsPage() {
       if (!privateKey) return notify("error", "Error", "Could not access wallet keys. Please reconnect your wallet.");
       const action = isRent ? Action.Lease : Action.Purchase;
 
+      // The contract keeps the security deposit out of what is sent and
+      // treats the rest as rent. Sending only the rent turned a $1,000 offer
+      // into $800 rent + $200 deposit, and "Rent Now" paid the seller $200
+      // short. The deposit goes on top, as the price bar promises.
+      if (isRent && onChainDeposit && BigInt(onChainDeposit) > BigInt(0)) {
+        amount = (BigInt(amount) + BigInt(onChainDeposit)).toString();
+      }
+
       const result = await runTransaction({
         loadingMessage: "Placing your bid...",
         successMessage: "Bid placed successfully.",
@@ -769,9 +777,13 @@ export default function PropertyDetailsPage() {
         onConfirm={handlePlaceBid}
         title={onChainPrice ? "Confirm Purchase" : "Place Blockchain Bid"}
         description={
-          onChainPrice
-            ? `Paying the exact listed price for "${raw.title}". Select a stablecoin to pay with.`
-            : `You are placing a negotiable bid on "${raw.title}". Select a stablecoin to pay with.`
+          (onChainPrice
+            ? `Paying the exact listed price for "${raw.title}".`
+            : `You are placing a negotiable bid on "${raw.title}".`) +
+          (isRent && onChainDeposit && Number(onChainDeposit) > 0
+            ? ` The ${formatUsd(Number(onChainDeposit) / 1_000_000)} refundable deposit is added on top and held in escrow until the lease ends.`
+            : "") +
+          " Select a stablecoin to pay with."
         }
         onChainAmount={onChainPrice || undefined}
         nairaAmount={onChainPrice ? undefined : offerNaira}
