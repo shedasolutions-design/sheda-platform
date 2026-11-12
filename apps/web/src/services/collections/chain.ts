@@ -470,6 +470,30 @@ export async function objectToRelease(
   });
 }
 
+/**
+ * Shares sold per unit, read from the raise contract.
+ *
+ * The unit screen used the backend's mirror (collection_unit.shares_sold),
+ * which nothing updates when someone invests: a fully funded raise showed
+ * "0% funded" on both flats. The contract's get_project carries each unit's
+ * raised amount; shares sold is that over the unit price.
+ */
+export async function getChainSharesSold(
+  escrowAccountId: string,
+  projectSlug: string
+): Promise<Record<string, string>> {
+  const project = await nearContractService.viewOn<{
+    units?: { code: string; price: number | string; total_shares: number | string; raised: number | string }[];
+  } | null>(escrowAccountId, "get_project", { project_id: projectSlug });
+  const out: Record<string, string> = {};
+  for (const u of project?.units ?? []) {
+    const price = BigInt(String(u.price));
+    if (price === BigInt(0)) continue;
+    out[u.code] = ((BigInt(String(u.raised)) * BigInt(String(u.total_shares))) / price).toString();
+  }
+  return out;
+}
+
 // ---- getting money back from a raise that stopped or failed ---------------
 
 /** The raise's state as the contract sees it ("Open", "Funded", "Stalled", "Failed", ...). */
