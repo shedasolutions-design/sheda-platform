@@ -206,6 +206,24 @@ curl -X PATCH "$API/api/v1/collections/projects/$PROJECT/units/$UNIT/vault" \
   -d "{\"vault_account_id\":\"$VAULT\"}"
 ```
 
+## 6b. Register every account that will hold the stablecoin
+
+A NEP-141 token refuses to pay an account that has not registered with it,
+and `ft_transfer_call` to an unregistered receiver bounces the money back to
+the sender. Skip this and every commitment returns to the investor, the
+vaults can never receive rent, and phase releases and fees cannot reach the
+builder, manager or treasury. Register the raise, the stake registry, each
+vault, the builder and the manager:
+
+```bash
+for account in "$RAISE" "$STAKE" "$VAULT" adaeze-demo.shedauser.testnet ngozi-demo.shedauser.testnet; do
+  near contract call-function as-transaction "$USDC" storage_deposit     json-args "{\"account_id\":\"$account\"}" prepaid-gas 30Tgas     attached-deposit "0.00125 NEAR" sign-as "$account"     network-config testnet sign-with-keychain send
+done
+```
+
+The testnet v2 deployment (2026-11-12) did this for all six contract
+accounts and the three demo profiles.
+
 ## 7. Fund the raise and close it
 
 The investor sends the stablecoin through `ft_transfer_call`, with the
