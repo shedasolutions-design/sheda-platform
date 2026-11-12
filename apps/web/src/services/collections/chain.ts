@@ -470,6 +470,42 @@ export async function objectToRelease(
   });
 }
 
+/** The raise as the contract has it: status, raised and target (atomic). */
+export async function getRaiseChainState(
+  projectSlug: string
+): Promise<{ status: string; raised: string; target: string } | null> {
+  if (!hasRaiseContract()) return null;
+  const project = await nearContractService.viewOn<{
+    status: string;
+    raised: string | number;
+    target: string | number;
+  } | null>(RAISE_CONTRACT_ID, "get_project", { project_id: projectSlug });
+  return project ? { status: project.status, raised: String(project.raised), target: String(project.target) } : null;
+}
+
+/**
+ * Close a raise that is full (or past its deadline). Anyone may.
+ *
+ * Shares can only be claimed from a raise the contract calls Funded, and
+ * only close_raise makes it so. Nothing in the app called it, so a raise
+ * that reached its target stayed Open and nobody could claim.
+ */
+export async function closeRaise(
+  accountId: string,
+  privateKey: string,
+  projectSlug: string
+): Promise<ContractCallResult<void>> {
+  if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
+  return nearContractService.callOn(accountId, privateKey, {
+    contractId: RAISE_CONTRACT_ID,
+    methodName: "close_raise",
+    args: { project_id: projectSlug },
+    gas: tgas(COLLECTIONS_GAS.MANAGER_ACTION),
+    attachedDeposit: BigInt(0),
+    dedupeKey: `close-raise:${projectSlug}`,
+  });
+}
+
 /**
  * Shares sold per unit, read from the raise contract.
  *

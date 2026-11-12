@@ -227,6 +227,11 @@ export function useCollections() {
       [signed]
     ),
 
+    closeRaise: useCallback(
+      (slug: string) => signed((id, key) => chain.closeRaise(id, key, slug)),
+      [signed]
+    ),
+
     claimShares: useCallback(
       (slug: string, unitCode: string) =>
         signed((id, key) => chain.claimShares(id, key, slug, unitCode)),
