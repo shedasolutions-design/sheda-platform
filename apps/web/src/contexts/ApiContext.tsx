@@ -169,6 +169,9 @@ type ApiAction =
   | { type: "RESET_STATE" };
 
 // Initial state
+/** What the backend says about a token that can never work again. */
+const DEAD_SESSION = /^(Token has been revoked|Could not validate credentials)$/;
+
 const initialState: ApiState = {
   isAuthenticated: false,
   token: null,
@@ -903,6 +906,25 @@ export function ApiProvider({ children }: ApiProviderProps) {
   };
 
   // Wrapper for API calls with error handling
+  // A token the backend has revoked or can't validate will never work again.
+  // The app used to keep it and stay "signed in" while every request failed
+  // (and the chat socket gave up). End the session once and go to sign-in.
+  const logoutRef = useRef<((options?: { loading?: boolean }) => Promise<void>) | null>(null);
+  const endingSessionRef = useRef(false);
+  const endDeadSession = useCallback((message: string) => {
+    if (!DEAD_SESSION.test(message.trim()) || endingSessionRef.current) return;
+    endingSessionRef.current = true;
+    console.warn("Session ended by the server:", message);
+    void (logoutRef.current?.({ loading: false }) ?? Promise.resolve()).finally(() => {
+      endingSessionRef.current = false;
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        // A full load on purpose: it drops every piece of the dead session.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+        window.location.assign("/login?expired=1");
+      }
+    });
+  }, []);
+
   const apiCall = useCallback(
     async (
       apiMethod: () => Promise<any>,
@@ -966,6 +988,8 @@ export function ApiProvider({ children }: ApiProviderProps) {
             errMsg = result.error.error;
           }
 
+          endDeadSession(String(errMsg));
+
           // Log the error with context
           if (!options.silent) {
             logError(errMsg, 'ApiContext');
@@ -983,6 +1007,7 @@ export function ApiProvider({ children }: ApiProviderProps) {
         return result;
       } catch (error: any) {
         const isCanceled = error?.name === "AbortError" || error?.message === "Request canceled" || error?.message === "Request aborted";
+        if (typeof error?.message === "string") endDeadSession(error.message);
         if (!options.silent && !isCanceled) {
           // Log the error
           logError(error, 'ApiContext');
@@ -1000,7 +1025,7 @@ export function ApiProvider({ children }: ApiProviderProps) {
         }
       }
     },
-    [dispatch]
+    [dispatch, endDeadSession]
   );
   // const apiCall = async (
   //   apiMethod: () => Promise<any>,
@@ -1268,6 +1293,10 @@ export function ApiProvider({ children }: ApiProviderProps) {
     await apiService.setToken(token.access_token);
     dispatch({ type: "SET_TOKEN", payload: token.access_token });
   }, [apiCall, dispatch]);
+
+  useEffect(() => {
+    logoutRef.current = logout;
+  }, [logout]);
 
   // A switch revokes the token it was sent with. Right after sign-up the
   // profile chooser and the initial mode sync both asked for one at the same

@@ -258,6 +258,15 @@ async def switch_account_type(
     current_user: ActiveUser,
     db: DBSession,
 ):
+    # Already on that profile: nothing to switch, so keep the token. The web
+    # app confirms the profile on every page load; revoking the token each
+    # time broke every other request still carrying it ("Token has been
+    # revoked" on wallet funding, chat sockets dropping and reconnecting).
+    if current_user.account_type is not None and AccountTypeEnum(current_user.account_type) == AccountTypeEnum(payload.switch_to):
+        return Token(
+            access_token=credential.credentials,
+            active_profile=account_type_to_profile(current_user.account_type),
+        )
     new_token = await switch_account(payload.switch_to, current_user, db)  # type: ignore
     exp_time = await token_exp_time(credential.credentials)
     await blacklist_token(credential.credentials, exp_time)  # type: ignore
