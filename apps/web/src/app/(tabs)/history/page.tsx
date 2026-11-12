@@ -6,15 +6,13 @@ import AuthGuard from "@/components/auth/AuthGuard";
 import DealTabs from "@/components/history/TransactionList";
 import { useMode } from "@/contexts/ModeContext";
 import { useApi } from "@/contexts/ApiContext";
-import { useWallet } from "@/contexts/WalletContext";
 import { useTransactions } from "@/hooks/useTransactions";
 
 /** The buyer's deals. Sellers see the same list, with stats, on Activities. */
 function History() {
   const router = useRouter();
   const { isSeller, isLoading } = useMode();
-  const { getMe, registerWallet } = useApi();
-  const { walletState } = useWallet();
+  const { getMe } = useApi();
   const deals = useTransactions();
 
   useEffect(() => {
@@ -25,11 +23,8 @@ function History() {
     getMe({ silent: true });
   }, [getMe]);
 
-  // The backend links deals to people through their wallet.
-  useEffect(() => {
-    const id = walletState.account?.accountId;
-    if (id) registerWallet(id).catch(() => {});
-  }, [walletState.account?.accountId, registerWallet]);
+  // Wallet registration (how the backend links deals to people) now happens
+  // in WalletContext as soon as a wallet connects, on every page.
 
   return (
     <div className="mx-auto max-w-5xl px-5 pb-10 pt-5">
