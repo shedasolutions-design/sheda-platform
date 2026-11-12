@@ -21,8 +21,8 @@ Set these under **Settings → Secrets and variables → Actions**.
 | Name | Kind | Example |
 | --- | --- | --- |
 | `NEAR_CONTRACT_PRODUCTION_NETWORK` | variable | `testnet` |
-| `NEAR_CONTRACT_PRODUCTION_ACCOUNT_ID` | variable | `market.shedauser.testnet` |
-| `NEAR_CONTRACT_PRODUCTION_ACCOUNT_PRIVATE_KEY` | secret | `<account>:<ed25519 key>` |
+| `NEAR_CONTRACT_PRODUCTION_ACCOUNT_ID` | variable | `market-v2.shedauser.testnet` |
+| `NEAR_CONTRACT_PRODUCTION_ACCOUNT_PRIVATE_KEY` | secret | the account's private key alone (`ed25519:...`), as `sign-with-plaintext-private-key` takes it |
 | `NEAR_CONTRACT_STAGING_NETWORK` | variable | `testnet` |
 | `NEAR_CONTRACT_STAGING_ACCOUNT_ID` | variable | `shedauser.testnet` (the parent that creates `gh-<PR>.` accounts) |
 | `NEAR_CONTRACT_STAGING_ACCOUNT_PUBLIC_KEY` | variable | public key of the staging account |

@@ -38,7 +38,7 @@ export const DEMO_MODE = true;
 const vault = (over: Partial<Holding["info"]> = {}): Holding["info"] => ({
   name: "M120 Apartments · Unit 1B",
   symbol: "M120-1B",
-  marketplace: "market.shedauser.testnet",
+  marketplace: "market-v2.shedauser.testnet",
   property_id: "13",
   stablecoin: "usdt.fakes.testnet",
   manager: "Lagos Property Co",

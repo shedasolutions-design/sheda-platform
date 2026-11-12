@@ -12,7 +12,7 @@ const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, string>;
 export const NETWORK = extra.network ?? "testnet";
 
 /** The deployed rental marketplace. Vaults own property inside it. */
-export const MARKETPLACE = extra.marketplaceContract ?? "market.shedauser.testnet";
+export const MARKETPLACE = extra.marketplaceContract ?? "market-v2.shedauser.testnet";
 
 /** The coin rent arrives in. One per vault, matched to the raise. */
 export const STABLECOIN = extra.stablecoin ?? "usdt.fakes.testnet";

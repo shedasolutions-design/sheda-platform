@@ -1,7 +1,7 @@
 // ============================================================================
 // NEAR Contract Configuration — SINGLE SOURCE OF TRUTH
 // ============================================================================
-// Contract: market.shedauser.testnet
+// Contract: market-v2.shedauser.testnet (owner: 2-of-3 council sheda-council.testnet)
 // Source: https://github.com/Entechnologuehamadex/sheda-new-contract
 //
 // Moved off shedasolution.testnet (2026-09-16). That deployment ran code from
@@ -11,10 +11,15 @@
 // Nothing was carried across. There is no migration path from the old
 // contract and none was written: this starts empty, on purpose.
 // Guide: INTEGRATION_GUIDE.md (commit c99d8d7)
+//
+// Moved again to market-v2.shedauser.testnet (2026-11-12). The key for
+// market.shedauser.testnet was lost, so it could never be upgraded. The new
+// one runs the current contract code, is owned by the 2-of-3 council
+// sheda-council.testnet, and has the demo listings re-minted (ids 0-9).
 // ============================================================================
 
 export const SHEDA_CONTRACT = {
-    testnet: 'market.shedauser.testnet',
+    testnet: 'market-v2.shedauser.testnet',
     mainnet: 'shedasolution.near', // ⚠️ NOT LIVE — do not activate
 } as const;
 

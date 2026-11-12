@@ -218,9 +218,9 @@ NEAR testnet. Built by CI and deployed from that wasm, so the binary is one anyo
 
 | Contract | Account |
 | --- | --- |
-| Marketplace | `market.shedauser.testnet` |
-| Raise, escrow and phases | `sheda-raise-v3.testnet` (owner: 2-of-3 council `sheda-council.testnet`; per-flat vaults `sheda-v3-pgt-t2/t3.testnet`, `sheda-v3-lgf-f1/f2.testnet`; pays in `usdc.fakes.testnet`; testnet timings) |
-| Stake registry | `sheda-stake-v3.testnet` |
+| Marketplace | `market-v2.shedauser.testnet` (owner: the council; replaced `market.shedauser.testnet`, whose key was lost) |
+| Raise, escrow and phases | `sheda-raise-v4.testnet` (owner: 2-of-3 council `sheda-council.testnet`; per-flat vaults `sheda-v4-pgt-t2/t3.testnet`, `sheda-v4-lgf-f1/f2.testnet`, listed on the marketplace above; pays in `usdc.fakes.testnet`; testnet timings) |
+| Stake registry | `sheda-stake-v4.testnet` |
 
 The registry's controller is the raise contract. That is the entire authority to touch a builder's stake: a stalled project can slash the cover allocated to it, and nothing else can reach it.
 

@@ -65,7 +65,7 @@ repeated small payments lose nothing.
 
 The deployed marketplace pays landlords with plain `ft_transfer`. This was
 checked rather than assumed. Reading the bytecode of
-`market.shedauser.testnet` over RPC shows the literals:
+`market.shedauser.testnet` (the first marketplace; `market-v2` runs the same payout code) over RPC shows the literals:
 
 ```
 accept_bid … "ft_transfer successful, proceeding with NFT transfer and bid updates"
@@ -203,13 +203,13 @@ nothing should be: none of this has been audited.
 
 | Contract | Account | Code hash |
 | --- | --- | --- |
-| Marketplace | `market.shedauser.testnet` | see `contracts/market/README.md` |
-| Raise (testnet build) | `sheda-raise-v3.testnet` | `Cj1vm2XeK6dZVfmjYxoGwVprcrudnH47fFraGbhCaVW5` |
-| Stake registry | `sheda-stake-v3.testnet` | `4Nk36ainzRDjHhXbPmYPsr1i74Eon73ttadtP5x4GjuH` |
-| Flat vaults | `sheda-v3-pgt-t2`, `sheda-v3-pgt-t3`, `sheda-v3-lgf-f1`, `sheda-v3-lgf-f2` (`.testnet`) | `AzpUJujH5RS9X5qmhPBT3ES3KMgoLe2V3JVJ3K7zV3X2` |
-| Council (2-of-3 multisig; owner of raise and stake, treasury) | `sheda-council.testnet` | `HRP7Qf2HDaXTD8EWs7G8siNNGxWWBCe1JaDxcM2cJmQR` |
+| Marketplace (owner: the council) | `market-v2.shedauser.testnet` | `55xXUhUinVvhc17ZaXggsRGKXoD9A5fQSmXaKRkd1Qaa` |
+| Raise (testnet build) | `sheda-raise-v4.testnet` | `Cj1vm2XeK6dZVfmjYxoGwVprcrudnH47fFraGbhCaVW5` |
+| Stake registry | `sheda-stake-v4.testnet` | `4Nk36ainzRDjHhXbPmYPsr1i74Eon73ttadtP5x4GjuH` |
+| Flat vaults | `sheda-v4-pgt-t2`, `sheda-v4-pgt-t3`, `sheda-v4-lgf-f1`, `sheda-v4-lgf-f2` (`.testnet`) | `AzpUJujH5RS9X5qmhPBT3ES3KMgoLe2V3JVJ3K7zV3X2` |
+| Council (2-of-3 multisig; owner of the marketplace, raise and stake; treasury) | `sheda-council.testnet` | `HRP7Qf2HDaXTD8EWs7G8siNNGxWWBCe1JaDxcM2cJmQR` |
 
-v3 was deployed on 2026-11-12 from this source with the pinned Rust 1.86. The
+v4 was deployed on 2026-11-12 from this source with the pinned Rust 1.86 (the same code as v3, which pointed at the old marketplace `market.shedauser.testnet`; that key was lost, so the marketplace was redeployed as `market-v2.shedauser.testnet` and Collections moved with it). The
 raise is built with `--features testnet` (objection window of 3 minutes, not 7
 days) so the whole flow can be tested in one sitting; a mainnet build must not
 enable that feature. Every owner action (opening a raise, linking a vault,
@@ -280,7 +280,7 @@ The app calls exactly these, and nothing else.
 | `close_raise(project_id)` | no deposit; anyone once full or expired |
 | `set_unit_vault(project_id, unit_code, vault)` | owner, 1 yocto, once per flat |
 
-The live `sheda-raise-v3.testnet` has `shares_owed` and `set_unit_vault`,
+The live `sheda-raise-v4.testnet` has `shares_owed` and `set_unit_vault`,
 and each demo flat has its vault set, so the claim flow works end to end.
 
 Two things about that table are load bearing.

@@ -1,7 +1,7 @@
 // ============================================================================
 // NEAR Contract Configuration — SINGLE SOURCE OF TRUTH
 // ============================================================================
-// Contract: market.shedauser.testnet
+// Contract: market-v2.shedauser.testnet (owner: 2-of-3 council sheda-council.testnet)
 // Source: https://github.com/Entechnologuehamadex/sheda-new-contract
 //
 // Moved off shedasolution.testnet (2026-09-16). That deployment ran code from
@@ -14,7 +14,7 @@
 // ============================================================================
 
 export const SHEDA_CONTRACT = {
-    testnet: 'market.shedauser.testnet',
+    testnet: 'market-v2.shedauser.testnet',
     mainnet: 'shedasolution.near', // ⚠️ NOT LIVE — do not activate
 } as const;
 

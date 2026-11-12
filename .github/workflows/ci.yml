@@ -130,6 +130,17 @@ jobs:
       - name: Unit tests
         if: steps.changed.outputs.backend == 'true'
         working-directory: services/backend
+        # Settings refuses to start without these. They are placeholders,
+        # not secrets: the tests run on in-memory SQLite and send no email.
+        env:
+          SECRET_KEY: ci-placeholder-secret-not-used-anywhere-real
+          ADMIN_SECRET_KEY: ci-placeholder-admin-secret-not-used-anywhere
+          SMTP_HOST: localhost
+          PROD_URL: http://localhost:8000
+          DEV_URL: http://localhost:8000
+          ADMIN_ROUTE: /admin
+          ORIGINS: '["http://localhost:3000"]'
+          DB_URL: postgresql+asyncpg://test:test@localhost:5432/test
         run: python -m pytest tests/unit -q
 
   web:

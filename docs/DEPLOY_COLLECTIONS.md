@@ -21,7 +21,7 @@ export OWNER=shedauser.testnet          # the account that will pay for sub-acco
 export RAISE=sheda-raise-v2.testnet     # new raise/escrow account
 export STAKE=sheda-stake-v2.testnet     # new stake registry account
 export VAULT=flat-1a.shedauser.testnet  # one vault per flat
-export MARKET=market.shedauser.testnet
+export MARKET=market-v2.shedauser.testnet
 export USDC=3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af
 export PROJECT=lekki-garden-demo
 export UNIT=1a
@@ -287,7 +287,7 @@ data as a bad record.
 ## What this does not do
 
 - It does not deploy the marketplace. That is already live at
-  `market.shedauser.testnet`.
+  `market-v2.shedauser.testnet`.
 - It does not mint the property NFT. The vault can only accept a token that
   exists and whose id matches the one in its initialisation arguments.
 - It does not move an existing project's escrow. Publish a new project
