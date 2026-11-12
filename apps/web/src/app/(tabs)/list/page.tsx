@@ -107,6 +107,19 @@ function ListingFlow() {
     return String(Math.round(fiatToUsdGeneric(entered, rate) * 1_000_000));
   };
 
+  // The backend keeps prices in naira: every card, the details page and the
+  // bid flow read it that way. The form takes any currency, so convert, or a
+  // $25,000 listing is stored as 25,000 and shown as about $18.
+  const priceInNaira = (): number => {
+    const entered = toNumber(form.price);
+    const currency = form.listingCurrency || selectedCurrency || "NGN";
+    if (currency === "NGN") return entered;
+    const from = oracle?.fiat?.[currency];
+    const ngn = oracle?.fiat?.NGN;
+    if (!from || !ngn) throw new Error(`Could not fetch the ${currency}/NGN exchange rate. Please check your connection and try again.`);
+    return Math.round(fiatToUsdGeneric(entered, from) * ngn);
+  };
+
   const resetAll = () => {
     setForm(createInitialFormState(selectedCurrency || "NGN"));
     setBlockchainPropertyId(null);
@@ -262,7 +275,7 @@ function ListingFlow() {
         title: form.title.trim(),
         description: form.description,
         location: form.location,
-        price: toNumber(form.price),
+        price: priceInNaira(),
         property_type: toBackendType(form.propertyType) as PropertyBase["property_type"],
         listing_type: isForRent ? "rent" : "sale",
         status: "available",
