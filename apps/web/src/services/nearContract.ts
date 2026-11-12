@@ -2539,7 +2539,7 @@ export class NearContractService {
   async raiseTransactionDispute(
     accountId: string,
     privateKey: string,
-    params: { bid_id: number; property_id: number }
+    params: { bid_id: number; property_id: number; reason: string }
   ): Promise<ContractCallResult<void>> {
     try {
       console.log("NearContract: Raising transaction dispute...", params);
@@ -2550,9 +2550,12 @@ export class NearContractService {
         return account.functionCall({
           contractId,
           methodName: "raise_dispute",
+          // `reason` is required by the contract. Without it every dispute
+          // was refused before it started ("missing field `reason`").
           args: {
             bid_id: params.bid_id,
             property_id: params.property_id,
+            reason: params.reason,
           },
           gas: BigInt(GAS.RAISE_DISPUTE),
           attachedDeposit: BigInt(DEPOSITS.ONE_YOCTO),
