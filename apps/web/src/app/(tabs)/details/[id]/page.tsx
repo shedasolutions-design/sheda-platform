@@ -19,6 +19,7 @@ import TokenSelectionModal from "@/components/common/TokenSelectionModal";
 import { useApi } from "@/contexts/ApiContext";
 import { useWallet } from "@/contexts/WalletContext";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
+import { useCurrency } from "@/contexts/CurrencyContext";
 import { useTransactionToast } from "@/hooks/useTransactionToast";
 import nearContractService from "@/services/nearContract";
 import type { AgentFeed, PropertyShow, RatingShow } from "@/services/api";
@@ -83,6 +84,19 @@ interface Feedback {
   message?: string;
 }
 
+/**
+ * "/year", "/month", "/day" or " for 9 days". The price bar said "/year" for
+ * every rental, including a one-day lease.
+ */
+function leaseSuffix(days?: number | null): string {
+  if (!days || days <= 0) return "";
+  if (days === 365) return "/year";
+  if (days === 30) return "/month";
+  if (days === 7) return "/week";
+  if (days === 1) return "/day";
+  return ` for ${days} days`;
+}
+
 export default function PropertyDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const propertyId = String(id);
@@ -103,6 +117,7 @@ export default function PropertyDetailsPage() {
   } = useApi();
   const { walletState, getAuthorizedPrivateKey } = useWallet();
   const { ngnPerUsd } = useExchangeRates();
+  const { selectedCurrency, fiatToUsd: currencyToUsd } = useCurrency();
   const { run: runTransaction } = useTransactionToast();
 
   const [raw, setRaw] = useState<PropertyShow | null>(null);
@@ -249,7 +264,14 @@ export default function PropertyDetailsPage() {
   const isRent = raw?.listing_type === "rent";
   const isBlockchain = !!raw?.blockchain_property_id;
   const isNegotiable = raw?.is_negotiable === true;
-  const offerNaira = parseFloat(offerPrice.replace(/,/g, "")) || 0;
+  // The offer is typed in the currency the page shows prices in. It used to
+  // be naira only, under prices shown in dollars: typing "1000" against a
+  // $1,200 rent offered about 74 cents. Everything downstream works in
+  // naira, so convert once here.
+  const offerCurrency = selectedCurrency || "NGN";
+  const offerEntered = parseFloat(offerPrice.replace(/,/g, "")) || 0;
+  const offerNaira =
+    offerCurrency === "NGN" ? offerEntered : currencyToUsd(offerEntered, offerCurrency) * (ngnPerUsd || 1500);
 
   const lockedContact = () =>
     notify(
@@ -359,7 +381,7 @@ export default function PropertyDetailsPage() {
     if (!isNegotiable) {
       if (!(await loadOnChainPrice())) return;
     } else {
-      if (!offerPrice) return notify("error", "Error", "Please enter your bid amount in Naira");
+      if (!offerPrice) return notify("error", "Error", `Please enter your bid amount in ${offerCurrency}`);
       setOnChainPrice(null);
     }
     setShowTokenModal(true);
@@ -633,17 +655,14 @@ export default function PropertyDetailsPage() {
             <TextField
               className="my-3"
               inputMode="decimal"
-              placeholder="Enter offer amount in Naira (e.g. 500000)"
+              placeholder={`Enter your offer in ${offerCurrency}`}
               value={offerPrice}
               onChange={(e) => setOfferPrice(e.target.value)}
               disabled={!walletState.isConnected}
-              aria-label="Offer amount in Naira"
+              aria-label={`Offer amount in ${offerCurrency}`}
               hint={
                 offerPrice
-                  ? `≈ ${formatUsd(nairaToUsd(offerNaira, ngnPerUsd || 1500))} USD (${nairaToStablecoinUnits(
-                      offerNaira,
-                      ngnPerUsd || 1500
-                    ).toLocaleString()} stablecoin units) · Rate: 1 USD = ${(ngnPerUsd || 0).toLocaleString()} NGN`
+                  ? `You pay ≈ ${formatUsd(nairaToUsd(offerNaira, ngnPerUsd || 1500))} in USDC or USDT`
                   : undefined
               }
             />
@@ -678,7 +697,7 @@ export default function PropertyDetailsPage() {
               <PriceDisplay
                 amountFiat={parseFloat(String(raw.price ?? 0).replace(/[^0-9.-]/g, "")) || 0}
                 fiatCode={house.priceCurrency || "NGN"}
-                suffix={isRent ? "/year" : ""}
+                suffix={isRent ? leaseSuffix(raw.lease_duration_days) : ""}
               />
               {isRent && onChainDeposit && (
                 <p className="mt-0.5 text-xs text-gray-500">

@@ -67,7 +67,7 @@ export function PriceDescriptionForm({
     return v > 0 ? v * UNIT_DAYS[customUnit] : null;
   }, [isForRent, mode, formData.rentDurationPreset, customValue, customUnit]);
 
-  const durationLabel = !isForRent || !days ? "" : mode === "predefined" ? (days === 365 ? " / year" : " / month") : ` / ${customValue} ${customUnit}`;
+  const durationLabel = !isForRent || !days ? "" : mode === "predefined" ? (days === 365 ? " / year" : " / month") : ` / ${customValue} ${customValue === "1" ? customUnit.replace(/s$/, "") : customUnit}`;
   const deposit = toNumber(formData.damageDeposit);
   const depositUsd = isForRent && deposit > 0 && rate ? fiatToUsdGeneric(deposit, rate) : null;
 
