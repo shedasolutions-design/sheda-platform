@@ -13,10 +13,17 @@ export function OfferMessageCard({
   offer,
   isSeller,
   historyHref,
+  latest,
 }: {
   offer: OfferMessage;
   isSeller: boolean;
   historyHref: string;
+  /**
+   * The deal's newest step from later messages in this thread ("Deal
+   * complete"). The card's own status is frozen at the moment the offer was
+   * sent, so it said "Pending Response" on a deal that had long finished.
+   */
+  latest?: string;
 }) {
   const diff = offer.originalPrice - offer.offeredPrice;
   const pct = offer.originalPrice > 0 ? ((diff / offer.originalPrice) * 100).toFixed(1) : "0";
@@ -25,7 +32,9 @@ export function OfferMessageCard({
       ? ["✓ Offer Accepted", "border-green-200 bg-green-50 text-green-700"]
       : offer.status === OfferStatus.REJECTED
         ? ["✗ Offer Rejected", "border-red-200 bg-red-50 text-red-700"]
-        : ["⏳ Pending Response", "border-yellow-200 bg-yellow-50 text-yellow-700"];
+        : latest
+          ? [`✓ ${latest}`, "border-green-200 bg-green-50 text-green-700"]
+          : ["⏳ Pending Response", "border-yellow-200 bg-yellow-50 text-yellow-700"];
 
   return (
     <div className="my-2 rounded-lg border border-gray-200 bg-white p-4">
@@ -57,7 +66,7 @@ export function OfferMessageCard({
         )}
       </div>
       <p className={`rounded-lg border px-3 py-2 text-center text-sm font-semibold ${status[1]}`}>{status[0]}</p>
-      {offer.status === OfferStatus.PENDING && (
+      {offer.status === OfferStatus.PENDING && !latest && (
         <Link href={historyHref} className="mt-3 block rounded-lg border border-primary py-2 text-center font-semibold text-primary hover:bg-active">
           {isSeller ? "Review Offer in History" : "View Bid in History"}
         </Link>

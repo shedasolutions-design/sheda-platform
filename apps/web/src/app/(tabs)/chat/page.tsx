@@ -242,6 +242,21 @@ function Chat() {
   };
 
   const historyHref = toWebPath(transactionsRouteFor(isSellerMode));
+
+  // The newest deal step per bid (and per property, for offers sent without
+  // a bid id), so an offer card can show where its deal ended up.
+  const latestStep = useMemo(() => {
+    const byBid = new Map<number, string>();
+    const byProperty = new Map<number, string>();
+    for (const m of messages) {
+      const update = parseDealUpdate(m.message);
+      if (!update) continue;
+      const words = dealUpdateText({ type: update.type });
+      if (update.bidId != null) byBid.set(update.bidId, words);
+      if (update.propertyId != null) byProperty.set(update.propertyId, words);
+    }
+    return { byBid, byProperty };
+  }, [messages]);
   const label = agentName || profile.displayName || `this ${otherRole.toLowerCase()}`;
 
   const showListings = async () => {
@@ -332,7 +347,19 @@ function Chat() {
         ) : (
           messages.map((m, i) => {
             const offer = parseOfferMessage(m.message);
-            if (offer) return <OfferMessageCard key={i} offer={offer} isSeller={isSellerHere} historyHref={historyHref} />;
+            if (offer)
+              return (
+                <OfferMessageCard
+                  key={i}
+                  offer={offer}
+                  isSeller={isSellerHere}
+                  historyHref={historyHref}
+                  latest={
+                    (offer.bidId != null ? latestStep.byBid.get(offer.bidId) : undefined) ??
+                    (offer.blockchainPropertyId != null ? latestStep.byProperty.get(offer.blockchainPropertyId) : undefined)
+                  }
+                />
+              );
             const response = parseOfferResponseMessage(m.message);
             if (response) return <OfferResponseCard key={i} response={response} isSeller={isSellerHere} />;
             const update = parseDealUpdate(m.message);

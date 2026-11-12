@@ -143,7 +143,7 @@ function ListingFlow() {
   const validate = (): string | null => {
     if (form.title.trim().length < 3) return "Please provide a title of at least 3 characters.";
     if (form.description.trim().length < 10) return "Please provide a description of at least 10 characters.";
-    if (form.photos.length === 0) return "Please upload at least one photo of the property.";
+    if (form.photos.length < 4) return "Please upload at least 4 photos of the property.";
     const price = toNumber(form.price);
     if (isNaN(price) || price <= 0) return "Please enter a valid price greater than 0.";
     if (isLand && !(parseFloat(form.landSize) > 0)) return "Please enter a valid land size.";

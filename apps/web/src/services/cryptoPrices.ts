@@ -110,9 +110,24 @@ async function fromCoinbase(symbols: string[]): Promise<Record<string, number>> 
  * "worth zero" — a distinction the UI has to make honestly.
  */
 export async function fetchUsdPrices(
-  symbols: string[]
+  symbols: string[],
+  options: { direct?: boolean } = {}
 ): Promise<Record<string, number>> {
   const prices: Record<string, number> = {};
+
+  // In the browser, ask Sheda's own /api/prices first: one shared, cached
+  // request to CoinGecko instead of one per visitor (see that route).
+  if (!options.direct && typeof window !== "undefined") {
+    try {
+      const json = await fetchJson(`/api/prices?symbols=${encodeURIComponent(symbols.join(","))}`);
+      for (const [symbol, usd] of Object.entries(json?.prices ?? {})) {
+        if (typeof usd === "number" && usd > 0) prices[symbol] = usd;
+      }
+    } catch (error) {
+      console.warn("cryptoPrices: /api/prices unavailable, asking providers directly:", error);
+    }
+    if (symbols.every((s) => prices[s] != null)) return prices;
+  }
 
   try {
     Object.assign(prices, await fromCoinGecko(symbols));
