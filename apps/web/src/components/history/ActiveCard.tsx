@@ -1,5 +1,6 @@
 "use client";
 
+import { leaseSuffix } from "@/utilities/leaseTerm";
 import { DealCard, DealMedia, Badge, RoleBadge, DealFacts, DealActions, DealAction, dealImage } from "@/components/history/DealCardParts";
 import Alert from "@/utilities/alertPolyfill";
 import { router } from "@/lib/router";
@@ -228,7 +229,7 @@ const ActiveCard = ({ transaction, onPhaseUpdate }: ActiveCardProps) => {
       <div className="px-3 py-2">
         <DealFacts title={title} location={location} bedrooms={bedrooms} bathrooms={bathrooms} />
         <div className="mt-1">
-          <PriceDisplay amountUsd={stablecoinUnitsToUsd(parseInt(bid.bid_amount) || 0)} suffix={mode === "rent" ? "/yr" : ""} compact />
+          <PriceDisplay amountUsd={stablecoinUnitsToUsd(parseInt(bid.bid_amount) || 0)} suffix={mode === "rent" ? leaseSuffix(property.lease_duration_days) : ""} compact />
         </div>
         <p className="mt-1 rounded bg-gray-50 px-2 py-1.5 text-[10px] text-secondaryText">
           {mode === "rent" ? "🏠 Lease" : "🏡 Purchase"} agreement

@@ -1,5 +1,6 @@
 "use client";
 
+import { leaseSuffix } from "@/utilities/leaseTerm";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -82,19 +83,6 @@ interface Feedback {
   type: FeedbackType;
   title: string;
   message?: string;
-}
-
-/**
- * "/year", "/month", "/day" or " for 9 days". The price bar said "/year" for
- * every rental, including a one-day lease.
- */
-function leaseSuffix(days?: number | null): string {
-  if (!days || days <= 0) return "";
-  if (days === 365) return "/year";
-  if (days === 30) return "/month";
-  if (days === 7) return "/week";
-  if (days === 1) return "/day";
-  return ` for ${days} days`;
 }
 
 export default function PropertyDetailsPage() {

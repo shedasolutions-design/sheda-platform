@@ -334,3 +334,66 @@ async fn test_renewal_extends_by_the_listed_term() -> common::TestResult {
 
     Ok(())
 }
+
+// A bid that ends without a lease starting owes the tenant everything they
+// sent. Every refund path returned the rent alone, so the deposit stayed in
+// the contract for good (found cancelling a rental bid on testnet).
+
+async fn refund_case(cancel: &str, as_seller: bool, accept_first: bool) -> common::TestResult {
+    let worker = near_workspaces::sandbox().await?;
+    let fx = common::setup(&worker).await?;
+
+    let property_id = fx.mint_rental_with_deposit(DEPOSIT).await?;
+    let tenant_before = fx.ft_balance(fx.buyer.id()).await?;
+    let bid_id = fx.place_bid_with_deposit(property_id, DEPOSIT).await?;
+    assert_eq!(
+        fx.ft_balance(fx.buyer.id()).await?,
+        tenant_before - common::BID_AMOUNT - DEPOSIT,
+        "placing the bid should take rent and deposit",
+    );
+
+    if accept_first {
+        // The escrow path, which the app uses: the money stays in the
+        // contract until the deal completes.
+        fx.seller
+            .call(fx.contract.id(), "accept_bid_with_escrow")
+            .args_json(json!({ "bid_id": bid_id, "property_id": property_id }))
+            .deposit(NearToken::from_yoctonear(1))
+            .max_gas()
+            .transact()
+            .await?
+            .into_result()?;
+    }
+
+    let caller = if as_seller { &fx.seller } else { &fx.buyer };
+    caller
+        .call(fx.contract.id(), cancel)
+        .args_json(json!({ "bid_id": bid_id, "property_id": property_id }))
+        .deposit(NearToken::from_yoctonear(1))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+
+    assert_eq!(
+        fx.ft_balance(fx.buyer.id()).await?,
+        tenant_before,
+        "{cancel}: the tenant should get rent and deposit back",
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_cancelled_rental_bid_returns_the_deposit() -> common::TestResult {
+    refund_case("cancel_bid", false, false).await
+}
+
+#[tokio::test]
+async fn test_rejected_rental_bid_returns_the_deposit() -> common::TestResult {
+    refund_case("reject_bid", true, false).await
+}
+
+#[tokio::test]
+async fn test_cancelled_accepted_rental_bid_returns_the_deposit() -> common::TestResult {
+    refund_case("buyer_cancel_accepted_bid", false, true).await
+}

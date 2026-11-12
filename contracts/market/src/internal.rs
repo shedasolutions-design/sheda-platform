@@ -345,6 +345,15 @@ pub fn refund_pending_bid_callback(
     }
 }
 
+/// What a buyer gets back when their bid ends without a lease starting:
+/// the rent and the security deposit. Placement keeps the two apart (the
+/// deposit is `damage_deposit`, the rent is `amount`), and every refund path
+/// used to return `amount` alone, so a renter who cancelled, was rejected,
+/// or won a dispute lost their deposit to the contract for good.
+pub(crate) fn bid_refund_total(bid: &Bid) -> u128 {
+    checked_add_u128(bid.amount, bid.damage_deposit, "bid refund total")
+}
+
 pub fn internal_reject_bid(contract: &mut ShedaContract, property_id: u64, bid_id: u64) -> Promise {
     let bid = {
         let bids: &Vec<Bid> = contract.bids.get(&property_id).expect("Bid does not exist");
@@ -375,7 +384,7 @@ pub fn internal_reject_bid(contract: &mut ShedaContract, property_id: u64, bid_i
     let refund_promise = ft_contract::ext(bid.stablecoin_token.clone())
         .with_attached_deposit(NearToken::from_yoctonear(1))
         .with_static_gas(Gas::from_tgas(30))
-        .ft_transfer(bid.bidder.clone(), U128(bid.amount));
+        .ft_transfer(bid.bidder.clone(), U128(bid_refund_total(&bid)));
 
     // Update stablecoin balance after refund (reverted on transfer failure)
     let current_balance = *contract
@@ -384,7 +393,7 @@ pub fn internal_reject_bid(contract: &mut ShedaContract, property_id: u64, bid_i
         .unwrap_or(&0);
     contract.stable_coin_balances.insert(
         bid.stablecoin_token.clone(),
-        checked_sub_u128(current_balance, bid.amount, "reject_bid refund"),
+        checked_sub_u128(current_balance, bid_refund_total(&bid), "reject_bid refund"),
     );
 
     if let Some(bids) = contract.bids.get_mut(&property_id) {
@@ -414,7 +423,7 @@ pub fn internal_reject_bid(contract: &mut ShedaContract, property_id: u64, bid_i
                 property_id,
                 bid_id,
                 bid.stablecoin_token.clone(),
-                bid.amount,
+                bid_refund_total(&bid),
             ),
     )
 }
@@ -460,7 +469,7 @@ pub fn internal_cancel_bid(contract: &mut ShedaContract, property_id: u64, bid_i
     let refund_promise = ft_contract::ext(bid.stablecoin_token.clone())
         .with_attached_deposit(NearToken::from_yoctonear(1))
         .with_static_gas(Gas::from_tgas(30))
-        .ft_transfer(bid.bidder.clone(), U128(bid.amount));
+        .ft_transfer(bid.bidder.clone(), U128(bid_refund_total(&bid)));
 
     // Update stablecoin balance after refund (reverted on transfer failure)
     let current_balance = *contract
@@ -469,7 +478,7 @@ pub fn internal_cancel_bid(contract: &mut ShedaContract, property_id: u64, bid_i
         .unwrap_or(&0);
     contract.stable_coin_balances.insert(
         bid.stablecoin_token.clone(),
-        checked_sub_u128(current_balance, bid.amount, "cancel_bid refund"),
+        checked_sub_u128(current_balance, bid_refund_total(&bid), "cancel_bid refund"),
     );
 
     if let Some(bids) = contract.bids.get_mut(&property_id) {
@@ -499,7 +508,7 @@ pub fn internal_cancel_bid(contract: &mut ShedaContract, property_id: u64, bid_i
                 property_id,
                 bid_id,
                 bid.stablecoin_token.clone(),
-                bid.amount,
+                bid_refund_total(&bid),
             ),
     )
 }
@@ -605,7 +614,7 @@ fn internal_buyer_cancel_staged(
     let refund_promise = ft_contract::ext(bid.stablecoin_token.clone())
         .with_attached_deposit(NearToken::from_yoctonear(1))
         .with_static_gas(Gas::from_tgas(30))
-        .ft_transfer(bid.bidder.clone(), U128(bid.amount));
+        .ft_transfer(bid.bidder.clone(), U128(bid_refund_total(&bid)));
 
     let current_balance = *contract
         .stable_coin_balances
@@ -613,7 +622,7 @@ fn internal_buyer_cancel_staged(
         .unwrap_or(&0);
     contract.stable_coin_balances.insert(
         bid.stablecoin_token.clone(),
-        checked_sub_u128(current_balance, bid.amount, "staged cancel refund"),
+        checked_sub_u128(current_balance, bid_refund_total(&bid), "staged cancel refund"),
     );
 
     let previous_status = format!("{:?}", bid.status);
@@ -1831,7 +1840,7 @@ pub fn internal_refund_escrow_timeout(
     let promise = ft_contract::ext(bid.stablecoin_token.clone())
         .with_attached_deposit(NearToken::from_yoctonear(1))
         .with_static_gas(Gas::from_tgas(30))
-        .ft_transfer(bid.bidder.clone(), U128(bid.amount));
+        .ft_transfer(bid.bidder.clone(), U128(bid_refund_total(&bid)));
 
     let current_balance = *contract
         .stable_coin_balances
@@ -1839,13 +1848,14 @@ pub fn internal_refund_escrow_timeout(
         .unwrap_or(&0);
     contract.stable_coin_balances.insert(
         bid.stablecoin_token.clone(),
-        checked_sub_u128(current_balance, bid.amount, "refund_escrow_timeout"),
+        checked_sub_u128(current_balance, bid_refund_total(&bid), "refund_escrow_timeout"),
     );
 
+    let refunded = bid_refund_total(&bid);
     promise.then(
         crate::ShedaContract::ext(env::current_account_id())
             .with_static_gas(Gas::from_tgas(30))
-            .refund_escrow_timeout_callback(property_id, bid_id, bid.stablecoin_token, bid.amount),
+            .refund_escrow_timeout_callback(property_id, bid_id, bid.stablecoin_token, refunded),
     )
 }
 
@@ -2326,11 +2336,16 @@ pub fn internal_admin_resolve_bid_dispute(
     // The buyer keeps the odd unit on a split: it is their money sitting in
     // the contract, so rounding should not quietly move in the seller's favour.
     let (buyer_refund, seller_payout) = match resolution {
-        DisputeResolution::BuyerWins => (bid.amount, 0u128),
+        // The deal unwinds in both paying outcomes, so no lease starts and
+        // the security deposit goes back to the buyer with their share.
+        DisputeResolution::BuyerWins => (bid_refund_total(&bid), 0u128),
         DisputeResolution::SellerWins => (0u128, 0u128),
         DisputeResolution::Split => {
             let seller_half = bid.amount / 2;
-            (bid.amount.saturating_sub(seller_half), seller_half)
+            (
+                checked_add_u128(bid.amount.saturating_sub(seller_half), bid.damage_deposit, "split refund"),
+                seller_half,
+            )
         }
     };
 

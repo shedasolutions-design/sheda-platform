@@ -1,5 +1,6 @@
 "use client";
 
+import { leaseSuffix } from "@/utilities/leaseTerm";
 import Alert from "@/utilities/alertPolyfill";
 import DealProgress from "@/components/history/DealProgress";
 import { useDealTimeline } from "@/hooks/useDealTimeline";
@@ -1448,7 +1449,7 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
           )}
         </ul>
         <div className="mt-1 flex items-center justify-between">
-          <PriceDisplay amountUsd={stablecoinUnitsToUsd(parseInt(bid.bid_amount) || 0)} suffix={mode === "rent" ? "/yr" : ""} compact />
+          <PriceDisplay amountUsd={stablecoinUnitsToUsd(parseInt(bid.bid_amount) || 0)} suffix={mode === "rent" ? leaseSuffix(property.lease_duration_days) : ""} compact />
         </div>
 
         {!isTerminalPhase && (
