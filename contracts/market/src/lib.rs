@@ -1105,7 +1105,10 @@ impl ShedaContract {
         let promise = crate::ext::ft_contract::ext(bid.stablecoin_token.clone())
             .with_attached_deposit(near_sdk::NearToken::from_yoctonear(1))
             .with_static_gas(near_sdk::Gas::from_tgas(30))
-            .ft_transfer(bid.bidder.clone(), near_sdk::json_types::U128(internal::bid_refund_total(&bid)));
+            .ft_transfer(
+                bid.bidder.clone(),
+                near_sdk::json_types::U128(internal::bid_refund_total(&bid)),
+            );
 
         // Update stablecoin balance after refund
         let current_balance = *self
@@ -1114,7 +1117,11 @@ impl ShedaContract {
             .unwrap_or(&0);
         self.stable_coin_balances.insert(
             bid.stablecoin_token.clone(),
-            Self::checked_sub_u128(current_balance, internal::bid_refund_total(&bid), "lost_bid refund"),
+            Self::checked_sub_u128(
+                current_balance,
+                internal::bid_refund_total(&bid),
+                "lost_bid refund",
+            ),
         );
 
         // Return promise and handle callback to update bid status only on success
