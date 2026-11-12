@@ -27,6 +27,7 @@ import {
 } from "@/services/collections/money";
 import { DEFAULT_TOKEN } from "@/config/tokens";
 import { RAISE_CONTRACT_ID } from "@/config/collections";
+import { getChainSharesSold } from "@/services/collections/chain";
 import type { CollectionProjectDetail, CollectionUnit } from "@/services/api";
 
 /**
@@ -53,7 +54,15 @@ export default function ChooseUnit() {
 
   const load = useCallback(async () => {
     const result = await getProject(String(slug));
-    if (result) setProject(result);
+    if (!result) return;
+    // The backend's share counts are not kept up to date; the contract's are.
+    try {
+      const sold = await getChainSharesSold(result.escrow_account_id || RAISE_CONTRACT_ID, result.slug);
+      result.unit_list = result.unit_list.map((u) => (sold[u.code] != null ? { ...u, shares_sold: sold[u.code] } : u));
+    } catch {
+      // Keep the backend's figures if the chain can't be read just now.
+    }
+    setProject(result);
   }, [getProject, slug]);
 
   useEffect(() => {
