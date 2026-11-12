@@ -203,7 +203,7 @@ nothing should be: none of this has been audited.
 
 | Contract | Account | Code hash |
 | --- | --- | --- |
-| Marketplace (owner: the council) | `market-v2.shedauser.testnet` | `55xXUhUinVvhc17ZaXggsRGKXoD9A5fQSmXaKRkd1Qaa` |
+| Marketplace (owner: the council) | `market-v2.shedauser.testnet` | `2hao5nFt23txShVDyrJpU2Fqi6tQopknBcnmPoMKj8C1` (reproducible build from CI) |
 | Raise (testnet build) | `sheda-raise-v4.testnet` | `Cj1vm2XeK6dZVfmjYxoGwVprcrudnH47fFraGbhCaVW5` |
 | Stake registry | `sheda-stake-v4.testnet` | `4Nk36ainzRDjHhXbPmYPsr1i74Eon73ttadtP5x4GjuH` |
 | Flat vaults | `sheda-v4-pgt-t2`, `sheda-v4-pgt-t3`, `sheda-v4-lgf-f1`, `sheda-v4-lgf-f2` (`.testnet`) | `AzpUJujH5RS9X5qmhPBT3ES3KMgoLe2V3JVJ3K7zV3X2` |
