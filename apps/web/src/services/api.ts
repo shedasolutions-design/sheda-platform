@@ -1261,7 +1261,8 @@ class ApiService {
     bidId: number
   ): Promise<ApiResponse<AppointmentStageShow>> {
     return this.request<AppointmentStageShow>(
-      `/api/v1/user/appointment-stage/${bidId}`
+      `/api/v1/user/appointment-stage/${bidId}`,
+      { silent: true }
     );
   }
 
