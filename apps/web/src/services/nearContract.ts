@@ -733,20 +733,44 @@ export class NearContractService {
 
       console.log("NearContract: Bid placed successfully, tx:", result.transaction.hash);
 
-      // Query bids to find the new bid ID
-      let bidId: number | undefined;
+      // Find the new bid's id. Views read final state, a few blocks behind the
+      // transaction that just finished, so a single lookup usually missed the
+      // new bid; the caller then skipped the seller's notification and the
+      // inbox card went out without a bid id. The BidPlaced event in this
+      // transaction's own logs gives the bid's created_at, which identifies
+      // it exactly; the lookup is retried until the bid is visible.
+      let createdAt: number | undefined;
       try {
-        const bidsResult = await this.getBidsForProperty(propertyId);
-        if (bidsResult.success && bidsResult.data) {
-          const myBid = bidsResult.data
-            .filter((b: any) => (b.bidder_id || b.bidder) === accountId)
-            .sort((a: any, b: any) => (b.created_at || 0) - (a.created_at || 0))[0];
-          bidId = myBid?.id;
-          console.log("NearContract: Found bid ID:", bidId);
+        for (const receipt of (result as any).receipts_outcome ?? []) {
+          for (const line of receipt?.outcome?.logs ?? []) {
+            if (typeof line !== "string" || !line.startsWith("EVENT_JSON:")) continue;
+            const event = JSON.parse(line.slice("EVENT_JSON:".length));
+            if (event?.event_type === "BidPlaced" && event?.data?.bidder_id === accountId) {
+              createdAt = Number(event.data.created_at);
+            }
+          }
         }
       } catch {
-        console.warn("NearContract: Could not fetch bid ID after placement");
+        // No usable event: fall back to the newest bid by this account.
       }
+      let bidId: number | undefined;
+      for (let attempt = 0; attempt < 8 && bidId === undefined; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 1500));
+        try {
+          const bidsResult = await this.getBidsForProperty(propertyId);
+          if (!bidsResult.success || !bidsResult.data) continue;
+          const mine = bidsResult.data.filter((b: any) => (b.bidder_id || b.bidder) === accountId);
+          const match =
+            createdAt !== undefined
+              ? mine.find((b: any) => Number(b.created_at) === createdAt)
+              : mine.sort((a: any, b: any) => (b.created_at || 0) - (a.created_at || 0))[0];
+          bidId = match?.id;
+        } catch {
+          // Try again.
+        }
+      }
+      if (bidId === undefined) console.warn("NearContract: Could not find the new bid's id");
+      else console.log("NearContract: Found bid ID:", bidId);
 
       return {
         success: true,
