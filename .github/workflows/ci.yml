@@ -71,6 +71,14 @@ jobs:
       # The marketplace contract's tests drive the deployed contract against
       # near-workspaces, so they are integration tests rather than `--lib`
       # unit tests and would otherwise be silently skipped.
+      # The marketplace tests build the contract with near_workspaces::compile_project,
+      # which shells out to `cargo near`. Without it every marketplace test fails
+      # with "no such command: near" and nothing after the tests (including the
+      # deploy) ever runs. Same pinned version as the deploy workflow.
+      - name: Install cargo-near
+        if: steps.changed.outputs.contracts == 'true'
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.17.0/cargo-near-installer.sh | sh
+
       - name: Marketplace integration tests
         if: steps.changed.outputs.contracts == 'true'
         working-directory: contracts

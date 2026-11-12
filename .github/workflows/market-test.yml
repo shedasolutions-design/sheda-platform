@@ -29,6 +29,13 @@ jobs:
             --component rustfmt --component clippy \
             --target wasm32-unknown-unknown
 
+      # The marketplace tests build the contract with near_workspaces::compile_project,
+      # which shells out to `cargo near`. Without it every marketplace test fails
+      # with "no such command: near" and nothing after the tests (including the
+      # deploy) ever runs. Same pinned version as the deploy workflow.
+      - name: Install cargo-near
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/download/cargo-near-v0.17.0/cargo-near-installer.sh | sh
+
       - name: Formatting
         run: cargo fmt --all -- --check
 
