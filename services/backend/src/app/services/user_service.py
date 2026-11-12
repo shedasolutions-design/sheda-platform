@@ -370,7 +370,19 @@ async def get_websocket_user(
     if not identifier:
         return await refuse("No subject in token")
 
-    user: UserInDB = await get_user(identifier, db)  # type: ignore
+    # The same rule as HTTP (user_context): the token's scopes say which row
+    # `sub` is. get_user defaults to the client row, so every seller token
+    # missed, get_user raised after the accept above, and the socket died
+    # with 1006 a moment after opening: sellers never had live chat.
+    account_type = (
+        AccountTypeEnum.agent
+        if AccountTypeEnum.agent.value in (payload.get("scopes") or [])
+        else AccountTypeEnum.client
+    )
+    try:
+        user: UserInDB = await get_user(identifier, db, account_type)  # type: ignore
+    except HTTPException:
+        user = None  # type: ignore
     if not user:
         return await refuse("User not found")
     # Same rule as the HTTP chat routes (ActiveUser): an active account.
