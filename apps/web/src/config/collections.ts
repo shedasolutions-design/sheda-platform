@@ -28,26 +28,28 @@ export const COLLECTIONS_CONTRACTS = {
     /**
      * Escrow, the phase schedule and the objection window.
      *
-     * v3, deployed 2026-11-12, built with the `testnet` feature (holders'
+     * v4, deployed 2026-11-12, built with the `testnet` feature (holders'
      * objection window of 3 minutes instead of 7 days, so the whole flow
      * can be tested in one sitting). Owner and treasury are
      * sheda-council.testnet, a 2-of-3 multisig of sheda-signer-a/b/c, so
      * no single key can open raises, link vaults or declare a stall. A
      * frozen or stalled raise lets every investor reclaim their share of
      * the unpaid escrow and of the builder's cover. Pays in
-     * usdc.fakes.testnet. Flat vaults: sheda-v3-pgt-t2/t3.testnet and
-     * sheda-v3-lgf-f1/f2.testnet, each dividing rent over all 10,000 shares.
+     * usdc.fakes.testnet. Flat vaults: sheda-v4-pgt-t2/t3.testnet and
+     * sheda-v4-lgf-f1/f2.testnet, each dividing rent over all 10,000 shares
+     * and listed on market-v2.shedauser.testnet (v3 pointed at the old
+     * marketplace, whose key was lost).
      */
-    raise: "sheda-raise-v3.testnet",
+    raise: "sheda-raise-v4.testnet",
     /**
-     * Builder and manager stake, per profile. v3, controller
-     * sheda-raise-v3.testnet, owner the council, stablecoin usdc.fakes.testnet.
+     * Builder and manager stake, per profile. v4, controller
+     * sheda-raise-v4.testnet, owner the council, stablecoin usdc.fakes.testnet.
      *
      * Its controller is the raise contract, which is what lets a stalled
      * project slash the cover behind it and stops anything else reaching a
      * builder's stake.
      */
-    stakeRegistry: "sheda-stake-v3.testnet",
+    stakeRegistry: "sheda-stake-v4.testnet",
   },
   // Deliberately empty. None of this has been audited, and an id here
   // would be a claim that it had.

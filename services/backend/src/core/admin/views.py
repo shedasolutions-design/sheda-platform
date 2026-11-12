@@ -76,11 +76,19 @@ class DashboardView(CustomView):
 # Contracts are per network. Only what is actually deployed is listed.
 CONTRACTS = {
     "testnet": {
-        "market": "market.shedauser.testnet",
-        "raise": "sheda-raise-v3.testnet",
-        "stake": "sheda-stake-v3.testnet",
+        "market": "market-v2.shedauser.testnet",
+        "raise": "sheda-raise-v4.testnet",
+        "stake": "sheda-stake-v4.testnet",
+        # The 2-of-3 multisig that owns all three. An owner action is a
+        # request one member proposes and a second member confirms.
+        "council": "sheda-council.testnet",
+        "council_members": [
+            "sheda-signer-a.testnet",
+            "sheda-signer-b.testnet",
+            "sheda-signer-c.testnet",
+        ],
     },
-    "mainnet": {"market": "", "raise": "", "stake": ""},
+    "mainnet": {"market": "", "raise": "", "stake": "", "council": "", "council_members": []},
 }
 
 

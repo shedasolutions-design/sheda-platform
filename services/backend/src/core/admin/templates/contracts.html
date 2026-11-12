@@ -99,7 +99,7 @@
     <div class="col-12 col-md-6">
       <label class="form-label" for="signer">Sign as</label>
       <input class="form-control mono" id="signer" placeholder="owner or admin account" autocomplete="off">
-      <small class="form-hint">Filled with the contract owner. Most actions accept any admin; ones marked <span class="badge bg-red-lt">owner</span> need the owner.</small>
+      <small class="form-hint">Filled with the contract owner. Most actions accept any admin; ones marked <span class="badge bg-red-lt">owner</span> need the owner. When the owner is the council, the command becomes a proposal by one member and an approval by a second.</small>
     </div>
     <div class="col-12 col-md-6">
       <label class="form-label" for="filter">Find an action</label>
@@ -117,7 +117,7 @@
       <div class="modal-body">
         <div id="cmd-warning"></div>
         <label class="form-label">Run this on your own computer</label>
-        <textarea class="form-control mono" id="cmd-text" rows="5" readonly></textarea>
+        <textarea class="form-control mono" id="cmd-text" rows="8" readonly></textarea>
         <button type="button" class="btn btn-primary mt-2" id="cmd-copy"><i class="fa-solid fa-copy me-1"></i>Copy command</button>
         <details class="mt-3"><summary class="text-secondary">What it sends</summary><pre class="mono mt-2 p-2 bg-light rounded" id="cmd-json"></pre></details>
       </div>
@@ -355,12 +355,30 @@
       if (!signer) throw new Error("Fill in 'Sign as' first.");
       const { json, shown } = buildArgs(a, form);
       const b64 = btoa(unescape(encodeURIComponent(json)));
-      const cmd = `near contract call-function as-transaction ${C.market} ${a.method} base64-args ${b64} prepaid-gas '100.0 Tgas' attached-deposit '${a.payable ? "1 yoctoNEAR" : "0 NEAR"}' sign-as ${signer} network-config ${NETWORK} sign-with-keychain send`;
+      const viaCouncil = !!C.council && signer === C.council;
+      let cmd;
+      if (viaCouncil) {
+        // The council is a multisig contract, not a person: nobody can sign
+        // as it. One member proposes the call and approves it (1 of 2), a
+        // second member approves and the call runs (2 of 2).
+        const [m1, m2] = C.council_members || [];
+        const request = { request: { receiver_id: C.market, actions: [{ type: "FunctionCall", method_name: a.method, args: b64, deposit: a.payable ? "1" : "0", gas: "100000000000000" }] } };
+        cmd = [
+          `# 1. A council member proposes and approves (1 of 2). It prints the request number.`,
+          `near contract call-function as-transaction ${C.council} add_request_and_confirm json-args '${JSON.stringify(request)}' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' sign-as ${m1} network-config ${NETWORK} sign-with-keychain send`,
+          ``,
+          `# 2. A different member approves; the action runs (2 of 2). Put the number from step 1 in place of REQUEST_ID.`,
+          `near contract call-function as-transaction ${C.council} confirm json-args '{"request_id":REQUEST_ID}' prepaid-gas '250.0 Tgas' attached-deposit '0 NEAR' sign-as ${m2} network-config ${NETWORK} sign-with-keychain send`,
+        ].join("\n");
+      } else {
+        cmd = `near contract call-function as-transaction ${C.market} ${a.method} base64-args ${b64} prepaid-gas '100.0 Tgas' attached-deposit '${a.payable ? "1 yoctoNEAR" : "0 NEAR"}' sign-as ${signer} network-config ${NETWORK} sign-with-keychain send`;
+      }
       document.getElementById("cmd-title").textContent = a.label;
       document.getElementById("cmd-text").value = cmd;
       document.getElementById("cmd-json").textContent = JSON.stringify(shown, null, 2);
       const warn = [];
       if (a.owner && owner && signer !== owner) warn.push(`Only the owner (<span class="mono">${esc(owner)}</span>) can do this; signing as someone else will fail.`);
+      if (viaCouncil) warn.push(`The owner is the council <span class="mono">${esc(C.council)}</span>, so this takes two council members: run step 1 as one, step 2 as another.`);
       if (a.danger) warn.push("This can't be undone. Double-check every value before you run it.");
       if (NETWORK === "mainnet") warn.push("This is <strong>mainnet</strong>: real money.");
       document.getElementById("cmd-warning").innerHTML = warn.map((w) => `<div class="alert alert-warning py-2">${w}</div>`).join("");

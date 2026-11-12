@@ -2,7 +2,7 @@
 // Supported Stablecoins — Token Registry for Contract Payments
 // ============================================================================
 // The contract accepts a configurable whitelist of stablecoins.
-// Source of truth: market.shedauser.testnet → supported_stablecoins()
+// Source of truth: market-v2.shedauser.testnet → supported_stablecoins()
 // Last verified on-chain: 2026-03-02
 // ============================================================================
 

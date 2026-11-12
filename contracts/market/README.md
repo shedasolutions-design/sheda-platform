@@ -7,12 +7,18 @@ lease flows with on-contract escrow, security deposits, and dispute resolution.
 
 | | |
 | --- | --- |
-| Account | `market.shedauser.testnet` |
+| Account | `market-v2.shedauser.testnet` |
+| Owner | `sheda-council.testnet` (2-of-3 multisig of `sheda-signer-a/b/c.testnet`) |
 | Network | NEAR **testnet** |
 | State version | `4` |
-| Explorer | https://testnet.nearblocks.io/address/market.shedauser.testnet |
+| Explorer | https://testnet.nearblocks.io/address/market-v2.shedauser.testnet |
 | Deployed from | this repository — see [DEPLOYMENT.md](DEPLOYMENT.md) |
 | Source of truth | this repository — `contract_source_metadata` points back here |
+
+Deployed 2026-11-12. It replaced `market.shedauser.testnet`, whose key was
+lost, so that one could never be upgraded. Owner actions (timings, admins,
+stablecoins) are a request one council member proposes and a second confirms;
+the admin panel's Smart contracts page writes both commands.
 
 Nothing here is on mainnet. Treat "production" as the contract the app talks
 to, not as something that cannot be replaced.
@@ -28,10 +34,11 @@ usdc.fakes.testnet
 Check any of this yourself rather than trusting this file:
 
 ```bash
-near view market.shedauser.testnet get_version
-near view market.shedauser.testnet supported_stablecoins
-near view market.shedauser.testnet get_time_lock_config
-near view market.shedauser.testnet get_cancellation_windows
+near view market-v2.shedauser.testnet get_version
+near view market-v2.shedauser.testnet supported_stablecoins
+near view market-v2.shedauser.testnet get_time_lock_config
+near view market-v2.shedauser.testnet get_cancellation_windows
+near view market-v2.shedauser.testnet get_owner_id
 ```
 
 ## ABI
