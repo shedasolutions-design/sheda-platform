@@ -1,13 +1,22 @@
 /**
  * NEAR Indexer Service
  *
- * Queries NEAR blockchain transaction history using NEARBlocks API
- * Provides real transaction data instead of mock data
+ * Queries NEAR blockchain transaction history using the NEARBlocks API (v3).
+ *
+ * NEARBlocks retired API v1 on testnet on 2026-11-05 (every call answers
+ * 410 Gone) and switches it off on mainnet on 2026-11-22. v3 differs in
+ * three ways that matter here: paths are /v3/accounts/{id}/..., results
+ * sit under `data`, and list rows no longer carry action `args`, so a token
+ * transfer's amount has to be read from the transaction's own detail.
  */
 
 import AsyncStorage from "@/lib/storage";
 import { getTokenSymbol } from '@/config/tokens';
 import { parseAtomicAmount, formatAmount } from '@/utilities/atomicAmount';
+import { ACTIVE_NETWORK } from '@/config/near';
+
+/** Most token-transfer rows whose amount we look up per load. */
+const MAX_DETAIL_LOOKUPS = 10;
 
 // Types for NEAR indexer responses
 export interface IndexedTransaction {
@@ -127,8 +136,8 @@ export class NearIndexerService {
     this.config = {
       baseUrl:
         network === 'testnet'
-          ? 'https://api-testnet.nearblocks.io/v1'
-          : 'https://api.nearblocks.io/v1',
+          ? 'https://api-testnet.nearblocks.io/v3'
+          : 'https://api.nearblocks.io/v3',
       cacheEnabled: true,
       cacheTTL: 5 * 60 * 1000, // 5 minutes
       pageSize: 25,
@@ -158,7 +167,10 @@ export class NearIndexerService {
       console.log(`[NearIndexer] Fetching transactions for ${accountId}`);
 
       // Query NEARBlocks API
-      const url = `${this.config.baseUrl}/account/${accountId}/txns?page=${page}&per_page=${limit}&order=${order}`;
+      // v3 has no page numbers (cursor paging, newest first), so read one
+      // page of up to 100 and slice locally; the screens only show the latest.
+      void order;
+      const url = `${this.config.baseUrl}/accounts/${encodeURIComponent(accountId)}/txns?limit=${Math.min(100, Math.max(1, page * limit))}`;
       console.log(`[NearIndexer] API URL: ${url}`);
 
       const response = await fetch(url);
@@ -173,6 +185,7 @@ export class NearIndexerService {
 
       // Parse NEARBlocks response
       const transactions = this.parseNEARBlocksResponse(data, accountId);
+      await this.fillTokenAmounts(transactions);
 
       console.log(`[NearIndexer] Parsed ${transactions.length} transactions`);
 
@@ -181,7 +194,7 @@ export class NearIndexerService {
         await this.cacheTransactions(accountId, transactions);
       }
 
-      return transactions;
+      return this.paginateTransactions(transactions, page, limit);
     } catch (error) {
       console.error('[NearIndexer] Error fetching transactions:', error);
 
@@ -218,12 +231,8 @@ export class NearIndexerService {
       }
 
       const data = await response.json();
-
-      if (!data.txns || data.txns.length === 0) {
-        return null;
-      }
-
-      const rawTx = data.txns[0];
+      const rawTx = Array.isArray(data?.data) ? data.data[0] : data?.data;
+      if (!rawTx) return null;
       return this.parseTransaction(rawTx, rawTx.signer_account_id);
     } catch (error) {
       console.error('[NearIndexer] Error fetching transaction details:', error);
@@ -244,7 +253,9 @@ export class NearIndexerService {
 
     let txnsArray: any[] = [];
 
-    if (response?.txns && Array.isArray(response.txns)) {
+    if (Array.isArray(response?.data)) {
+      txnsArray = response.data;
+    } else if (response?.txns && Array.isArray(response.txns)) {
       txnsArray = response.txns;
     } else if (response?.transactions && Array.isArray(response.transactions)) {
       txnsArray = response.transactions;
@@ -302,7 +313,7 @@ export class NearIndexerService {
       const timestamp = Math.floor(timestampNano / 1000000); // nanoseconds → milliseconds
 
       const { type, amount, currency, methodName, deposit, gas } =
-        this.parseActions(rawTx.actions || rawTx.actions_agg, to);
+        this.parseActions(rawTx.actions || [], to, rawTx.actions_agg?.deposit);
 
       // Determine direction based on action type
       let direction: 'incoming' | 'outgoing';
@@ -341,7 +352,7 @@ export class NearIndexerService {
         timestamp,
         date: new Date(timestamp).toISOString(),
         status,
-        blockHash: rawTx.included_in_block_hash || rawTx.block_hash || '',
+        blockHash: rawTx.block?.block_hash || rawTx.included_in_block_hash || rawTx.block_hash || '',
         methodName,
         deposit,
         gas,
@@ -358,7 +369,9 @@ export class NearIndexerService {
   private parseActions(
     actions: any[],
     /** Account the call was made against — the FT contract for ft_transfer */
-    contractId = ''
+    contractId = '',
+    /** v3 list rows put the attached deposit here instead of on the action */
+    aggDeposit?: string
   ): {
     type: ParsedTransaction['type'];
     amount: string;
@@ -380,6 +393,7 @@ export class NearIndexerService {
         const depositAmount = firstAction.deposit ||
                              firstAction.args?.deposit ||
                              firstAction.args?.amount ||
+                             aggDeposit ||
                              0;
 
         return {
@@ -392,7 +406,7 @@ export class NearIndexerService {
       case 'FUNCTION_CALL':
       case 'FunctionCall': {
         const methodName = firstAction.method || firstAction.args?.method_name || '';
-        const deposit = firstAction.deposit || firstAction.args?.deposit || 0;
+        const deposit = firstAction.deposit || firstAction.args?.deposit || aggDeposit || 0;
         const gas = firstAction.args?.gas;
 
         // Check if it's a token transfer
@@ -404,9 +418,11 @@ export class NearIndexerService {
           let tokenAmount = '0';
           const tokenCurrency = getTokenSymbol(contractId);
           try {
-            const args = typeof firstAction.args === 'string'
+            const raw = typeof firstAction.args === 'string'
               ? JSON.parse(firstAction.args)
               : firstAction.args;
+            // v3 detail nests the call's own arguments under args_json.
+            const args = raw?.args_json ?? raw;
             if (args?.amount) {
               const parsed = parseAtomicAmount(args.amount, contractId);
               if (parsed) tokenAmount = formatAmount(parsed.amount);
@@ -452,6 +468,26 @@ export class NearIndexerService {
           currency: 'NEAR',
         };
     }
+  }
+
+  /**
+   * v3 list rows omit action args, so a token transfer arrives with amount
+   * "0". Read the few most recent ones from the transaction detail, which
+   * still carries them. Best effort: a failed lookup leaves the row as is.
+   */
+  private async fillTokenAmounts(transactions: ParsedTransaction[]): Promise<void> {
+    const todo = transactions
+      .filter((t) => t.type === 'Token Transfer' && (!t.amount || t.amount === '0'))
+      .slice(0, MAX_DETAIL_LOOKUPS);
+    await Promise.all(
+      todo.map(async (t) => {
+        const detail = await this.getTransactionDetails(t.hash);
+        if (detail && detail.amount && detail.amount !== '0') {
+          t.amount = detail.amount;
+          t.currency = detail.currency;
+        }
+      })
+    );
   }
 
   /**
@@ -604,4 +640,4 @@ export class NearIndexerService {
 }
 
 // Export singleton instance
-export const nearIndexer = new NearIndexerService('testnet');
+export const nearIndexer = new NearIndexerService(ACTIVE_NETWORK);

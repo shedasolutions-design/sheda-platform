@@ -4,6 +4,7 @@ import React, {
   useState,
   useEffect,
   useRef,
+  useCallback,
   ReactNode,
 } from "react";
 import nearWalletService, {
@@ -609,9 +610,13 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         );
       }
 
-      const result = await nearWalletService.createWallet(email, (step) => {
-        setCreationStep(step);
-      });
+      const result = await nearWalletService.createWallet(
+        email,
+        (step) => {
+          setCreationStep(step);
+        },
+        (accountId, seedPhrase) => saveWalletState(accountId, seedPhrase, email)
+      );
 
       // Save the wallet state if creation was successful (with user-specific key)
       if (result.accountId && result.seedPhrase) {
@@ -862,7 +867,14 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     }
   };
 
-  const getAccountTransactions = async (
+  // These two are stable (useCallback with no changing inputs) on purpose.
+  // Screens list them in their effect dependencies, and both set `error`,
+  // which re-renders this provider. As plain functions they were new on
+  // every render, so a failed read set `error`, the provider re-rendered,
+  // the screen saw a "new" loader and ran it again, which failed again:
+  // an endless loop that sent ~30 RPC requests a second until FastNEAR
+  // blocked the browser, after which every contract call failed too.
+  const getAccountTransactions = useCallback(async (
     accountId: string,
     limit?: number,
     forceRefresh?: boolean
@@ -882,9 +894,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       setError(errorMessage);
       throw new Error(errorMessage);
     }
-  };
+  }, []);
 
-  const getTokenBalances = async (accountId: string): Promise<any[]> => {
+  const getTokenBalances = useCallback(async (accountId: string): Promise<any[]> => {
     try {
       setError(null);
       return await nearWalletService.getTokenBalances(accountId);
@@ -894,7 +906,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       setError(errorMessage);
       throw new Error(errorMessage);
     }
-  };
+  }, []);
 
   const sendTransaction = async (
     accountId: string,

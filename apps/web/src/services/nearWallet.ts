@@ -573,7 +573,15 @@ class NearWalletService {
 
   async createWallet(
     email?: string,
-    onProgress?: WalletProgressCallback
+    onProgress?: WalletProgressCallback,
+    /**
+     * Called as soon as the account exists and its phrase is stored, before
+     * the testnet token handout (four more signed transactions). The caller
+     * records "this is your wallet" here; done only at the end, anyone who
+     * left or refreshed during the handout came back to "Set up wallet" with
+     * a wallet on chain they could no longer reach.
+     */
+    onAccountReady?: (accountId: string, seedPhrase: string) => Promise<void>
   ): Promise<CreateWalletResult> {
     const progress = onProgress || (() => { });
 
@@ -750,6 +758,15 @@ class NearWalletService {
       } catch (storageError) {
         console.error("NearWalletService: Secure storage failed:", storageError);
         // Continue — user can still see/copy the seed phrase
+      }
+
+      if (onAccountReady) {
+        try {
+          await onAccountReady(subAccountId, seedPhrase);
+        } catch (pointerError) {
+          // The caller saves again once creation completes.
+          console.warn("NearWalletService: Early wallet save failed:", pointerError);
+        }
       }
 
       // ── Step 5: Airdrop (testnet only) ─────────────────────────────────

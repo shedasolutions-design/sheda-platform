@@ -17,9 +17,11 @@ import { CONTRACT_ID, ACTIVE_NETWORK } from "../config/near";
 // Configuration
 // ============================================================================
 
+// v3: NEARBlocks retired v1 (410 Gone on testnet since 2026-11-05, mainnet
+// from 2026-11-22). Rows sit under `data` and no longer carry action args.
 const NEARBLOCKS_API = {
-  testnet: "https://api-testnet.nearblocks.io/v1",
-  mainnet: "https://api.nearblocks.io/v1",
+  testnet: "https://api-testnet.nearblocks.io/v3",
+  mainnet: "https://api.nearblocks.io/v3",
 } as const;
 
 /** Polling interval in ms (15 seconds) */
@@ -190,7 +192,7 @@ export class BlockchainListenerService {
       const contractId = CONTRACT_ID;
 
       // Fetch recent transactions for the user's account
-      const url = `${baseUrl}/account/${this.accountId}/txns?per_page=25&order=desc`;
+      const url = `${baseUrl}/accounts/${encodeURIComponent(this.accountId)}/txns?limit=25`;
       const response = await fetch(url);
 
       if (!response.ok) {
@@ -198,7 +200,7 @@ export class BlockchainListenerService {
       }
 
       const data = await response.json();
-      const txns: any[] = data?.txns || [];
+      const txns: any[] = data?.data || data?.txns || [];
 
       let newEventsCount = 0;
 
