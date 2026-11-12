@@ -28,27 +28,26 @@ export const COLLECTIONS_CONTRACTS = {
     /**
      * Escrow, the phase schedule and the objection window.
      *
-     * Deployed 2026-11-04 from the wasm CI built at
-     * sheda-collection-app-contract, code hash
-     * 6XiSfG7MHr2LyruXZ726rvPwAeBVSYpJktUUwtHkcHjX. Owner and treasury are
-     * the contract's own account on testnet.
+     * v2, deployed 2026-11-12 from contracts/raise at the current main
+     * (has `set_unit_vault`, `shares_owed` and the unit list on
+     * `get_project`), following docs/DEPLOY_COLLECTIONS.md. Owner and
+     * treasury are the contract's own account on testnet. Raises on it pay
+     * in usdc.fakes.testnet, the test dollar new wallets receive.
      *
-     * That build predates `set_unit_vault`, `shares_owed` and the unit
-     * list on `get_project`, so shares cannot be claimed against it. Deploy
-     * the current wasm and point `NEXT_PUBLIC_RAISE_CONTRACT_ID` at the new
-     * account, or change this id, before demonstrating the full loop.
-     * docs/DEPLOY_COLLECTIONS.md has the exact steps.
+     * v1 (sheda-raise-v1.testnet) predates the vault flow and raised
+     * nothing; the two demo raises were reopened here and each flat has a
+     * vault: sheda-pgt-t2/t3.testnet and sheda-lgf-f1/f2.testnet.
      */
-    raise: "sheda-raise-v1.testnet",
+    raise: "sheda-raise-v2.testnet",
     /**
-     * Builder and manager stake, per profile. Code hash
-     * C12mXsaX8QJxvunrRERKr16fFfFiL2yAbeUKzWLZrTpg.
+     * Builder and manager stake, per profile. v2, controller
+     * sheda-raise-v2.testnet, stablecoin usdc.fakes.testnet.
      *
      * Its controller is the raise contract, which is what lets a stalled
      * project slash the cover behind it and stops anything else reaching a
      * builder's stake.
      */
-    stakeRegistry: "sheda-stake-v1.testnet",
+    stakeRegistry: "sheda-stake-v2.testnet",
   },
   // Deliberately empty. None of this has been audited, and an id here
   // would be a claim that it had.

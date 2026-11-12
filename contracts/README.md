@@ -204,12 +204,15 @@ nothing should be: none of this has been audited.
 | Contract | Account | Code hash |
 | --- | --- | --- |
 | Marketplace | `market.shedauser.testnet` | see `contracts/market/README.md` |
-| Raise | `sheda-raise-v1.testnet` | `6XiSfG7MHr2LyruXZ726rvPwAeBVSYpJktUUwtHkcHjX` |
-| Stake registry | `sheda-stake-v1.testnet` | `C12mXsaX8QJxvunrRERKr16fFfFiL2yAbeUKzWLZrTpg` |
+| Raise | `sheda-raise-v2.testnet` | `C7s5Q4VHVYFPW2KjoxesEWLEtj4D7tWC1yNM9R99acsH` |
+| Stake registry | `sheda-stake-v2.testnet` | `4Nk36ainzRDjHhXbPmYPsr1i74Eon73ttadtP5x4GjuH` |
+| Flat vaults | `sheda-pgt-t2`, `sheda-pgt-t3`, `sheda-lgf-f1`, `sheda-lgf-f2` (`.testnet`) | `Bs7Ew8r8K4aMTbdFJdnDjGGQzGMvEieeYy8W4XUkcpu5` |
 
-The v1 raise was built before the per-flat vault flow, so it has no
-`set_unit_vault` and no `shares_owed`. The source here is newer; the
-deployment runbook for v2 is [`docs/DEPLOY_COLLECTIONS.md`](../docs/DEPLOY_COLLECTIONS.md).
+v2 was deployed on 2026-11-12 from this source with
+[`docs/DEPLOY_COLLECTIONS.md`](../docs/DEPLOY_COLLECTIONS.md), built with the
+pinned Rust 1.86. Its raises pay in `usdc.fakes.testnet`, the test dollar new
+wallets receive. The older `sheda-raise-v1.testnet` (no vault flow) raised
+nothing and is no longer used.
 
 The registry's controller is the raise contract. That is the whole of the
 authority to touch a builder's stake: a stalled project can slash the cover
@@ -269,10 +272,8 @@ The app calls exactly these, and nothing else.
 | `close_raise(project_id)` | no deposit; anyone once full or expired |
 | `set_unit_vault(project_id, unit_code, vault)` | owner, 1 yocto, once per flat |
 
-The live `sheda-raise-v1.testnet` predates `shares_owed` and
-`set_unit_vault`; deploy the current wasm with
-[`docs/DEPLOY_COLLECTIONS.md`](../docs/DEPLOY_COLLECTIONS.md) before using
-the claim flow.
+The live `sheda-raise-v2.testnet` has `shares_owed` and `set_unit_vault`,
+and each demo flat has its vault set, so the claim flow works end to end.
 
 Two things about that table are load bearing.
 

@@ -219,8 +219,8 @@ NEAR testnet. Built by CI and deployed from that wasm, so the binary is one anyo
 | Contract | Account |
 | --- | --- |
 | Marketplace | `market.shedauser.testnet` |
-| Raise, escrow and phases | `sheda-raise-v1.testnet` (predates the per-flat vault flow; see the [v2 runbook](docs/DEPLOY_COLLECTIONS.md)) |
-| Stake registry | `sheda-stake-v1.testnet` |
+| Raise, escrow and phases | `sheda-raise-v2.testnet` (per-flat vaults `sheda-pgt-t2/t3.testnet`, `sheda-lgf-f1/f2.testnet`; pays in `usdc.fakes.testnet`) |
+| Stake registry | `sheda-stake-v2.testnet` |
 
 The registry's controller is the raise contract. That is the entire authority to touch a builder's stake: a stalled project can slash the cover allocated to it, and nothing else can reach it.
 
