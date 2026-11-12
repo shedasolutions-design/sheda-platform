@@ -244,12 +244,27 @@ function YourShares({ project }: { project: CollectionProjectDetail }) {
   );
   const {
     claimShares,
+    closeRaise,
     loading,
     error: claimError,
   } = useCollections();
   const [busy, setBusy] = useState<string | null>(null);
   const [claimed, setClaimed] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string | null>(null);
+  // The contract's view of the raise. The backend's project.status is not
+  // updated when a raise fills, so it said "open" on a funded raise and the
+  // claim button never appeared.
+  const [chainState, setChainState] = useState<{ status: string; raised: string; target: string } | null>(null);
+  const loadChainState = useCallback(async () => {
+    try {
+      setChainState(await chain.getRaiseChainState(project.slug));
+    } catch {
+      setChainState(null);
+    }
+  }, [project.slug]);
+  useEffect(() => {
+    loadChainState();
+  }, [loadChainState]);
 
   if (unsupported) return null;
 
@@ -259,7 +274,19 @@ function YourShares({ project }: { project: CollectionProjectDetail }) {
 
   if (rows.length === 0) return null;
 
-  const canClaim = CLAIMABLE_STATUSES.has(project.status);
+  const chainStatus = chainState?.status?.toLowerCase();
+  const canClaim = CLAIMABLE_STATUSES.has(chainStatus ?? project.status);
+  const fullButOpen =
+    chainStatus === "open" && chainState != null && BigInt(chainState.raised) >= BigInt(chainState.target);
+
+  const onClose = async () => {
+    setBusy("close");
+    setFailure(null);
+    const result = await closeRaise(project.slug);
+    setBusy(null);
+    if (result.success) await loadChainState();
+    else setFailure(result.error ?? "The raise could not be closed just now.");
+  };
 
   const onClaim = async (unitCode: string) => {
     setBusy(unitCode);
@@ -279,6 +306,17 @@ function YourShares({ project }: { project: CollectionProjectDetail }) {
 
   return (
     <Section title="Your position">
+      {fullButOpen ? (
+        <Card>
+          <View style={{ gap: 10 }}>
+            <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
+              This raise has reached its target. Close it to start the build and let
+              everyone claim their shares. Anyone can do this.
+            </InterRegular>
+            <CollectionsButton label="Close the raise" loading={busy === "close" && loading} onPress={onClose} />
+          </View>
+        </Card>
+      ) : null}
       {rows.map(({ unit, position }) => {
         const committed = position?.committedAtomic ?? "0";
         const owed = position?.sharesOwed ?? "0";

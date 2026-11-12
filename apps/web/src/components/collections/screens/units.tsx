@@ -27,7 +27,7 @@ import {
 } from "@/services/collections/money";
 import { DEFAULT_TOKEN } from "@/config/tokens";
 import { RAISE_CONTRACT_ID } from "@/config/collections";
-import { getChainSharesSold } from "@/services/collections/chain";
+import { getChainSharesSold, getRaiseChainState } from "@/services/collections/chain";
 import type { CollectionProjectDetail, CollectionUnit } from "@/services/api";
 
 /**
@@ -45,7 +45,7 @@ import type { CollectionProjectDetail, CollectionUnit } from "@/services/api";
  */
 export default function ChooseUnit() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
-  const { getProject, commit, loading, error, capabilities, connected } = useCollections();
+  const { getProject, commit, closeRaise, loading, error, capabilities, connected } = useCollections();
 
   const [project, setProject] = useState<CollectionProjectDetail | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -119,6 +119,17 @@ export default function ChooseUnit() {
     if (result.success) {
       setDone(result.transactionHash ?? "submitted");
       setAmount("");
+      // The commitment that fills the raise closes it too, so the build can
+      // start and everyone can claim. Best effort: the project page offers
+      // the same button if this doesn't go through.
+      try {
+        const state = await getRaiseChainState(project.slug);
+        if (state && state.status === "Open" && BigInt(state.raised) >= BigInt(state.target)) {
+          await closeRaise(project.slug);
+        }
+      } catch {
+        /* the project page offers "Close the raise" */
+      }
       load();
     }
   };
