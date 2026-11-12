@@ -37,6 +37,8 @@ from app.models.collection import (
     RaiseStatusEnum,
 )
 from app.models.user import BaseUser
+from app.services.identity import LinkedIdentityDep
+from app.utils.enums import AccountTypeEnum
 from app.schemas.collection_schema import (
     ChainRecordOut,
     CollectionProfileCreate,
@@ -128,12 +130,17 @@ def _detail_out(project: CollectionProject, units: List[CollectionUnit]) -> Proj
 async def _my_profile(
     db: AsyncSession, user: BaseUser, role: CollectionRoleEnum
 ) -> CollectionProfile:
+    # Either of the person's rows: a profile made while acting as a seller is
+    # still theirs when they come back as a buyer.
+    person_ids = select(BaseUser.id).where(
+        BaseUser.email == user.email, BaseUser.account_type != AccountTypeEnum.admin
+    )
     result = await db.execute(
         select(CollectionProfile).where(
-            CollectionProfile.user_id == user.id, CollectionProfile.role == role
+            CollectionProfile.user_id.in_(person_ids), CollectionProfile.role == role
         )
     )
-    profile = result.scalar_one_or_none()
+    profile = result.scalars().first()
     if profile is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -169,14 +176,18 @@ async def _owned_project(
 
 
 @router.get("/profiles/me", response_model=List[CollectionProfileOut])
-async def my_profiles(current_user: ActiveUser, db: AsyncSession = Depends(get_db)):
+async def my_profiles(
+    current_user: ActiveUser,
+    identity: LinkedIdentityDep,
+    db: AsyncSession = Depends(get_db),
+):
     """Every Collections profile on this account.
 
     A list rather than one object because a company that both builds and
     manages holds two, and their records must never be averaged together.
     """
     result = await db.execute(
-        select(CollectionProfile).where(CollectionProfile.user_id == current_user.id)
+        select(CollectionProfile).where(CollectionProfile.user_id.in_(identity.ids))
     )
     return [_profile_out(p) for p in result.scalars().all()]
 
@@ -189,11 +200,12 @@ async def my_profiles(current_user: ActiveUser, db: AsyncSession = Depends(get_d
 async def create_profile(
     payload: CollectionProfileCreate,
     current_user: ActiveUser,
+    identity: LinkedIdentityDep,
     db: AsyncSession = Depends(get_db),
 ):
     existing = await db.execute(
         select(CollectionProfile).where(
-            CollectionProfile.user_id == current_user.id,
+            CollectionProfile.user_id.in_(identity.ids),
             CollectionProfile.role == payload.role,
         )
     )
@@ -232,12 +244,13 @@ async def update_profile(
     profile_id: int,
     payload: CollectionProfileUpdate,
     current_user: ActiveUser,
+    identity: LinkedIdentityDep,
     db: AsyncSession = Depends(get_db),
 ):
     profile = await db.get(CollectionProfile, profile_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Profile not found")
-    if profile.user_id != current_user.id:
+    if profile.user_id not in identity.ids:
         raise HTTPException(status_code=403, detail="That profile is not yours.")
 
     data = payload.model_dump(exclude_unset=True)
@@ -308,6 +321,7 @@ async def add_profile_document(
     profile_id: int,
     payload: DocumentCreate,
     current_user: ActiveUser,
+    identity: LinkedIdentityDep,
     db: AsyncSession = Depends(get_db),
 ):
     """The profile's owner attaches a paper. It lands as `uploaded`, never
@@ -315,7 +329,7 @@ async def add_profile_document(
     profile = await db.get(CollectionProfile, profile_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Profile not found")
-    if profile.user_id != current_user.id:
+    if profile.user_id not in identity.ids:
         raise HTTPException(status_code=403, detail="That profile is not yours.")
     if not payload.file_url:
         raise HTTPException(status_code=422, detail="Attach the file itself.")
@@ -337,6 +351,7 @@ async def add_profile_document(
 async def remove_profile_document(
     document_id: int,
     current_user: ActiveUser,
+    identity: LinkedIdentityDep,
     db: AsyncSession = Depends(get_db),
 ):
     """The owner can take back a paper that has not been verified. A verified
@@ -345,7 +360,7 @@ async def remove_profile_document(
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
     profile = await db.get(CollectionProfile, document.profile_id)
-    if profile is None or profile.user_id != current_user.id:
+    if profile is None or profile.user_id not in identity.ids:
         raise HTTPException(status_code=403, detail="That document is not yours.")
     if document.status == DocumentStatusEnum.verified:
         raise HTTPException(
@@ -920,6 +935,7 @@ async def post_phase_update(
     phase_id: int,
     payload: PhaseUpdateCreate,
     current_user: ActiveUser,
+    identity: LinkedIdentityDep,
     db: AsyncSession = Depends(get_db),
 ):
     """Post an update to holders.
@@ -940,7 +956,7 @@ async def post_phase_update(
         (
             await db.execute(
                 select(CollectionProfile).where(
-                    CollectionProfile.user_id == current_user.id
+                    CollectionProfile.user_id.in_(identity.ids)
                 )
             )
         )
