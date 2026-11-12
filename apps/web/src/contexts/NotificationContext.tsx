@@ -248,39 +248,37 @@ async function loadCachedNotifications(): Promise<AppNotification[]> {
 // ============================================================================
 
 function mapBackendNotification(bn: BackendNotification): AppNotification {
-    // Map backend event name to app notification type
-    const eventToType: Record<string, NotificationType> = {
-        bid_accepted: "bid_accepted",
-        bid_rejected: "bid_rejected",
-        docs_released: "docs_released",
-        docs_confirmed: "docs_confirmed",
-        payment_released: "payment_released",
-        appointment_accepted: "appointment_accepted",
-        appointment_rejected: "appointment_rejected",
-        transaction_completed: "transaction_completed",
-        dispute_raised: "dispute_raised",
+    // Every deal event the backend records, in words a person reads. The list
+    // used to stop at a few events and fall back to "Transaction 2 —
+    // appointment_booked" for the rest, which is what a seller saw for their
+    // very first viewing request.
+    const copy: Record<string, { type: NotificationType; title: string; body: (p: string) => string }> = {
+        bid_placed: { type: "bid_placed", title: "New offer", body: (p) => `You have a new offer on ${p}.` },
+        bid_accepted: { type: "bid_accepted", title: "Offer accepted", body: (p) => `Your offer on ${p} was accepted. Book a viewing next.` },
+        bid_rejected: { type: "bid_rejected", title: "Offer declined", body: (p) => `Your offer on ${p} was declined. Your money has been returned.` },
+        bid_cancelled: { type: "bid_cancelled", title: "Offer withdrawn", body: (p) => `The offer on ${p} was withdrawn.` },
+        appointment_booked: { type: "appointment_booked", title: "Viewing requested", body: (p) => `A buyer booked a viewing of ${p}. Accept or decline it.` },
+        appointment_accepted: { type: "appointment_accepted", title: "Viewing confirmed", body: (p) => `Your viewing of ${p} is confirmed.` },
+        appointment_rejected: { type: "appointment_rejected", title: "Viewing declined", body: (p) => `The seller declined the viewing of ${p}.` },
+        docs_released: { type: "docs_released", title: "Documents released", body: (p) => `The documents for ${p} are ready for you to check.` },
+        docs_confirmed: { type: "docs_confirmed", title: "Documents confirmed", body: (p) => `The buyer confirmed the documents for ${p}.` },
+        payment_released: { type: "payment_released", title: "Payment released", body: (p) => `Payment for ${p} has been released from escrow.` },
+        transaction_completed: { type: "transaction_completed", title: "Deal complete", body: (p) => `The deal for ${p} is complete.` },
+        dispute_raised: { type: "dispute_raised", title: "Dispute raised", body: (p) => `A dispute was raised on the deal for ${p}.` },
+        lease_completed: { type: "transaction_completed", title: "Lease ended", body: (p) => `The lease on ${p} has ended.` },
+        lease_renewed: { type: "transaction_completed", title: "Lease renewed", body: (p) => `The lease on ${p} was renewed.` },
     };
-    const type = eventToType[bn.event] || "general";
-
-    // Derive title and message from event type since backend sends structured events
-    const titleMap: Record<string, string> = {
-        bid_accepted: "Bid Accepted",
-        bid_rejected: "Bid Rejected",
-        docs_released: "Documents Released",
-        docs_confirmed: "Documents Confirmed",
-        payment_released: "Payment Released",
-        appointment_accepted: "Appointment Confirmed",
-        appointment_rejected: "Appointment Rejected",
-        transaction_completed: "Transaction Complete",
-        dispute_raised: "Dispute Raised",
-    };
+    const meta = (bn.metadata_payload ?? {}) as Record<string, unknown>;
+    const title = typeof meta.property_title === "string" && meta.property_title ? `"${meta.property_title}"` : "your property";
+    const entry = copy[bn.event];
+    const type = entry && Object.keys(NOTIFICATION_META).includes(entry.type) ? entry.type : "general";
 
     return {
         id: `backend_${bn.id}`,
         backendId: bn.id,
-        type: Object.keys(NOTIFICATION_META).includes(type) ? type : "general",
-        title: titleMap[bn.event] || "Notification",
-        message: `Transaction ${bn.transaction_id} — ${titleMap[bn.event] || bn.event}`,
+        type,
+        title: entry?.title ?? "Deal update",
+        message: entry ? entry.body(title) : `There is an update on the deal for ${title}.`,
         route: NOTIFICATION_ROUTES[type] || NOTIFICATION_ROUTES.general,
         routeParams: bn.metadata_payload as Record<string, string> | undefined,
         read: bn.is_read,

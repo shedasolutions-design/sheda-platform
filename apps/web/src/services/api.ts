@@ -1616,9 +1616,12 @@ class ApiService {
   }
 
   async registerWallet(walletId: string): Promise<ApiResponse<WalletUserInfo>> {
+    // Silent: "Wallet already registered" (409) is the normal answer on
+    // every visit after the first.
     return this.request<WalletUserInfo>("/api/v1/users/wallets/register", {
       method: "POST",
       body: JSON.stringify({ wallet_id: walletId }),
+      silent: true,
     });
   }
 
