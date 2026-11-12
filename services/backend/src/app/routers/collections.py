@@ -55,6 +55,7 @@ from app.schemas.collection_schema import (
     ProjectSummaryOut,
     ProjectUpdate,
     UnitOut,
+    UnitVaultUpdate,
 )
 from app.services.user_service import ActiveUser, AdminUser
 from core.database import get_db
@@ -366,6 +367,29 @@ async def my_projects(current_user: ActiveUser, db: AsyncSession = Depends(get_d
     return [_summary_out(p) for p in result.scalars().all()]
 
 
+@router.get("/projects/managed", response_model=List[ProjectSummaryOut])
+async def managed_projects(
+    current_user: ActiveUser, db: AsyncSession = Depends(get_db)
+):
+    """A property manager's mandates, drafts excluded.
+
+    The sign-off screen is the manager's inbox as much as the builder's.
+    Without this the only way to find a project waiting on an inspection
+    would be to remember its URL, and a screen that cannot list the work is
+    not a screen anyone can use.
+    """
+    manager = await _my_profile(db, current_user, CollectionRoleEnum.manager)
+    result = await db.execute(
+        select(CollectionProject)
+        .where(
+            CollectionProject.manager_id == manager.id,
+            CollectionProject.status != RaiseStatusEnum.draft,
+        )
+        .order_by(CollectionProject.created_at.desc())
+    )
+    return [_summary_out(p) for p in result.scalars().all()]
+
+
 @router.get("/projects/{slug}", response_model=ProjectDetailOut)
 async def get_project(slug: str, db: AsyncSession = Depends(get_db)):
     project = (
@@ -586,6 +610,45 @@ async def publish_project(
     await db.commit()
     await db.refresh(project)
     return _summary_out(project)
+
+
+@router.patch("/projects/{slug}/units/{unit_code}/vault", response_model=UnitOut)
+async def record_unit_vault(
+    slug: str,
+    unit_code: str,
+    payload: UnitVaultUpdate,
+    current_user: AdminUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Cache where a flat's vault was deployed, after the chain says so.
+
+    Deploying the vault and calling `set_unit_vault` are signed actions
+    from the owner's wallet; this only records the result so the app can
+    show a holder that a claim has somewhere to land. The raise contract
+    remains the authority, and `claim_shares` reads the vault from there
+    rather than from this column.
+    """
+    project = (
+        await db.execute(select(CollectionProject).where(CollectionProject.slug == slug))
+    ).scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    unit = (
+        await db.execute(
+            select(CollectionUnit).where(
+                CollectionUnit.project_id == project.id,
+                CollectionUnit.code == unit_code,
+            )
+        )
+    ).scalar_one_or_none()
+    if unit is None:
+        raise HTTPException(status_code=404, detail="Unit not found")
+
+    unit.vault_account_id = payload.vault_account_id
+    await db.commit()
+    await db.refresh(unit)
+    return UnitOut.model_validate(unit)
 
 
 # ---- documents -------------------------------------------------------------

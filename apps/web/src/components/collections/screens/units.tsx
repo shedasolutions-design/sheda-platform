@@ -142,7 +142,8 @@ export default function ChooseUnit() {
 
         {done ? (
           <Note tone="positive">
-            Submitted. Your shares appear in Holdings once the transaction settles.
+            Submitted. Once the raise is funded, claim your shares from the project
+            page. They then appear in Holdings and earn that flat&apos;s rent.
           </Note>
         ) : null}
 

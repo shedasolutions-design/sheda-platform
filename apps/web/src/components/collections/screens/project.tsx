@@ -23,8 +23,10 @@ import {
   StatTile,
   TYPE,
 } from "@/components/collections/ui";
-import { useCollections } from "@/hooks/useCollections";
+import { useCollections, useUnitPositions } from "@/hooks/useCollections";
 import { scoreFor } from "@/services/collections/ranking";
+import { formatWithSymbol } from "@/services/collections/money";
+import { DEFAULT_TOKEN } from "@/config/tokens";
 import type {
   CollectionDocumentStatus,
   CollectionPhase,
@@ -43,7 +45,7 @@ import type {
  */
 export default function ProjectDetail() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
-  const { getProject, loading, error } = useCollections();
+  const { getProject, loading, error, connected } = useCollections();
   const [project, setProject] = useState<CollectionProjectDetail | null>(null);
 
   const load = useCallback(async () => {
@@ -185,6 +187,10 @@ export default function ProjectDetail() {
           </Section>
         ) : null}
 
+        {connected && project.unit_list.length > 0 ? (
+          <YourShares project={project} />
+        ) : null}
+
         {project.unit_list.length > 0 ? (
           <CollectionsButton
             label="Choose a unit"
@@ -198,6 +204,126 @@ export default function ProjectDetail() {
         )}
       </Screen>
     </>
+  );
+}
+
+const CLAIMABLE_STATUSES = new Set(["funded", "building", "delivered"]);
+
+/**
+ * What the signed-in account already put into this raise.
+ *
+ * Commitments and shares are read separately so the two states that look
+ * the same from a balance can be told apart: a commitment with shares owed
+ * is waiting to be claimed, and a commitment with nothing owed has already
+ * been minted. The live v1 raise contract has no `shares_owed`; against it
+ * `unsupported` is true and this section stays absent rather than showing
+ * an empty position as if nobody had invested.
+ */
+function YourShares({ project }: { project: CollectionProjectDetail }) {
+  const token = DEFAULT_TOKEN;
+  const { positions, unsupported, reload } = useUnitPositions(
+    project.slug,
+    project.unit_list
+  );
+  const {
+    claimShares,
+    loading,
+    error: claimError,
+  } = useCollections();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [claimed, setClaimed] = useState<Record<string, string>>({});
+  const [failure, setFailure] = useState<string | null>(null);
+
+  if (unsupported) return null;
+
+  const rows = project.unit_list
+    .map((unit) => ({ unit, position: positions[unit.code] }))
+    .filter((row) => BigInt(row.position?.committedAtomic || "0") > 0n);
+
+  if (rows.length === 0) return null;
+
+  const canClaim = CLAIMABLE_STATUSES.has(project.status);
+
+  const onClaim = async (unitCode: string) => {
+    setBusy(unitCode);
+    setFailure(null);
+    const result = await claimShares(project.slug, unitCode);
+    setBusy(null);
+    if (result.success) {
+      setClaimed((prev) => ({
+        ...prev,
+        [unitCode]: result.transactionHash ?? "submitted",
+      }));
+      await reload();
+    } else {
+      setFailure(result.error ?? "That claim did not go through.");
+    }
+  };
+
+  return (
+    <Section title="Your position">
+      {rows.map(({ unit, position }) => {
+        const committed = position?.committedAtomic ?? "0";
+        const owed = position?.sharesOwed ?? "0";
+        const alreadyClaimed = claimed[unit.code] || BigInt(owed) === 0n;
+
+        return (
+          <Card key={unit.code}>
+            <View style={{ gap: 12 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: 10,
+                }}
+              >
+                <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                  <InterSemiBold style={{ ...TYPE.heading, color: C.text }}>
+                    {unit.label}
+                  </InterSemiBold>
+                  <InterRegular style={{ ...TYPE.label, color: C.textSecondary }}>
+                    You put in {formatWithSymbol(committed, token, 0)}
+                  </InterRegular>
+                </View>
+                <Badge
+                  label={alreadyClaimed ? "Shares claimed" : "Shares to claim"}
+                  tone={alreadyClaimed ? "positive" : "caution"}
+                />
+              </View>
+
+              {alreadyClaimed ? (
+                <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
+                  Your shares are in this flat. Rent paid into its vault accrues to
+                  them, and you can claim it from Holdings.
+                </InterRegular>
+              ) : !canClaim ? (
+                <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
+                  {owed} shares are set aside for you. They can be claimed once the
+                  raise reaches its target and the flat&apos;s vault exists.
+                </InterRegular>
+              ) : !unit.vault_account_id ? (
+                <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
+                  {owed} shares are set aside for you, but this flat&apos;s vault has
+                  not been recorded yet. The operator has to deploy it and register it
+                  with the raise contract before shares can be minted.
+                </InterRegular>
+              ) : (
+                <CollectionsButton
+                  label={`Claim ${owed} shares`}
+                  loading={busy === unit.code && loading}
+                  onPress={() => onClaim(unit.code)}
+                />
+              )}
+            </View>
+          </Card>
+        );
+      })}
+
+      {claimError || failure ? (
+        <Note tone="critical">{failure ?? claimError}</Note>
+      ) : null}
+    </Section>
   );
 }
 

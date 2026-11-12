@@ -1813,6 +1813,11 @@ class ApiService {
     return this.request<CollectionProjectSummary[]>("/api/v1/collections/projects/mine");
   }
 
+  /** Projects where the signed-in account is the property manager. */
+  async getManagedCollectionProjects(): Promise<ApiResponse<CollectionProjectSummary[]>> {
+    return this.request<CollectionProjectSummary[]>("/api/v1/collections/projects/managed");
+  }
+
   async createCollectionProject(
     payload: CollectionProjectCreate
   ): Promise<ApiResponse<CollectionProjectDetail>> {
