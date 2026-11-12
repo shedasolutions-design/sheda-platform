@@ -91,7 +91,10 @@ export default function ImportWalletPage() {
     }
 
     // Only the wallet tied to this Sheda account can be imported.
-    const target = accountId.trim() || undefined;
+    // An empty field means "the wallet on record", as the hint says. Passing
+    // nothing made the wallet service guess from the email again, so a valid
+    // key for the recorded wallet was refused as a mismatch.
+    const target = accountId.trim() || expectedAccountId || undefined;
     if (target && expectedAccountId && target !== expectedAccountId) {
       setFeedback({
         visible: true,
