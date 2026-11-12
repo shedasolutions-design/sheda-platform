@@ -207,6 +207,10 @@ nothing should be: none of this has been audited.
 | Raise | `sheda-raise-v1.testnet` | `6XiSfG7MHr2LyruXZ726rvPwAeBVSYpJktUUwtHkcHjX` |
 | Stake registry | `sheda-stake-v1.testnet` | `C12mXsaX8QJxvunrRERKr16fFfFiL2yAbeUKzWLZrTpg` |
 
+The v1 raise was built before the per-flat vault flow, so it has no
+`set_unit_vault` and no `shares_owed`. The source here is newer; the
+deployment runbook for v2 is [`docs/DEPLOY_COLLECTIONS.md`](../docs/DEPLOY_COLLECTIONS.md).
+
 The registry's controller is the raise contract. That is the whole of the
 authority to touch a builder's stake: a stalled project can slash the cover
 allocated to it, and nothing else can reach it at all.
@@ -251,6 +255,25 @@ The app calls exactly these, and nothing else.
 | `withdraw(amount)` | 1 yocto |
 | `ft_on_transfer(...)` | reached by `ft_transfer_call` on the stablecoin, `msg` empty to credit the sender |
 
+**Raise**, one account for escrow and the phase schedule.
+
+| Method | Shape the app expects |
+| --- | --- |
+| `get_project(project_id)` | `builder`, `manager`, `stablecoin`, `target`, `raised`, `released`, `status`, `phases`, `units` |
+| `get_commitment(project_id, account_id, unit)` | `U128` |
+| `shares_owed(project_id, unit, account_id)` | `U128`; zero after a claim |
+| `claim_shares(project_id, unit)` | 1 yocto; mints against the vault the raise recorded |
+| `request_inspection(project_id, phase)` | 1 yocto; builder |
+| `attest(project_id, phase)` | 1 yocto; manager, never the builder |
+| `object(project_id, phase)` | 1 yocto; holder inside the window |
+| `close_raise(project_id)` | no deposit; anyone once full or expired |
+| `set_unit_vault(project_id, unit_code, vault)` | owner, 1 yocto, once per flat |
+
+The live `sheda-raise-v1.testnet` predates `shares_owed` and
+`set_unit_vault`; deploy the current wasm with
+[`docs/DEPLOY_COLLECTIONS.md`](../docs/DEPLOY_COLLECTIONS.md) before using
+the claim flow.
+
 Two things about that table are load bearing.
 
 **Amounts stay strings the whole way.** A JSON number is a double and exact
@@ -279,4 +302,4 @@ vault lives and mints against it, but nothing creates the account yet.
 
 ## Licence
 
-Unpublished. All rights reserved by Sheda Solutions.
+Apache-2.0. See the repository's `LICENSE` file.

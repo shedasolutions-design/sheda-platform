@@ -13,6 +13,31 @@ A full real estate platform on NEAR. Search verified listings, book an inspectio
 
 ---
 
+## NEAR Hackathon 2026
+
+**Tracks:** [`nfts`](https://nearhackathon.com) (primary) and
+[`realworld`](https://nearhackathon.com) (secondary).
+
+The property NFT is the flat, and the flat is owned by a vault account. The
+vault mints NEP-141 shares when the raise funds and pays its rent to whoever
+holds them. That is the `nfts` claim: the NFT owns a real, income-producing
+thing. The listings, inspections, escrow, leases and USDC settlement around
+it are the `realworld` claim: the NFT is part of a product people can use
+without knowing what a vault is.
+
+- [Submission notes and baseline disclosure](docs/HACKATHON_SUBMISSION.md)
+- [Three-minute demo script](docs/DEMO.md)
+- [Contract deployment runbook](docs/DEPLOY_COLLECTIONS.md)
+
+**Baseline.** The marketplace and Collections code existed before the event
+in five separate public repositories under the same organisation. They were
+consolidated into this monorepo on 2026-11-08. The `monorepo-baseline` tag
+points at that first monorepo commit; the diff from it is the
+hackathon-window change set. The status table below separates what is
+working from what is deliberately still missing.
+
+---
+
 ## What the platform does
 
 Property transactions are slow, paper-heavy and built on trusting people you have never met. A deposit sits with someone you hope will return it. A title exists as a document someone could reprint. An agent stands between the buyer and the seller and is paid for being there.
@@ -194,10 +219,15 @@ NEAR testnet. Built by CI and deployed from that wasm, so the binary is one anyo
 | Contract | Account |
 | --- | --- |
 | Marketplace | `market.shedauser.testnet` |
-| Raise, escrow and phases | `sheda-raise-v1.testnet` |
+| Raise, escrow and phases | `sheda-raise-v1.testnet` (predates the per-flat vault flow; see the [v2 runbook](docs/DEPLOY_COLLECTIONS.md)) |
 | Stake registry | `sheda-stake-v1.testnet` |
 
 The registry's controller is the raise contract. That is the entire authority to touch a builder's stake: a stalled project can slash the cover allocated to it, and nothing else can reach it.
+
+The current raise wasm adds `set_unit_vault`, `shares_owed` and the unit list on
+`get_project`, which the v1 account does not have. Point the web app at a v2
+deployment with `NEXT_PUBLIC_RAISE_CONTRACT_ID` (or by editing
+`apps/web/src/config/collections.ts`) before demonstrating the claim loop.
 
 The marketplace deploys from [`.github/workflows/deploy-market-production.yml`](.github/workflows/deploy-market-production.yml); [contracts/market/DEPLOYMENT.md](contracts/market/DEPLOYMENT.md) covers the first deploy, migrations and the required variables.
 
@@ -228,12 +258,13 @@ cd services/backend
 cp .env.example .env.local && pip install -r requirements-server.txt
 alembic upgrade head && uvicorn main:app --reload --app-dir src
 pytest -q
+python scripts/sync_collections_chain.py --dry-run   # chain records, no key needed
 
 # Web app
 cd apps/web
 cp .env.example .env.local && npm install
 npm run dev        # http://localhost:3000
-npx tsc --noEmit && npx next build
+npx next typegen && npx tsc --noEmit && npx next build
 
 # Collections app: standalone
 cd apps/collection-app
@@ -278,14 +309,14 @@ development needs `eval` and live-reload sockets they would block.
 | Web app: every screen, on market.sheda.app and testing.sheda.app | Working |
 | Marketplace: listings, inspections, offers, escrow, leases, documents, disputes | Working |
 | Built-in wallet: created and funded automatically at sign-up; import, recovery, Google backup | Working |
-| Collections: browse, rank, register as a builder, open a raise | Working |
+| Collections: browse, rank, open a raise, commit, claim shares, claim rent | Working in the current code; the live v1 raise needs the v2 runbook before shares can be claimed |
 | Admin panel: dashboard, every table, Smart contracts | Working |
-| Contracts: vault, raise, stake registry | Deployed to testnet, 71 tests |
+| Contracts: vault, raise, stake registry | 71 tests; current wasm is ahead of the live v1 raise deployment |
 | Mainnet | **Not live.** Backend and database are ready; contracts aren't deployed and the funding account is empty. |
-| Per-unit vault deployment | **Not built.** The raise records where a vault lives and mints against it; nothing creates the account. |
+| Per-unit vault deployment | **Operator runbook, not a factory.** `docs/DEPLOY_COLLECTIONS.md` deploys a vault, registers it with the raise and records it in the backend. |
 | Cross-contract tests | **Partial.** The marketplace contract has integration tests under `contracts/market/tests`; the vault/raise paths that call it have none, including the failure paths that assume a failed transfer means the money never left. |
-| Manager screens | **None.** A manager can register and then cannot attest a phase, which is the step the release schedule turns on. |
-| Chain-event indexer | **Not built.** Nothing populates the counts the ranking reads, so every profile currently reads "Not rated yet". |
+| Manager screens | **Working.** A manager sees managed raises, requests, and signs off a phase from the Sign-offs screen; the client cannot sign with the wrong account. |
+| Chain-event indexer | **Working for raise and stake facts.** `services/backend/scripts/sync_collections_chain.py` rebuilds builder and manager chain records. Occupancy and rent-period counts need the lease/vault event pipeline and stay at zero until it exists. |
 | Security | Code review done (Nov 2026): data leaks, upload overwrites and unchecked payment actions fixed; admin lockout and authenticator codes; browser security rules. **External contract audit not done.** |
 | Email | **Not configured.** No Brevo key yet, so sign-up codes and notifications aren't emailed. |
 
@@ -314,4 +345,4 @@ land here.
 
 ## Licence
 
-Unpublished. All rights reserved by Sheda Solutions.
+Apache-2.0. See [LICENSE](LICENSE).
