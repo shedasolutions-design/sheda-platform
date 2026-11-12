@@ -1,5 +1,6 @@
 "use client";
 
+import { leaseSuffix } from "@/utilities/leaseTerm";
 import { DealCard, DealMedia, Badge, RoleBadge, DealFacts, DealActions, DealAction, dealImage } from "@/components/history/DealCardParts";
 import { router } from "@/lib/router";
 import {
@@ -94,7 +95,7 @@ const CancelledCard = ({ transaction }: CancelledCardProps) => {
       <div className="px-3 py-2">
         <DealFacts title={title} location={location} bedrooms={bedrooms} bathrooms={bathrooms} />
         <div className="mt-1 flex items-center justify-between">
-          <PriceDisplay amountUsd={stablecoinUnitsToUsd(parseInt(bid.bid_amount) || 0)} suffix={isLease ? "/yr" : ""} compact />
+          <PriceDisplay amountUsd={stablecoinUnitsToUsd(parseInt(bid.bid_amount) || 0)} suffix={isLease ? leaseSuffix(property.lease_duration_days) : ""} compact />
           {!!updatedAt && <span className="text-xs text-[#878787BF]">{formatRelativeTime(updatedAt)}</span>}
         </div>
         {!!statusLine && <p className="mt-1 rounded bg-gray-50 px-2 py-1.5 text-[11px] italic text-secondaryText">{statusLine}</p>}

@@ -411,7 +411,7 @@ impl ShedaContract {
                 }
 
                 let bidder = bid.bidder.clone();
-                let amount = bid.amount;
+                let amount = crate::internal::bid_refund_total(bid);
                 let stablecoin_token = bid.stablecoin_token.clone();
 
                 //update stablecoin balance optimistically
