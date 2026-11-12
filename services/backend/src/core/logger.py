@@ -106,18 +106,22 @@ def setup_logger(
     logger.addHandler(console_handler)
 
     # File handler (production only)
+    # A machine that may not write there (a CI runner, a non-root container)
+    # keeps console logging rather than refusing to start.
     if log_file and not settings.DEBUG_MODE:
-        log_dir = Path(log_file).parent
-        log_dir.mkdir(parents=True, exist_ok=True)
-
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_file,
-            maxBytes=10 * 1024 * 1024,  # 10MB
-            backupCount=5,
-        )
-        file_handler.setLevel(logging.INFO)
-        file_handler.setFormatter(JSONFormatter())
-        logger.addHandler(file_handler)
+        try:
+            Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_file,
+                maxBytes=10 * 1024 * 1024,  # 10MB
+                backupCount=5,
+            )
+        except OSError as exc:
+            logger.warning("File logging off, cannot write %s: %s", log_file, exc)
+        else:
+            file_handler.setLevel(logging.INFO)
+            file_handler.setFormatter(JSONFormatter())
+            logger.addHandler(file_handler)
 
     # Prevent propagation to root logger
     logger.propagate = False
