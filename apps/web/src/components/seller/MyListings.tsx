@@ -116,8 +116,8 @@ export function MyListings() {
               if (!r.success) throw new Error(r.error || "Couldn't delist this property on-chain, so it's still on the market. Please try again.");
             } else {
               // Reuse the terms the chain already holds. The backend price is
-              // in the seller's own currency, not the stablecoin units the
-              // contract expects, so it can't be sent as-is.
+              // in naira, not the stablecoin units the contract expects, so it
+              // can't be sent as-is.
               const current = await nearContractService.getPropertyById(bc);
               const onChain = current.success ? current.data : null;
               if (!onChain?.price) throw new Error("Couldn't read this property's price on-chain. Please list it again from List a property.");
