@@ -469,3 +469,90 @@ export async function objectToRelease(
     dedupeKey: `object:${accountId}:${projectSlug}:${phaseIndex}`,
   });
 }
+
+// ---- getting money back from a raise that stopped or failed ---------------
+
+/** The raise's state as the contract sees it ("Open", "Funded", "Stalled", "Failed", ...). */
+export async function getRaiseChainStatus(projectSlug: string): Promise<string | null> {
+  if (!hasRaiseContract()) return null;
+  const project = await nearContractService.viewOn<{ status: string } | null>(
+    RAISE_CONTRACT_ID,
+    "get_project",
+    { project_id: projectSlug }
+  );
+  return project?.status ?? null;
+}
+
+/**
+ * What this investor can take back from a stopped raise: their share of the
+ * escrow never paid to the builder, and their share of the builder's cover.
+ * Each is fixed by the contract and does not depend on anyone else claiming.
+ */
+export async function getMoneyBack(
+  projectSlug: string,
+  accountId: string
+): Promise<{ escrow: string; cover: string }> {
+  if (!hasRaiseContract()) return { escrow: "0", cover: "0" };
+  const [escrow, cover] = await Promise.all([
+    nearContractService.viewOn<string>(RAISE_CONTRACT_ID, "reclaim_value", {
+      project_id: projectSlug,
+      account_id: accountId,
+    }),
+    nearContractService.viewOn<string>(RAISE_CONTRACT_ID, "opt_out_value", {
+      project_id: projectSlug,
+      account_id: accountId,
+    }),
+  ]);
+  return { escrow: String(escrow ?? "0"), cover: String(cover ?? "0") };
+}
+
+/** Take back your share of the unpaid escrow from a stopped raise. */
+export async function reclaimEscrow(
+  accountId: string,
+  privateKey: string,
+  projectSlug: string
+): Promise<ContractCallResult<void>> {
+  if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
+  return nearContractService.callOn(accountId, privateKey, {
+    contractId: RAISE_CONTRACT_ID,
+    methodName: "reclaim",
+    args: { project_id: projectSlug },
+    gas: tgas(COLLECTIONS_GAS.CLAIM),
+    attachedDeposit: ONE_YOCTO,
+    dedupeKey: `reclaim:${accountId}:${projectSlug}`,
+  });
+}
+
+/** Take your share of the builder's cover (from their stake) on a stopped raise. */
+export async function claimCover(
+  accountId: string,
+  privateKey: string,
+  projectSlug: string
+): Promise<ContractCallResult<void>> {
+  if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
+  return nearContractService.callOn(accountId, privateKey, {
+    contractId: RAISE_CONTRACT_ID,
+    methodName: "opt_out",
+    args: { project_id: projectSlug },
+    gas: tgas(COLLECTIONS_GAS.CLAIM),
+    attachedDeposit: ONE_YOCTO,
+    dedupeKey: `cover:${accountId}:${projectSlug}`,
+  });
+}
+
+/** Take everything you put in back from a raise that did not reach its target. */
+export async function refundFailedRaise(
+  accountId: string,
+  privateKey: string,
+  projectSlug: string
+): Promise<ContractCallResult<void>> {
+  if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
+  return nearContractService.callOn(accountId, privateKey, {
+    contractId: RAISE_CONTRACT_ID,
+    methodName: "refund",
+    args: { project_id: projectSlug },
+    gas: tgas(COLLECTIONS_GAS.CLAIM),
+    attachedDeposit: ONE_YOCTO,
+    dedupeKey: `refund:${accountId}:${projectSlug}`,
+  });
+}

@@ -117,9 +117,36 @@ impl ShedaContract {
         Ok(())
     }
 
+    /// Hand ownership to another account, normally the signing council (a
+    /// multisig that needs several members to approve each action).
+    ///
+    /// The admin role moves with it: the new owner becomes an admin and the
+    /// old owner stops being one, so after a handover to the council no
+    /// single key can resolve disputes, withdraw or appoint admins.
+    /// Owner only, with exactly 1 yoctoNEAR so it needs a full-access key.
+    #[payable]
+    pub fn set_owner(&mut self, new_owner: AccountId) {
+        require!(
+            env::attached_deposit() == NearToken::from_yoctonear(1),
+            "Requires an attached deposit of exactly 1 yoctoNEAR"
+        );
+        self.assert_owner();
+        require!(
+            new_owner != self.owner_id,
+            "That account is already the owner"
+        );
+        let previous = self.owner_id.clone();
+        self.admins.remove(&previous);
+        self.admins.insert(new_owner.clone());
+        self.owner_id = new_owner.clone();
+        log!("Ownership moved from {} to {}", previous, new_owner);
+    }
+
+    /// Owner only. An admin could otherwise appoint further admins, so one
+    /// stolen admin key could spread before anyone noticed.
     #[payable]
     pub fn add_admin(&mut self, new_admin_id: AccountId) {
-        self.assert_admin();
+        self.assert_owner();
         self.admins.insert(new_admin_id.clone());
         log!("Admin {} added", new_admin_id);
         emit_event(

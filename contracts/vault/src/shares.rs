@@ -83,6 +83,23 @@ impl Vault {
         self.mark_credited(to);
     }
 
+    /// Issue a flat's original shares to the investor who paid for them.
+    ///
+    /// Unlike a transfer, the new shares are not re-baselined: with
+    /// `share_cap` set, rent has been divided over these shares from the
+    /// start, so they bring with them everything they earned before the
+    /// investor claimed. Claiming late costs nothing, and claiming early
+    /// takes nothing from anyone else.
+    pub(crate) fn internal_issue(&mut self, to: &AccountId, amount: u128) {
+        require!(amount > 0, "Mint amount must be greater than zero");
+        self.settle(to);
+        let balance = self.balance_of_internal(to);
+        self.balances.insert(to, &(balance + amount));
+        self.total_supply += amount;
+        // `settle` left `credited` at the old balance's entitlement; leaving
+        // it there means the new shares' accrued rent shows as pending.
+    }
+
     pub(crate) fn internal_burn(&mut self, from: &AccountId, amount: u128) {
         require!(amount > 0, "Burn amount must be greater than zero");
         self.settle(from);
@@ -104,7 +121,15 @@ impl Vault {
         Self::assert_one_yocto();
         self.assert_governor();
         require!(!self.supply_frozen, "Share supply is frozen");
-        self.internal_mint(&to, amount.0);
+        if self.share_cap > 0 {
+            require!(
+                self.total_supply + amount.0 <= self.share_cap,
+                "That would issue more shares than the flat divides into"
+            );
+            self.internal_issue(&to, amount.0);
+        } else {
+            self.internal_mint(&to, amount.0);
+        }
     }
 
     /// Close the supply for good. There is deliberately no way back.

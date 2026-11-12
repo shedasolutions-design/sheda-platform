@@ -35,8 +35,8 @@ DEFAULT_RPC = (
     "https://rpc.testnet.fastnear.com",
     "https://near-testnet.drpc.org",
 )
-RAISE_CONTRACT = os.getenv("RAISE_CONTRACT_ID", "sheda-raise-v2.testnet")
-STAKE_REGISTRY = os.getenv("STAKE_REGISTRY_ID", "sheda-stake-v2.testnet")
+RAISE_CONTRACT = os.getenv("RAISE_CONTRACT_ID", "sheda-raise-v3.testnet")
+STAKE_REGISTRY = os.getenv("STAKE_REGISTRY_ID", "sheda-stake-v3.testnet")
 
 
 class RpcError(RuntimeError):

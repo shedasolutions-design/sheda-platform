@@ -233,6 +233,21 @@ export function useCollections() {
       [signed]
     ),
 
+    reclaimEscrow: useCallback(
+      (slug: string) => signed((id, key) => chain.reclaimEscrow(id, key, slug)),
+      [signed]
+    ),
+
+    claimCover: useCallback(
+      (slug: string) => signed((id, key) => chain.claimCover(id, key, slug)),
+      [signed]
+    ),
+
+    refundFailedRaise: useCallback(
+      (slug: string) => signed((id, key) => chain.refundFailedRaise(id, key, slug)),
+      [signed]
+    ),
+
     objectToRelease: useCallback(
       (slug: string, phaseIndex: number) =>
         signed((id, key) => chain.objectToRelease(id, key, slug, phaseIndex)),

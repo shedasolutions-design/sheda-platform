@@ -204,15 +204,23 @@ nothing should be: none of this has been audited.
 | Contract | Account | Code hash |
 | --- | --- | --- |
 | Marketplace | `market.shedauser.testnet` | see `contracts/market/README.md` |
-| Raise | `sheda-raise-v2.testnet` | `C7s5Q4VHVYFPW2KjoxesEWLEtj4D7tWC1yNM9R99acsH` |
-| Stake registry | `sheda-stake-v2.testnet` | `4Nk36ainzRDjHhXbPmYPsr1i74Eon73ttadtP5x4GjuH` |
-| Flat vaults | `sheda-pgt-t2`, `sheda-pgt-t3`, `sheda-lgf-f1`, `sheda-lgf-f2` (`.testnet`) | `Bs7Ew8r8K4aMTbdFJdnDjGGQzGMvEieeYy8W4XUkcpu5` |
+| Raise (testnet build) | `sheda-raise-v3.testnet` | `Cj1vm2XeK6dZVfmjYxoGwVprcrudnH47fFraGbhCaVW5` |
+| Stake registry | `sheda-stake-v3.testnet` | `4Nk36ainzRDjHhXbPmYPsr1i74Eon73ttadtP5x4GjuH` |
+| Flat vaults | `sheda-v3-pgt-t2`, `sheda-v3-pgt-t3`, `sheda-v3-lgf-f1`, `sheda-v3-lgf-f2` (`.testnet`) | `AzpUJujH5RS9X5qmhPBT3ES3KMgoLe2V3JVJ3K7zV3X2` |
+| Council (2-of-3 multisig; owner of raise and stake, treasury) | `sheda-council.testnet` | `HRP7Qf2HDaXTD8EWs7G8siNNGxWWBCe1JaDxcM2cJmQR` |
 
-v2 was deployed on 2026-11-12 from this source with
-[`docs/DEPLOY_COLLECTIONS.md`](../docs/DEPLOY_COLLECTIONS.md), built with the
-pinned Rust 1.86. Its raises pay in `usdc.fakes.testnet`, the test dollar new
-wallets receive. The older `sheda-raise-v1.testnet` (no vault flow) raised
-nothing and is no longer used.
+v3 was deployed on 2026-11-12 from this source with the pinned Rust 1.86. The
+raise is built with `--features testnet` (objection window of 3 minutes, not 7
+days) so the whole flow can be tested in one sitting; a mainnet build must not
+enable that feature. Every owner action (opening a raise, linking a vault,
+declaring a stall) goes through `sheda-council.testnet`, NEAR's standard
+multisig (core-contracts `multisig2`) with members `sheda-signer-a/b/c.testnet`
+and 2 confirmations required. Raises pay in `usdc.fakes.testnet`. A frozen
+phase stops the raise; every investor can then `reclaim` their share of the
+unpaid escrow and `opt_out` for their share of the builder's cover,
+independently. Vaults divide rent over every share of the flat (`share_cap`),
+so late claimers lose nothing and nobody can redeem a flat without holding all
+of it. v1 and v2 raised nothing real and are no longer used.
 
 The registry's controller is the raise contract. That is the whole of the
 authority to touch a builder's stake: a stalled project can slash the cover
@@ -272,7 +280,7 @@ The app calls exactly these, and nothing else.
 | `close_raise(project_id)` | no deposit; anyone once full or expired |
 | `set_unit_vault(project_id, unit_code, vault)` | owner, 1 yocto, once per flat |
 
-The live `sheda-raise-v2.testnet` has `shares_owed` and `set_unit_vault`,
+The live `sheda-raise-v3.testnet` has `shares_owed` and `set_unit_vault`,
 and each demo flat has its vault set, so the claim flow works end to end.
 
 Two things about that table are load bearing.

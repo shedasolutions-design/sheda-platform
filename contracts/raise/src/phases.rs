@@ -143,6 +143,13 @@ impl Raise {
         let index = phase as usize;
         let current = Self::phase_at(&project.phases, index);
 
+        // A stopped raise pays nothing more to the builder: what is left in
+        // escrow now belongs to the investors' reclaims, and paying a phase
+        // here would shrink the pot they are each owed a fixed share of.
+        require!(
+            project.status == RaiseStatus::Funded,
+            "This raise has stopped; nothing more is paid to the builder"
+        );
         require!(
             current.state == PhaseState::ObjectionWindow,
             "That phase is not waiting to be settled"
@@ -155,11 +162,20 @@ impl Raise {
         let objected_bps = project.objection_bps(current.objection_amount);
 
         if objected_bps >= OBJECTION_THRESHOLD_BPS {
+            // Holders refused this phase. Rather than leave its tranche and
+            // every later one stuck in escrow with no way out, the raise
+            // stops: each investor can now reclaim their share of what is
+            // left, plus their share of the builder's cover.
             project.phases[index].state = PhaseState::Held;
+            project.status = RaiseStatus::Stalled;
             self.save(&project_id, &project);
             env::log_str(&format!(
                 "phase_held {} phase {} with {} bps objecting",
                 project_id, phase, objected_bps
+            ));
+            env::log_str(&format!(
+                "raise_stalled {} with {} of {} released",
+                project_id, project.released, project.raised
             ));
             return None;
         }

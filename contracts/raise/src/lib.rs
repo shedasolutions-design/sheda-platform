@@ -52,7 +52,14 @@ mod tests;
 pub const BPS: u128 = 10_000;
 
 /// How long holders have to object once a phase has been attested.
+///
+/// Seven days on a normal (mainnet) build. A build with the `testnet`
+/// feature uses three minutes so the whole flow can be exercised in one
+/// sitting; that feature must never be enabled for mainnet.
+#[cfg(not(feature = "testnet"))]
 pub const OBJECTION_WINDOW_NS: u64 = 7 * 24 * 60 * 60 * 1_000_000_000;
+#[cfg(feature = "testnet")]
+pub const OBJECTION_WINDOW_NS: u64 = 3 * 60 * 1_000_000_000;
 
 /// Share of the raise that must object to hold a payment.
 pub const OBJECTION_THRESHOLD_BPS: u32 = 2_500;
@@ -76,6 +83,7 @@ enum StorageKey {
     Objected,
     OptedOut,
     Claimed,
+    CoverClaimed,
 }
 
 /// Where a raise is in its life.
@@ -93,16 +101,19 @@ pub enum RaiseStatus {
     Delivered,
     /// Closed without reaching the target. Investors pull their money back.
     Failed,
-    /// Declared stalled. Investors pull their share of the builder's cover.
+    /// Stopped: declared stalled by Sheda, or frozen because enough holders
+    /// objected to a phase. Each investor pulls back their share of the
+    /// escrow that was never paid out (`reclaim`) and their share of the
+    /// builder's cover for what was (`opt_out`), independently of anyone else.
     Stalled,
 }
 
 /// What a phase is waiting on.
 ///
 /// The order is the sequence, and `release_phase` is the only thing that
-/// advances past `ObjectionWindow`. There is no path from `Held` back to
-/// released without governance, because an objection that a builder could
-/// clear by waiting would be a formality.
+/// advances past `ObjectionWindow`. A phase that is `Held` is never paid:
+/// holding it stops the whole raise (`RaiseStatus::Stalled`), so the money
+/// still in escrow goes back to the investors rather than sitting forever.
 #[derive(
     BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq,
 )]
@@ -280,6 +291,10 @@ pub struct Raise {
     opted_out: LookupMap<String, bool>,
     /// "{project}|{unit}|{investor}" -> shares already minted.
     claimed: LookupMap<String, bool>,
+    /// "{project}|{investor}" -> has already taken their share of the
+    /// builder's cover. Kept apart from `opted_out` (escrow back) so taking
+    /// one never blocks or changes the other.
+    cover_claimed: LookupMap<String, bool>,
 }
 
 #[near]
@@ -297,7 +312,15 @@ impl Raise {
             objected: LookupMap::new(StorageKey::Objected),
             opted_out: LookupMap::new(StorageKey::OptedOut),
             claimed: LookupMap::new(StorageKey::Claimed),
+            cover_claimed: LookupMap::new(StorageKey::CoverClaimed),
         }
+    }
+
+    /// How long holders have to object to an attested phase, in
+    /// nanoseconds. Read by the app so it shows the real window: seven
+    /// days on mainnet, minutes on a testnet build.
+    pub fn objection_window_ns(&self) -> U64 {
+        U64(OBJECTION_WINDOW_NS)
     }
 
     // ---- creating a raise ---------------------------------------------
@@ -636,6 +659,22 @@ impl Raise {
 
     pub(crate) fn unmark_opted_out(&mut self, project_id: &str, who: &AccountId) {
         self.opted_out.remove(&Self::investor_key(project_id, who));
+    }
+
+    pub(crate) fn has_claimed_cover(&self, project_id: &str, who: &AccountId) -> bool {
+        self.cover_claimed
+            .get(&Self::investor_key(project_id, who))
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn mark_cover_claimed(&mut self, project_id: &str, who: &AccountId) {
+        self.cover_claimed
+            .insert(&Self::investor_key(project_id, who), &true);
+    }
+
+    pub(crate) fn unmark_cover_claimed(&mut self, project_id: &str, who: &AccountId) {
+        self.cover_claimed
+            .remove(&Self::investor_key(project_id, who));
     }
 
     pub(crate) fn has_claimed(&self, project_id: &str, unit: &str, who: &AccountId) -> bool {

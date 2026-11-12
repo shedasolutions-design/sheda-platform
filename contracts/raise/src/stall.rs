@@ -20,12 +20,13 @@
 //! public, the slash is recorded against the builder's profile permanently,
 //! and the escrow left over is still refundable on top.
 
-use crate::ext::{ext_registry, ext_self};
+use crate::ext::{ext_ft, ext_registry, ext_self};
 use crate::{
-    assert_one_yocto, Raise, RaiseExt, RaiseStatus, BPS, GAS_FOR_REGISTRY, GAS_FOR_RESOLVE,
+    assert_one_yocto, Raise, RaiseExt, RaiseStatus, BPS, GAS_FOR_FT_TRANSFER, GAS_FOR_REGISTRY,
+    GAS_FOR_RESOLVE, ONE_YOCTO,
 };
 use near_sdk::json_types::U128;
-use near_sdk::{env, near, require, Promise};
+use near_sdk::{env, near, require, Promise, PromiseError};
 
 #[near]
 impl Raise {
@@ -62,11 +63,114 @@ impl Raise {
         let Some(project) = self.projects_get(&project_id) else {
             return U128(0);
         };
-        if project.raised == 0 || self.has_opted_out(&project_id, &account_id) {
+        if project.raised == 0 || self.has_claimed_cover(&project_id, &account_id) {
             return U128(0);
         }
         let committed = self.committed_by(&project_id, &account_id);
         U128(committed * u128::from(project.guarantee_bps) / BPS)
+    }
+
+    /// What one investor gets back from the escrow of a stopped raise.
+    ///
+    /// Their share of what was never paid out to the builder:
+    /// `committed / raised` of `distributable - released`. Every figure in
+    /// that is fixed once the raise stops (no phase can be paid after), so
+    /// the amount does not depend on who claims first or how many others
+    /// have claimed. Zero once they have taken it, or on a raise that has
+    /// not stopped.
+    pub fn reclaim_value(&self, project_id: String, account_id: near_sdk::AccountId) -> U128 {
+        let Some(project) = self.projects_get(&project_id) else {
+            return U128(0);
+        };
+        if project.status != RaiseStatus::Stalled
+            || project.raised == 0
+            || self.has_opted_out(&project_id, &account_id)
+        {
+            return U128(0);
+        }
+        U128(Self::escrow_share(
+            &project,
+            self.committed_by(&project_id, &account_id),
+        ))
+    }
+
+    /// Take your share of the unpaid escrow out of a stopped raise.
+    ///
+    /// Open to every investor on a `Stalled` raise, whether it was declared
+    /// stalled by Sheda or frozen by holders objecting to a phase. Each
+    /// investor pulls their own amount; nothing anyone else does changes it.
+    /// Independent of `opt_out` (cover from the builder's stake): taking one
+    /// neither blocks nor reduces the other.
+    #[payable]
+    pub fn reclaim(&mut self, project_id: String) -> Promise {
+        assert_one_yocto();
+        let project = self.expect_project(&project_id);
+        require!(
+            project.status == RaiseStatus::Stalled,
+            "Money can only be reclaimed from a raise that has stopped"
+        );
+
+        let who = env::predecessor_account_id();
+        require!(
+            !self.has_opted_out(&project_id, &who),
+            "You have already reclaimed your share of the escrow"
+        );
+        let committed = self.committed_by(&project_id, &who);
+        require!(committed > 0, "You did not commit to this raise");
+
+        let amount = Self::escrow_share(&project, committed);
+        require!(amount > 0, "Your share of what is left rounds to nothing");
+
+        // Marked before the transfer, restored by the callback if it fails,
+        // so a second call cannot be made while the first is in flight.
+        self.mark_opted_out(&project_id, &who);
+
+        ext_ft::ext(project.stablecoin.clone())
+            .with_attached_deposit(ONE_YOCTO)
+            .with_static_gas(GAS_FOR_FT_TRANSFER)
+            .ft_transfer(
+                who.clone(),
+                U128(amount),
+                Some("reclaim from stopped raise".into()),
+            )
+            .then(
+                ext_self::ext(env::current_account_id())
+                    .with_static_gas(GAS_FOR_RESOLVE)
+                    .on_reclaimed(project_id, who, U128(amount)),
+            )
+    }
+
+    #[private]
+    pub fn on_reclaimed(
+        &mut self,
+        project_id: String,
+        who: near_sdk::AccountId,
+        amount: U128,
+        #[callback_result] result: Result<(), PromiseError>,
+    ) -> bool {
+        if result.is_ok() {
+            // The commitment is kept (not cleared): the investor may still
+            // be owed their share of the cover, which is computed from it.
+            let mut project = self.expect_project(&project_id);
+            project.refunded += amount.0;
+            self.save(&project_id, &project);
+            return true;
+        }
+        self.unmark_opted_out(&project_id, &who);
+        env::log_str(&format!(
+            "reclaim to {} on {} failed and was restored",
+            who, project_id
+        ));
+        false
+    }
+
+    /// `committed / raised` of the escrow never paid to the builder.
+    pub(crate) fn escrow_share(project: &crate::Project, committed: u128) -> u128 {
+        if project.raised == 0 {
+            return 0;
+        }
+        let left = project.distributable().saturating_sub(project.released);
+        committed * left / project.raised
     }
 
     /// Take your share of the builder's cover out of a stalled build.
@@ -90,7 +194,7 @@ impl Raise {
 
         let who = env::predecessor_account_id();
         require!(
-            !self.has_opted_out(&project_id, &who),
+            !self.has_claimed_cover(&project_id, &who),
             "You have already opted out of this raise"
         );
 
@@ -102,8 +206,9 @@ impl Raise {
 
         // Marked before the call, restored by the callback if the registry
         // refuses. The other order leaves a window in which a second call
-        // can be made while the first is still in flight.
-        self.mark_opted_out(&project_id, &who);
+        // can be made while the first is still in flight. Its own record,
+        // not `opted_out`, so the escrow reclaim stays open either way.
+        self.mark_cover_claimed(&project_id, &who);
 
         ext_registry::ext(self.stake_registry.clone())
             .with_static_gas(GAS_FOR_REGISTRY)
@@ -116,8 +221,29 @@ impl Raise {
             .then(
                 ext_self::ext(env::current_account_id())
                     .with_static_gas(GAS_FOR_RESOLVE)
-                    .on_refunded(project_id, who, U128(amount)),
+                    .on_cover_paid(project_id, who, U128(amount)),
             )
+    }
+
+    #[private]
+    pub fn on_cover_paid(
+        &mut self,
+        project_id: String,
+        who: near_sdk::AccountId,
+        amount: U128,
+        #[callback_result] result: Result<(), PromiseError>,
+    ) -> bool {
+        if result.is_ok() {
+            return true;
+        }
+        // The registry refused or the transfer failed, so nothing moved.
+        // Restore the claim so the investor can try again.
+        self.unmark_cover_claimed(&project_id, &who);
+        env::log_str(&format!(
+            "cover of {} to {} on {} failed and was restored",
+            amount.0, who, project_id
+        ));
+        false
     }
 
     /// Reserve the builder's cover against this raise.

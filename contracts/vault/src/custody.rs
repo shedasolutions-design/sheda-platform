@@ -73,10 +73,15 @@ impl Vault {
 
         let held = self.balance_of_internal(&who);
         require!(self.total_supply > 0, "No shares exist");
-        require!(
-            held == self.total_supply,
-            "Redeeming takes every share of this unit"
-        );
+        // Every share the flat divides into, not just those minted so far:
+        // otherwise the first investor to claim, while alone, could take the
+        // whole flat before anyone else had claimed theirs.
+        let whole = if self.share_cap > 0 {
+            self.share_cap
+        } else {
+            self.total_supply
+        };
+        require!(held == whole, "Redeeming takes every share of this unit");
 
         self.busy = true;
         ext_market::ext(self.marketplace.clone())
