@@ -42,10 +42,15 @@ export default function ImportWalletPage() {
   const fail = (title: string, message: string) =>
     setFeedback({ visible: true, type: "error", title, message, actionLabel: "OK", onAction: close });
 
+  // The wallet the account actually has on record. Guessing it from the
+  // email ("demo.ngozi" -> demongozi.shedauser.testnet) refused anyone whose
+  // wallet got a different name (taken name, numbered retry, or an address
+  // wallet from the funding fallback): they could never import their own.
+  const recordedAccountId = user?.near_account_id?.trim() || null;
   const expectedAccountId = useMemo(
-    () => (userEmail ? getPreviewAccountId(userEmail) : null),
+    () => recordedAccountId ?? (userEmail ? getPreviewAccountId(userEmail) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [userEmail, currentNetwork]
+    [recordedAccountId, userEmail, currentNetwork]
   );
   const examplePlaceholder = `yourusername${FUNDING_ACCOUNTS[currentNetwork].walletSuffix}`;
 
