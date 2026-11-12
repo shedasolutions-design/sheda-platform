@@ -1,5 +1,8 @@
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.property import Property
 
 from app.models.transaction import TransactionNotification
 from app.models.user import BaseUser
@@ -15,17 +18,17 @@ from app.services.push import send_push_notification
 async def create_transaction_notification(
     payload: TransactionNotificationRequest, db: AsyncSession
 ) -> TransactionNotification:
-    notification = TransactionNotification(
-        transaction_id=payload.transaction_id,
-        event=payload.event,
-        recipient_user_id=payload.recipient_user_id,
-        property_id=payload.property_id,
-        metadata_payload=payload.metadata,
-    )
-    db.add(notification)
-    await db.commit()
-    await db.refresh(notification)
+    # payload.property_id is the ON-CHAIN id: every caller sends the bid's
+    # property id from the contract, and the deal record stores it that way.
+    # The notification row points at the backend listing instead, so it is
+    # translated here. Storing the chain id directly broke the foreign key
+    # (no backend row with that id: every notification answered 500 and the
+    # table stayed empty), or, where the numbers overlap, would have linked
+    # the notification to somebody else's property.
+    chain_id = str(payload.property_id)
 
+    # The deal record first: it does not depend on the listing existing, and
+    # a missing listing must not stop the deal's state from advancing.
     await upsert_transaction_from_event(
         transaction_id=payload.transaction_id,
         event=payload.event,
@@ -33,6 +36,28 @@ async def create_transaction_notification(
         metadata=payload.metadata,
         db=db,
     )
+
+    listing_id = (
+        await db.execute(
+            select(Property.id).where(Property.blockchain_property_id == chain_id).limit(1)
+        )
+    ).scalar_one_or_none()
+    if listing_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No listing for on-chain property {chain_id}",
+        )
+
+    notification = TransactionNotification(
+        transaction_id=payload.transaction_id,
+        event=payload.event,
+        recipient_user_id=payload.recipient_user_id,
+        property_id=listing_id,
+        metadata_payload={**(payload.metadata or {}), "blockchain_property_id": chain_id},
+    )
+    db.add(notification)
+    await db.commit()
+    await db.refresh(notification)
 
     await send_push_notification(
         user_id=payload.recipient_user_id,
