@@ -15,6 +15,7 @@ import { useApi } from "@/contexts/ApiContext";
 import { useMode } from "@/contexts/ModeContext";
 import type { AgentFeed, ChatMessageSchema, PropertyShow } from "@/services/api";
 import { parseOfferMessage, parseOfferResponseMessage } from "@/types/offer";
+import { dealUpdateText, parseDealUpdate } from "@/components/chat/dealUpdate";
 import { buildSafeProfile, sanitizeAgentProfile } from "@/utilities/profileSanitizer";
 import { transactionsRouteFor } from "@/utilities/transactionsRoute";
 import getFullImageUrl from "@/utilities/imageUrl";
@@ -329,6 +330,20 @@ function Chat() {
             if (offer) return <OfferMessageCard key={i} offer={offer} isSeller={isSellerHere} historyHref={historyHref} />;
             const response = parseOfferResponseMessage(m.message);
             if (response) return <OfferResponseCard key={i} response={response} isSeller={isSellerHere} />;
+            const update = parseDealUpdate(m.message);
+            if (update)
+              return (
+                <div key={i} className="my-2 flex justify-center">
+                  <Link href={historyHref} className="rounded-full bg-gray-100 px-3 py-1 text-xs text-secondaryText hover:bg-gray-200">
+                    {dealUpdateText(update)}
+                    {m.timestamp && (
+                      <span className="ml-1 text-[10px] text-gray-400">
+                        · {new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    )}
+                  </Link>
+                </div>
+              );
             const mine = m.sender_id === user?.id;
             return (
               <div key={i} className={`mb-2 flex ${mine ? "justify-end" : "justify-start"}`}>
