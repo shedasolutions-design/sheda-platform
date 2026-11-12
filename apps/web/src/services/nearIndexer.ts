@@ -117,6 +117,7 @@ export const METHOD_LABELS: Record<string, string> = {
   nft_transfer: 'NFT Transfer',
   nft_mint: 'Mint NFT',
   storage_deposit: 'Storage Deposit',
+  mint: 'Test Tokens',
 };
 
 /** Display label for a contract method, or undefined if we don't know it. */
@@ -384,8 +385,14 @@ export class NearIndexerService {
       return { type: 'Other', amount: '0', currency: 'NEAR' };
     }
 
-    const firstAction = actions[0];
-    const actionType = firstAction.action || firstAction.action_kind;
+    // A transaction can bundle actions (creating a wallet is CREATE_ACCOUNT,
+    // TRANSFER, ADD_KEY). Describe it by the first one that moves value or
+    // calls a contract, so wallet creation reads as the NEAR it received.
+    const kindOf = (a: any) => a?.action || a?.action_kind;
+    const firstAction =
+      actions.find((a) => ['TRANSFER', 'Transfer', 'FUNCTION_CALL', 'FunctionCall', 'STAKE', 'Stake'].includes(kindOf(a))) ||
+      actions[0];
+    const actionType = kindOf(firstAction);
 
     switch (actionType) {
       case 'TRANSFER':
