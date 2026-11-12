@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.transaction import WalletMapping
 from app.models.user import BaseUser
+from app.utils.enums import AccountTypeEnum
 
 
 async def get_wallet_for_user(user_id: int, db: AsyncSession) -> WalletMapping | None:
@@ -44,6 +45,18 @@ async def get_user_by_wallet(wallet_id: str, db: AsyncSession) -> BaseUser | Non
         select(BaseUser)
         .join(WalletMapping, WalletMapping.user_id == BaseUser.id)
         .where(WalletMapping.wallet_id == wallet_id)
+    )
+    mapped = result.scalar_one_or_none()
+    if mapped is not None:
+        return mapped
+    # Not registered yet (the app used to register only from the History
+    # page). The wallet name saved at sign-up still identifies the person;
+    # prefer their buyer row, which is the row registration would have used.
+    result = await db.execute(
+        select(BaseUser)
+        .where(BaseUser.near_account_id == wallet_id)
+        .order_by((BaseUser.account_type == AccountTypeEnum.client).desc(), BaseUser.id)
+        .limit(1)
     )
     return result.scalar_one_or_none()
 

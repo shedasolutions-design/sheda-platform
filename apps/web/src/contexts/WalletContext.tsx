@@ -20,6 +20,7 @@ import nearWalletService, {
 import secureStorageService from "@/services/secureStorage";
 import PinPromptModal from "@/components/common/PinPromptModal";
 import { useApi } from "@/contexts/ApiContext";
+import apiService from "@/services/api";
 import { setExplorerNetwork } from "@/utilities/nearExplorer";
 import { clearCachedAssets } from "@/services/assetCache";
 import { FEATURE_CLOUD_BACKUP } from "@/config/featureFlags";
@@ -231,6 +232,22 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     isConnected: false,
     account: null,
   });
+  // The backend links a deal's counterparties to people through their wallet
+  // (wallet_mapping). Registration used to run only on the History page, so
+  // a buyer who never opened it could not be found: the seller's "bid
+  // accepted" message and notification had nobody to go to. Register as soon
+  // as a signed-in user has a connected wallet. Quiet: "already registered"
+  // is the normal answer after the first time.
+  const registeredWallet = useRef<string | null>(null);
+  useEffect(() => {
+    const walletId = walletState.account?.accountId;
+    if (!walletId || user?.id == null) return;
+    const key = `${user.id}:${walletId}`;
+    if (registeredWallet.current === key) return;
+    registeredWallet.current = key;
+    apiService.registerWallet(walletId).catch(() => {});
+  }, [walletState.account?.accountId, user?.id]);
+
   const [currentNetwork, setCurrentNetworkState] =
     useState<NetworkType>(ACTIVE_NETWORK);
   const [loading, setLoading] = useState(false);
