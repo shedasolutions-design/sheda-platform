@@ -16,6 +16,8 @@ from app.schemas.transaction_schema import (
     TransactionView,
 )
 from app.utils.enums import (
+    ListingTypeEnum,
+    PropertyStatEnum,
     TransactionActionEnum,
     TransactionEventEnum,
     TransactionStatusEnum,
@@ -334,7 +336,7 @@ async def _sync_property_owner_after_sale(
     Leases are excluded — the landlord remains the owner for the duration,
     matching the contract, which only reassigns ownership on a Purchase.
     """
-    if record.action != TransactionActionEnum.purchase:
+    if record.action == TransactionActionEnum.lease:
         return
     if record.status not in _SOLD_STATUSES:
         return
@@ -354,10 +356,22 @@ async def _sync_property_owner_after_sale(
     if not properties:
         return
 
+    # A record whose purchase event was lost has no action. The listing says
+    # what was on offer: only a sale moves ownership.
+    if record.action is None and not any(
+        p.listing_type == ListingTypeEnum.sale for p in properties
+    ):
+        return
+
     for property_obj in properties:
         if property_obj.blockchain_owner_id != record.buyer_wallet_id:
             property_obj.blockchain_owner_id = record.buyer_wallet_id
-            db.add(property_obj)
+        # Sold, and off the market: the listing used to stay "available" and
+        # active after the sale, offered to buyers whose bids the contract
+        # would refuse, and counted as the seller's vacant home.
+        property_obj.status = PropertyStatEnum.sold
+        property_obj.is_active = False
+        db.add(property_obj)
 
     await db.commit()
     logger.info(
