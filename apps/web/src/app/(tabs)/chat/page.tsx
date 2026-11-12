@@ -45,6 +45,11 @@ function Chat() {
     sendWsMessage,
     clearWsMessages,
     markMessagesAsRead,
+    onlineUserIds,
+    typingUntil,
+    wsConnections,
+    sendTyping,
+    requestPresence,
   } = useApi();
 
   const [propertyId, setPropertyId] = useState("");
@@ -65,6 +70,7 @@ function Chat() {
   const [feedback, setFeedback] = useState<Feedback>({ visible: false, type: "info", title: "" });
   const close = () => setFeedback((f) => ({ ...f, visible: false }));
   const bottom = useRef<HTMLDivElement>(null);
+  const lastTypingSent = useRef(0);
 
   // Seller here means "listed this property", not the mode the app is in.
   const isSellerHere = useMemo(
@@ -73,18 +79,46 @@ function Chat() {
   );
   const otherRole = isSellerHere ? "Buyer" : "Seller";
 
-  const profile = useMemo(
-    () =>
-      agent
-        ? sanitizeAgentProfile(agent, isSellerHere ? "buyer" : "agent")
-        : buildSafeProfile({
-            displayName: agentName || (isSellerHere ? "Buyer" : "Agent"),
-            isOnline: wsStatus === "connected",
-            lastSeenLabel: wsStatus === "connected" ? "Online" : wsStatus === "connecting" ? "Connecting..." : "Offline",
-            role: isSellerHere ? "buyer" : "agent",
-          }),
-    [agent, agentName, isSellerHere, wsStatus]
-  );
+  // The other person: who this thread is with.
+  const partnerId = Number(receiverId) || Number(property?.agent_id) || 0;
+  const partnerOnline = !!partnerId && onlineUserIds.includes(partnerId);
+
+  // "typing..." lasts until the time the server last told us, so re-render
+  // once a second while it is showing.
+  const [now, setNow] = useState(() => Date.now());
+  const partnerTyping = !!partnerId && (typingUntil[partnerId] ?? 0) > now;
+  useEffect(() => {
+    if (!partnerTyping) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [partnerTyping]);
+  useEffect(() => {
+    setNow(Date.now());
+  }, [typingUntil]);
+
+  // Ask whether they are online whenever the connection (re)opens.
+  useEffect(() => {
+    if (partnerId && wsStatus === "connected") requestPresence([partnerId]);
+  }, [partnerId, wsStatus, wsConnections, requestPresence]);
+
+  // Online and typing describe the other person (from the chat server), not
+  // whether our own connection is up, which is what this used to show.
+  const statusLabel = partnerTyping
+    ? "typing..."
+    : wsStatus !== "connected"
+      ? wsStatus === "connecting" ? "Connecting..." : "Reconnecting..."
+      : partnerOnline ? "Online" : "Offline";
+  const profile = useMemo(() => {
+    const base = agent
+      ? sanitizeAgentProfile(agent, isSellerHere ? "buyer" : "agent")
+      : buildSafeProfile({
+          displayName: agentName || (isSellerHere ? "Buyer" : "Agent"),
+          isOnline: partnerOnline,
+          lastSeenLabel: statusLabel,
+          role: isSellerHere ? "buyer" : "agent",
+        });
+    return { ...base, isOnline: partnerOnline, lastSeenLabel: statusLabel };
+  }, [agent, agentName, isSellerHere, partnerOnline, statusLabel]);
 
   const loadContext = useCallback(async () => {
     try {
@@ -120,6 +154,16 @@ function Chat() {
     return () => clearWsMessages();
   }, [receiverId, propertyId, loadContext, loadHistory, connectWebSocket, clearWsMessages]);
 
+  // After a reconnect, fetch the thread again: anything sent while the
+  // connection was down was never pushed to this tab.
+  const seenConnections = useRef(wsConnections);
+  useEffect(() => {
+    if (wsConnections > seenConnections.current) {
+      seenConnections.current = wsConnections;
+      loadHistory();
+    }
+  }, [wsConnections, loadHistory]);
+
   // Opening the thread, and anything new arriving in it, marks it read.
   useEffect(() => {
     const rId = Number(receiverId);
@@ -139,7 +183,20 @@ function Chat() {
       (m) => (m.sender_id === user?.id && m.receiver_id === rId) || (m.sender_id === rId && m.receiver_id === user?.id)
     );
     const unique = new Map<string, ChatMessageSchema>();
-    for (const m of [...history, ...live]) unique.set(`${m.sender_id}-${m.receiver_id}-${m.message}`, m);
+    // Key by id when the server gave one; otherwise by sender, text and the
+    // time to the nearest 10s. Keying on the text alone collapsed repeated
+    // messages ("ok", "ok") into one.
+    const keyOf = (m: ChatMessageSchema) =>
+      (m as any).id != null
+        ? `id:${(m as any).id}`
+        : `${m.sender_id}-${m.receiver_id}-${m.message}-${Math.round(new Date(m.timestamp || 0).getTime() / 10000)}`;
+    for (const m of [...history, ...live]) {
+      const k = keyOf(m);
+      // A live copy without an id duplicates a stored one with an id.
+      const twin = [...unique.entries()].find(([key, v]) => key.startsWith("id:") !== k.startsWith("id:") && v.sender_id === m.sender_id && v.message === m.message && Math.abs(new Date(v.timestamp || 0).getTime() - new Date(m.timestamp || 0).getTime()) < 15000);
+      if (twin) continue;
+      unique.set(k, m);
+    }
     return [...unique.values()].sort(
       (a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
     );
@@ -297,7 +354,15 @@ function Chat() {
         <input
           id="msg"
           value={message}
-          onChange={(e) => setMessage(e.target.value)}
+          onChange={(e) => {
+            setMessage(e.target.value);
+            // Let them know, at most every 2.5s.
+            const t = Date.now();
+            if (partnerId && e.target.value && t - lastTypingSent.current > 2500) {
+              lastTypingSent.current = t;
+              sendTyping(partnerId);
+            }
+          }}
           placeholder="Write a message..."
           autoComplete="off"
           className="h-11 flex-1 rounded-xl border border-borderColor px-3 focus:border-primary focus:outline-none"

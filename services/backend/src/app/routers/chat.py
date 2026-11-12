@@ -408,24 +408,21 @@ async def send_message(
         fullname=current_user.fullname,
     )
 
-    # Send via WebSocket if receiver is connected
-    payload = {
-        "id": new_message.id,
-        "sender_info": {
+    # Push it live. This must be the shared ws_manager: the old code built a
+    # new, empty WebSocketConnectionManager here, which knew no connections,
+    # so messages sent this way only appeared after the receiver reloaded.
+    from .websocket import ws_manager, message_payload
+
+    payload = message_payload(
+        new_message,
+        {
             "id": sender_id,
             "username": current_user.username,
             "avatar_url": current_user.avatar_url,
         },
-        "receiver_id": new_message.receiver_id,
-        "message": new_message.message,
-        "created_at": (
-            new_message.timestamp.isoformat() if new_message.timestamp else None
-        ),
-        "property_id": new_message.property_id,
-    }
-    from .websocket import WebSocketConnectionManager
-    manager = WebSocketConnectionManager()
-    await manager.send_personal_message(payload, receiver_id)
+    )
+    await ws_manager.send_personal_message(payload, receiver_id)
+    await ws_manager.send_personal_message(payload, sender_id)  # sender's other tabs
 
     return SendMessageResponse(
         id=new_message.id,

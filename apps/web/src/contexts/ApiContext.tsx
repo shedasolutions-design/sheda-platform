@@ -101,6 +101,12 @@ interface ApiState {
   // WebSocket
   wsMessages: ChatMessageSchema[];
   wsStatus: "connecting" | "connected" | "disconnected" | "error";
+  /** Users the chat server says are connected right now. */
+  onlineUserIds: number[];
+  /** user id -> time (ms) until which they count as typing. */
+  typingUntil: Record<number, number>;
+  /** Bumped on every successful (re)connect, so chat screens refetch what they missed. */
+  wsConnections: number;
 
   /**
    * Bumped whenever conversation read-state changes (currently by
@@ -135,6 +141,10 @@ type ApiAction =
   | { type: "ADD_WS_MESSAGE"; payload: ChatMessageSchema }
   | { type: "SET_WS_STATUS"; payload: "connecting" | "connected" | "disconnected" | "error" }
   | { type: "CLEAR_WS_MESSAGES" }
+  | { type: "SET_PRESENCE"; payload: { userId: number; online: boolean } }
+  | { type: "SET_PRESENCE_STATE"; payload: { asked: number[]; online: number[] } }
+  | { type: "SET_TYPING"; payload: { userId: number; until: number } }
+  | { type: "WS_CONNECTED" }
   | { type: "BUMP_CONVERSATIONS_VERSION" }
   | { type: "SET_PROPERTY_FEED"; payload: PropertyFeed }
   | { type: "SET_SELECTED_CATEGORY"; payload: string }
@@ -173,6 +183,9 @@ const initialState: ApiState = {
   chatHistory: [],
   wsMessages: [],
   wsStatus: "disconnected",
+  onlineUserIds: [],
+  typingUntil: {},
+  wsConnections: 0,
   conversationsVersion: 0,
   propertyFeed: null,
   selectedCategory: "All",
@@ -243,6 +256,18 @@ function apiReducer(state: ApiState, action: ApiAction): ApiState {
       return { ...state, wsStatus: action.payload };
     case "CLEAR_WS_MESSAGES":
       return { ...state, wsMessages: [] };
+    case "SET_PRESENCE": {
+      const others = state.onlineUserIds.filter((id) => id !== action.payload.userId);
+      return { ...state, onlineUserIds: action.payload.online ? [...others, action.payload.userId] : others };
+    }
+    case "SET_PRESENCE_STATE": {
+      const kept = state.onlineUserIds.filter((id) => !action.payload.asked.includes(id));
+      return { ...state, onlineUserIds: [...kept, ...action.payload.online] };
+    }
+    case "SET_TYPING":
+      return { ...state, typingUntil: { ...state.typingUntil, [action.payload.userId]: action.payload.until } };
+    case "WS_CONNECTED":
+      return { ...state, wsStatus: "connected", wsConnections: state.wsConnections + 1 };
     case "BUMP_CONVERSATIONS_VERSION":
       return { ...state, conversationsVersion: state.conversationsVersion + 1 };
     case "SET_PROPERTY_FEED":
@@ -418,6 +443,10 @@ interface ApiContextType extends ApiState {
   disconnectWebSocket: () => void;
   sendWsMessage: (messageData: ChatMessageSchema) => boolean;
   clearWsMessages: () => void;
+  /** Tell the other person you are typing (throttle on the caller side). */
+  sendTyping: (receiverId: number) => void;
+  /** Ask which of these users are online; answers land in onlineUserIds. */
+  requestPresence: (userIds: number[]) => void;
 
   // Media methods
   uploadFile: (type: "profile" | "property", file: any) => Promise<FileShow>;
@@ -498,6 +527,17 @@ export function ApiProvider({ children }: ApiProviderProps) {
   const manualDisconnectRef = useRef(false);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
+  // Heartbeat: a ping every 25s; no pong within 10s means the connection is
+  // dead even though the browser still calls it OPEN (sleeping laptop, lost
+  // Wi-Fi, a proxy that dropped it), so close it and let onclose reconnect.
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pongTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    if (pongTimerRef.current) clearTimeout(pongTimerRef.current);
+    heartbeatRef.current = null;
+    pongTimerRef.current = null;
+  }, []);
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -540,7 +580,6 @@ export function ApiProvider({ children }: ApiProviderProps) {
       dispatch({ type: "SET_WS_STATUS", payload: "error" });
       return;
     }
-    console.log("🔑 WebSocket: Attempting connection with token:", state.token.substring(0, 10) + "...")
 
     const wsUrl = `${API_BASE_URL.replace(/^http/, "ws")}/api/v1/chat/${state.user.id}?token=${encodeURIComponent(state.token)}`;
     console.log(`🔌 WebSocket: Attempting connection to: ${wsUrl.split('token=')[0]}token=***`);
@@ -551,27 +590,57 @@ export function ApiProvider({ children }: ApiProviderProps) {
     socket.onopen = () => {
       console.log("✅ WebSocket: Connected");
       reconnectAttemptsRef.current = 0;
-      dispatch({ type: "SET_WS_STATUS", payload: "connected" });
+      dispatch({ type: "WS_CONNECTED" });
+      stopHeartbeat();
+      heartbeatRef.current = setInterval(() => {
+        if (socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify({ type: "ping" }));
+        if (pongTimerRef.current) clearTimeout(pongTimerRef.current);
+        pongTimerRef.current = setTimeout(() => {
+          console.warn("WebSocket: no pong in 10s, reconnecting");
+          socket.close();
+        }, 10_000);
+      }, 25_000);
     };
 
     socket.onmessage = (event) => {
+      let data: any;
       try {
-        const data = JSON.parse(event.data);
-        console.log("📥 WebSocket: Message received:", data);
-
-        if (data.message) {
-          // Wrap in ChatMessageSchema format if needed
-          const formattedMsg: ChatMessageSchema = {
-            sender_id: data.sender_info?.id || data.sender_id,
-            receiver_id: data.receiver_id,
-            message: data.message,
-            timestamp: data.created_at || data.timestamp || new Date().toISOString(),
-            property_id: data.property_id
-          };
-          dispatch({ type: "ADD_WS_MESSAGE", payload: formattedMsg });
-        }
+        data = JSON.parse(event.data);
       } catch (err) {
         console.error("❌ WebSocket: Failed to parse message:", err);
+        return;
+      }
+      switch (data?.type) {
+        case "pong":
+          if (pongTimerRef.current) clearTimeout(pongTimerRef.current);
+          pongTimerRef.current = null;
+          return;
+        case "typing":
+          if (data.user_id) dispatch({ type: "SET_TYPING", payload: { userId: Number(data.user_id), until: Date.now() + 4000 } });
+          return;
+        case "presence":
+          if (data.user_id) dispatch({ type: "SET_PRESENCE", payload: { userId: Number(data.user_id), online: !!data.online } });
+          return;
+        case "presence_state":
+          dispatch({ type: "SET_PRESENCE_STATE", payload: { asked: (data.asked ?? []).map(Number), online: (data.online ?? []).map(Number) } });
+          return;
+        case "ack":
+        case "error":
+          if (data.type === "error") console.warn("WebSocket: server error:", data.error);
+          return;
+      }
+      if (data?.message) {
+        const formattedMsg: ChatMessageSchema = {
+          sender_id: data.sender_info?.id || data.sender_id,
+          receiver_id: data.receiver_id,
+          message: data.message,
+          timestamp: data.created_at || data.timestamp || new Date().toISOString(),
+          property_id: data.property_id,
+        };
+        dispatch({ type: "ADD_WS_MESSAGE", payload: formattedMsg });
+        // The sender stopped typing: they just sent.
+        if (formattedMsg.sender_id) dispatch({ type: "SET_TYPING", payload: { userId: Number(formattedMsg.sender_id), until: 0 } });
       }
     };
 
@@ -581,17 +650,24 @@ export function ApiProvider({ children }: ApiProviderProps) {
     };
 
     socket.onclose = (event) => {
-      console.log("🔌 WebSocket: Disconnected", event.reason);
+      console.log("🔌 WebSocket: Disconnected", event.code, event.reason);
+      stopHeartbeat();
       dispatch({ type: "SET_WS_STATUS", payload: "disconnected" });
-      wsRef.current = null;
+      if (wsRef.current === socket) wsRef.current = null;
 
       if (manualDisconnectRef.current) {
         return;
       }
 
-      // Exponential backoff with jitter, capped at 30s — same shape as
-      // config/walletConfig.ts's getRetryDelay, tuned for a connection retry
-      // instead of a single RPC call (starts faster, same cap).
+      // 1008: the server refused this login (expired, revoked, wrong user).
+      // Retrying the same token cannot work; the effect below reconnects as
+      // soon as the token changes (a fresh sign-in or refresh).
+      if (event.code === 1008) {
+        dispatch({ type: "SET_WS_STATUS", payload: "error" });
+        return;
+      }
+
+      // Exponential backoff with jitter, capped at 30s.
       const attempt = reconnectAttemptsRef.current;
       reconnectAttemptsRef.current = attempt + 1;
       const baseDelay = Math.min(1000 * Math.pow(2, attempt), 30000);
@@ -605,18 +681,19 @@ export function ApiProvider({ children }: ApiProviderProps) {
     };
 
     wsRef.current = socket;
-  }, [state.user?.id, state.token, clearReconnectTimer]);
+  }, [state.user?.id, state.token, clearReconnectTimer, stopHeartbeat]);
 
   const disconnectWebSocket = useCallback(() => {
     manualDisconnectRef.current = true;
     clearReconnectTimer();
+    stopHeartbeat();
     reconnectAttemptsRef.current = 0;
     if (wsRef.current) {
       console.log("🔌 WebSocket: Manually disconnecting");
       wsRef.current.close();
       wsRef.current = null;
     }
-  }, [clearReconnectTimer]);
+  }, [clearReconnectTimer, stopHeartbeat]);
 
   const sendWsMessage = useCallback((messageData: ChatMessageSchema) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -632,6 +709,19 @@ export function ApiProvider({ children }: ApiProviderProps) {
     } else {
       console.warn("⚠️ WebSocket: Cannot send message, not connected");
       return false;
+    }
+  }, []);
+
+  const sendTyping = useCallback((receiverId: number) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN && receiverId) {
+      wsRef.current.send(JSON.stringify({ type: "typing", receiver_id: receiverId }));
+    }
+  }, []);
+
+  const requestPresence = useCallback((userIds: number[]) => {
+    const ids = userIds.filter(Boolean);
+    if (wsRef.current?.readyState === WebSocket.OPEN && ids.length) {
+      wsRef.current.send(JSON.stringify({ type: "presence", user_ids: ids }));
     }
   }, []);
 
@@ -1881,6 +1971,8 @@ export function ApiProvider({ children }: ApiProviderProps) {
     disconnectWebSocket,
     sendWsMessage,
     clearWsMessages,
+    sendTyping,
+    requestPresence,
     uploadFile,
     getFiles,
     getTransactions,
@@ -1957,6 +2049,8 @@ export function ApiProvider({ children }: ApiProviderProps) {
     disconnectWebSocket,
     sendWsMessage,
     clearWsMessages,
+    sendTyping,
+    requestPresence,
     uploadFile,
     getFiles,
     getTransactions,

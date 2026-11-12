@@ -59,13 +59,32 @@ class TestWebSocketConnectionManager:
 
         assert result is True
         assert user_id in self.manager.active_connections
-        assert self.manager.active_connections[user_id] == mock_websocket
+        assert mock_websocket in self.manager.active_connections[user_id]
+
+    def test_one_user_can_hold_several_connections(self):
+        """Two tabs (or chat + notifications) must not replace each other."""
+        a, b = AsyncMock(spec=WebSocket), AsyncMock(spec=WebSocket)
+        self.manager.connect(a, 1)
+        self.manager.connect(b, 1)
+        assert self.manager.active_connections[1] == {a, b}
+        self.manager.disconnect(1, a)
+        assert self.manager.active_connections[1] == {b}
+        assert self.manager.is_connected(1) is True
+
+    @pytest.mark.asyncio
+    async def test_send_reaches_every_connection_except_excluded(self):
+        a, b = AsyncMock(spec=WebSocket), AsyncMock(spec=WebSocket)
+        self.manager.connect(a, 1)
+        self.manager.connect(b, 1)
+        assert await self.manager.send_personal_message({"m": 1}, 1, exclude=a) is True
+        a.send_json.assert_not_called()
+        b.send_json.assert_called_once_with({"m": 1})
 
     def test_disconnect_removes_connection(self):
         """Test that disconnect removes the user's connection."""
         mock_websocket = AsyncMock(spec=WebSocket)
         user_id = 1
-        self.manager.active_connections[user_id] = mock_websocket
+        self.manager.connect(mock_websocket, user_id)
 
         self.manager.disconnect(user_id)
 
@@ -80,7 +99,7 @@ class TestWebSocketConnectionManager:
         """Test is_connected returns True for connected users."""
         mock_websocket = AsyncMock(spec=WebSocket)
         user_id = 1
-        self.manager.active_connections[user_id] = mock_websocket
+        self.manager.connect(mock_websocket, user_id)
 
         assert self.manager.is_connected(user_id) is True
 
@@ -93,7 +112,7 @@ class TestWebSocketConnectionManager:
         """Test sending a message to a connected user."""
         mock_websocket = AsyncMock(spec=WebSocket)
         user_id = 1
-        self.manager.active_connections[user_id] = mock_websocket
+        self.manager.connect(mock_websocket, user_id)
         message = {"type": "test", "content": "Hello"}
 
         result = await self.manager.send_personal_message(message, user_id)
@@ -116,7 +135,7 @@ class TestWebSocketConnectionManager:
         mock_websocket = AsyncMock(spec=WebSocket)
         mock_websocket.send_json.side_effect = Exception("Connection broken")
         user_id = 1
-        self.manager.active_connections[user_id] = mock_websocket
+        self.manager.connect(mock_websocket, user_id)
 
         result = await self.manager.send_personal_message({"test": "data"}, user_id)
 
@@ -125,9 +144,8 @@ class TestWebSocketConnectionManager:
 
     def test_get_connected_users(self):
         """Test getting list of connected user IDs."""
-        self.manager.active_connections[1] = AsyncMock()
-        self.manager.active_connections[2] = AsyncMock()
-        self.manager.active_connections[3] = AsyncMock()
+        for uid in (1, 2, 3):
+            self.manager.connect(AsyncMock(), uid)
 
         connected_users = self.manager.get_connected_users()
 
@@ -250,12 +268,15 @@ class TestGetWebSocketUser:
                 )
 
     @pytest.mark.asyncio
-    async def test_auth_fails_for_unverified_user(self):
-        """Test that authentication fails and connection is closed for unverified users."""
+    async def test_auth_allows_unverified_user(self):
+        """Same rule as the HTTP chat routes: an active account is enough.
+        Refusing unverified users here meant they could send over HTTP but
+        never received anything live."""
         from app.services.user_service import get_websocket_user
 
         mock_websocket = MagicMock(spec=WebSocket)
         mock_websocket.headers = {}
+        mock_websocket.accept = AsyncMock()
         mock_websocket.close = AsyncMock()
         mock_db = AsyncMock()
 
@@ -266,19 +287,35 @@ class TestGetWebSocketUser:
                 mock_user = MagicMock()
                 mock_user.id = 1
                 mock_user.is_active = True
-                mock_user.verified = False  # Unverified user
+                mock_user.verified = False
                 mock_get_user.return_value = mock_user
 
                 result = await get_websocket_user(
                     websocket=mock_websocket, db=mock_db, token="valid_token"
                 )
 
-                assert result is None
-                mock_websocket.close.assert_called_once()
-                assert (
-                    mock_websocket.close.call_args.kwargs.get("code")
-                    == status.WS_1008_POLICY_VIOLATION
-                )
+                assert result is mock_user
+                mock_websocket.close.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_auth_refuses_revoked_token(self):
+        """A signed-out (revoked) token must not keep chat open."""
+        from app.services.user_service import get_websocket_user
+
+        mock_websocket = MagicMock(spec=WebSocket)
+        mock_websocket.headers = {}
+        mock_websocket.accept = AsyncMock()
+        mock_websocket.close = AsyncMock()
+
+        with patch("app.services.user_service.redis") as mock_redis:
+            mock_redis.get = AsyncMock(return_value="1")
+            result = await get_websocket_user(
+                websocket=mock_websocket, db=AsyncMock(), token="revoked_token"
+            )
+
+        assert result is None
+        assert mock_websocket.close.call_args.kwargs.get("code") == status.WS_1008_POLICY_VIOLATION
+        assert "revoked" in mock_websocket.close.call_args.kwargs.get("reason", "").lower()
 
     @pytest.mark.asyncio
     async def test_auth_with_access_token_subprotocol_format(self):
