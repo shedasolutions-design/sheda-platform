@@ -381,6 +381,41 @@ class CollectionDocument(Base):
     )
 
 
+class CollectionProfileDocument(Base):
+    """A builder's or manager's own papers: company registration (CAC),
+    professional licence, permit to operate, insurance.
+
+    Lands as `uploaded`; only Sheda marks one `verified`, and who did it
+    is recorded, exactly as for raise documents.
+    """
+
+    __tablename__ = "collection_profile_document"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("collection_profile.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    label: Mapped[str] = mapped_column(String(120), nullable=False)
+    status: Mapped[DocumentStatusEnum] = mapped_column(
+        SAEnum(DocumentStatusEnum, name="collection_document_status"),
+        nullable=False,
+        default=DocumentStatusEnum.uploaded,
+    )
+    file_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    verified_by_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+    )
+    verified_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+
 class CollectionPhase(Base):
     """A step in the build, and the slice of the raise it releases.
 

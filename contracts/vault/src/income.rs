@@ -111,6 +111,15 @@ impl Vault {
         if amount == 0 {
             return;
         }
+        if self.share_cap > 0 {
+            // Divided over every share the flat will ever have, minted or
+            // not, so each investor's portion waits for them however late
+            // they claim, and nobody collects anyone else's rent.
+            let scaled = amount * PRECISION + self.dust;
+            self.acc_per_share += scaled / self.share_cap;
+            self.dust = scaled % self.share_cap;
+            return;
+        }
         if self.total_supply == 0 {
             // No shares yet. Hold it rather than divide by zero; it joins the
             // first credit after the raise closes.

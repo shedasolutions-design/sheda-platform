@@ -23,6 +23,13 @@ on:
           state and every method panics.
         type: boolean
         default: false
+      transfer_owner_to:
+        description: >-
+          Optional. After deploying, hand ownership of the contract to this
+          account (the signing council, a multisig) by calling set_owner.
+          Leave empty to keep the current owner.
+        type: string
+        default: ""
       initialize:
         description: >-
           Run new() as an init call. This is the FIRST deploy to a fresh
@@ -64,7 +71,8 @@ jobs:
         id: preflight
         run: |
           set -euo pipefail
-          RPC="https://rpc.${{ vars.NEAR_CONTRACT_PRODUCTION_NETWORK }}.near.org"
+          # rpc.<network>.near.org is retired (every request now answers 429).
+          if [ "${{ vars.NEAR_CONTRACT_PRODUCTION_NETWORK }}" = "mainnet" ]; then RPC="https://free.rpc.fastnear.com"; else RPC="https://test.rpc.fastnear.com"; fi
           ACCOUNT="${{ vars.NEAR_CONTRACT_PRODUCTION_ACCOUNT_ID }}"
 
           # Both `version:` literals (new() and migrate()) must agree, or it is
@@ -210,7 +218,8 @@ jobs:
       # only answers if deserialization works end to end.
       - name: Verify contract state is readable
         run: |
-          RESPONSE=$(curl -sS -X POST "https://rpc.${{ vars.NEAR_CONTRACT_PRODUCTION_NETWORK }}.near.org" \
+          if [ "${{ vars.NEAR_CONTRACT_PRODUCTION_NETWORK }}" = "mainnet" ]; then RPC="https://free.rpc.fastnear.com"; else RPC="https://test.rpc.fastnear.com"; fi
+          RESPONSE=$(curl -sS -X POST "$RPC" \
             -H 'Content-Type: application/json' \
             -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{
                   \"request_type\":\"call_function\",\"finality\":\"final\",
@@ -221,3 +230,35 @@ jobs:
             echo "::error::Contract state is not readable after deploy. If this account has never been initialized, re-run with initialize=true; if this commit changed the ShedaContract struct, re-run with run_migration=true."
             exit 1
           fi
+
+      # Ownership moves only on a manual run that names the new owner, and
+      # only after the deploy above has been verified, because set_owner has
+      # to exist in the deployed code before it can be called.
+      - name: Install near CLI
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.transfer_owner_to != '' }}
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/near-cli-rs/releases/download/v0.20.0/near-cli-rs-installer.sh | sh
+
+      - name: Hand ownership to the council
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.transfer_owner_to != '' }}
+        env:
+          NEW_OWNER: ${{ inputs.transfer_owner_to }}
+          ACCOUNT: ${{ vars.NEAR_CONTRACT_PRODUCTION_ACCOUNT_ID }}
+          NETWORK: ${{ vars.NEAR_CONTRACT_PRODUCTION_NETWORK }}
+          OWNER_KEY: ${{ secrets.NEAR_CONTRACT_PRODUCTION_ACCOUNT_PRIVATE_KEY }}
+        run: |
+          # The input reaches the shell only through an env var, and only if it
+          # looks like a NEAR account id.
+          if ! echo "$NEW_OWNER" | grep -Eq '^[a-z0-9._-]{2,64}$'; then
+            echo "::error::'$NEW_OWNER' is not a valid NEAR account id"; exit 1
+          fi
+          near contract call-function as-transaction "$ACCOUNT" set_owner \
+            json-args "{\"new_owner\":\"$NEW_OWNER\"}" \
+            prepaid-gas '30.0 Tgas' attached-deposit '1 yoctoNEAR' \
+            sign-as "$ACCOUNT" network-config "$NETWORK" \
+            sign-with-plaintext-private-key "$OWNER_KEY" send
+          if [ "$NETWORK" = "mainnet" ]; then RPC="https://free.rpc.fastnear.com"; else RPC="https://test.rpc.fastnear.com"; fi
+          OWNER=$(curl -sS -X POST "$RPC" -H 'Content-Type: application/json' \
+            -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{\"request_type\":\"call_function\",\"finality\":\"final\",\"account_id\":\"$ACCOUNT\",\"method_name\":\"get_owner_id\",\"args_base64\":\"e30=\"}}" \
+            | jq -r '.result.result | implode' | tr -d '"')
+          echo "Owner is now: $OWNER"
+          [ "$OWNER" = "$NEW_OWNER" ] || { echo "::error::owner did not change"; exit 1; }

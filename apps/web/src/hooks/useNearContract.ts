@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import nearContractService, { NetworkType } from "../services/nearContract";
 import { useWallet } from "../contexts/WalletContext";
+import { ACTIVE_NETWORK } from "../config/near";
 import {
   PropertyView,
   BidView,
@@ -39,6 +40,8 @@ export interface UseNearContractReturn {
   transferProperty: (
     params: TransferPropertyParams
   ) => Promise<ContractCallResult<void>>;
+  /** Testnet only: mint more free test USDC and USDT to this wallet. */
+  getTestTokens: () => Promise<ContractCallResult<void>>;
 
   // Bidding
   acceptBid: (params: AcceptBidParams) => Promise<ContractCallResult<void>>;
@@ -258,6 +261,23 @@ export function useNearContract(): UseNearContractReturn {
     [callMutating]
   );
 
+  /**
+   * Testnet only: mint more of the free test dollars (USDC and USDT) to this
+   * wallet, the same handout a new wallet gets, so testers can bid and invest.
+   */
+  const getTestTokens = useCallback(
+    () =>
+      callMutating<void>(async (accountId, privateKey) => {
+        if (ACTIVE_NETWORK === "mainnet") {
+          return { success: false, error: "Test dollars exist only on testnet." };
+        }
+        const { default: nearWalletService } = await import("../services/nearWallet");
+        await nearWalletService.airdropTestTokens(accountId, privateKey);
+        return { success: true };
+      }),
+    [callMutating]
+  );
+
   // ============================================================================
   // Bidding Methods
   // ============================================================================
@@ -464,6 +484,7 @@ export function useNearContract(): UseNearContractReturn {
     delistProperty,
     updateListing,
     transferProperty,
+    getTestTokens,
 
     // Bidding
     acceptBid,

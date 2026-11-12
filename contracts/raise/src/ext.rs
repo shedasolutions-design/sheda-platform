@@ -35,6 +35,22 @@ pub trait Vault {
 
 #[ext_contract(ext_self)]
 pub trait RaiseCallbacks {
+    fn on_reclaimed(
+        &mut self,
+        project_id: String,
+        who: AccountId,
+        amount: U128,
+        #[callback_result] result: Result<(), PromiseError>,
+    ) -> bool;
+
+    fn on_cover_paid(
+        &mut self,
+        project_id: String,
+        who: AccountId,
+        amount: U128,
+        #[callback_result] result: Result<(), PromiseError>,
+    ) -> bool;
+
     fn on_tranche_paid(
         &mut self,
         project_id: String,

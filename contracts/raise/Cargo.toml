@@ -13,3 +13,10 @@ near-sdk.workspace = true
 
 [dev-dependencies]
 near-sdk = { workspace = true, features = ["unit-testing"] }
+
+[features]
+# Testnet timings. Shortens the holders' objection window so the whole flow
+# (commit, close, inspect, attest, release or freeze, reclaim) can be tested
+# in one sitting. Never enable for a mainnet build: the seven-day window is
+# what gives holders a real chance to object.
+testnet = []

@@ -35,7 +35,80 @@ import {
 } from "@/services/collections/ranking";
 import { formatWithSymbol } from "@/services/collections/money";
 import { DEFAULT_TOKEN } from "@/config/tokens";
-import type { CollectionProfile } from "@/services/api";
+import apiService, { type CollectionDocument, type CollectionProfile } from "@/services/api";
+import { useApi } from "@/contexts/ApiContext";
+import { DocumentList, DocumentUploader } from "@/components/collections/Attachments";
+
+/** What a builder or manager is asked to show about themselves. */
+const PROFILE_DOCUMENT_KINDS: Record<string, string[]> = {
+  builder: [
+    "CAC certificate of incorporation",
+    "Professional licence (COREN / ARCON)",
+    "Tax clearance certificate",
+    "Permit to operate",
+    "Insurance certificate",
+    "Company profile",
+    "Other",
+  ],
+  manager: [
+    "CAC certificate of incorporation",
+    "Estate surveyor licence (ESVARBON)",
+    "Tax clearance certificate",
+    "Insurance certificate",
+    "Company profile",
+    "Other",
+  ],
+};
+
+/**
+ * Licences and registration, read by anyone; the owner adds to them here.
+ * Each shows whether Sheda has checked it, never just that it exists.
+ */
+function ProfileDocuments({ profile }: { profile: CollectionProfile }) {
+  const { user } = useApi();
+  const isOwner = !!user?.id && profile.user_id === Number(user.id);
+  const [docs, setDocs] = useState<CollectionDocument[] | null>(null);
+
+  const load = useCallback(async () => {
+    const r = await apiService.getProfileDocuments(profile.id);
+    setDocs(r.ok ? r.data : []);
+  }, [profile.id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (docs === null) return null;
+  if (!docs.length && !isOwner) {
+    return (
+      <Section title="Licences and registration">
+        <Note>
+          No licences or registration papers yet. Ask for them before you invest with this{" "}
+          {profile.role === "builder" ? "builder" : "manager"}.
+        </Note>
+      </Section>
+    );
+  }
+  return (
+    <Section title="Licences and registration">
+      <DocumentList
+        documents={docs}
+        empty="Add your company registration and licences so investors can check who you are."
+      />
+      {isOwner ? (
+        <DocumentUploader
+          kinds={PROFILE_DOCUMENT_KINDS[profile.role] ?? PROFILE_DOCUMENT_KINDS.builder}
+          onAttach={async (label, fileUrl) => {
+            const r = await apiService.addProfileDocument(profile.id, { label, file_url: fileUrl });
+            if (!r.ok) return String((r as any).error?.detail ?? "That did not save. Please try again.");
+            await load();
+            return null;
+          }}
+        />
+      ) : null}
+    </Section>
+  );
+}
 
 /**
  * A builder or a manager, in full.
@@ -115,6 +188,8 @@ export default function Profile() {
         {profile.about ? (
           <InterRegular style={{ ...TYPE.body, color: C.text }}>{profile.about}</InterRegular>
         ) : null}
+
+        <ProfileDocuments profile={profile} />
 
         {profile.part_of_group ? (
           <Note>

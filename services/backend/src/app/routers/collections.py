@@ -27,6 +27,7 @@ from app.models.collection import (
     CollectionPhase,
     CollectionPhaseUpdate,
     CollectionProfile,
+    CollectionProfileDocument,
     CollectionProject,
     CollectionProjectImage,
     CollectionRoleEnum,
@@ -279,6 +280,104 @@ async def get_profile(profile_id: int, db: AsyncSession = Depends(get_db)):
     if profile is None:
         raise HTTPException(status_code=404, detail="Profile not found")
     return _profile_out(profile)
+
+
+# ---- a profile's own papers ------------------------------------------------
+
+
+@router.get("/profiles/{profile_id}/documents", response_model=List[DocumentOut])
+async def list_profile_documents(profile_id: int, db: AsyncSession = Depends(get_db)):
+    """Open to anyone: the licences and registration behind a builder or
+    manager are exactly what an investor needs to read before trusting them."""
+    if await db.get(CollectionProfile, profile_id) is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    result = await db.execute(
+        select(CollectionProfileDocument)
+        .where(CollectionProfileDocument.profile_id == profile_id)
+        .order_by(CollectionProfileDocument.created_at)
+    )
+    return [DocumentOut.model_validate(d) for d in result.scalars().all()]
+
+
+@router.post(
+    "/profiles/{profile_id}/documents",
+    response_model=DocumentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_profile_document(
+    profile_id: int,
+    payload: DocumentCreate,
+    current_user: ActiveUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """The profile's owner attaches a paper. It lands as `uploaded`, never
+    `verified`: only Sheda can say it checked something."""
+    profile = await db.get(CollectionProfile, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if profile.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="That profile is not yours.")
+    if not payload.file_url:
+        raise HTTPException(status_code=422, detail="Attach the file itself.")
+    document = CollectionProfileDocument(
+        profile_id=profile.id,
+        label=payload.label,
+        file_url=payload.file_url,
+        status=DocumentStatusEnum.uploaded,
+    )
+    db.add(document)
+    await db.commit()
+    await db.refresh(document)
+    return DocumentOut.model_validate(document)
+
+
+@router.delete(
+    "/profile-documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def remove_profile_document(
+    document_id: int,
+    current_user: ActiveUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """The owner can take back a paper that has not been verified. A verified
+    one stays: it is part of the record investors relied on."""
+    document = await db.get(CollectionProfileDocument, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    profile = await db.get(CollectionProfile, document.profile_id)
+    if profile is None or profile.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="That document is not yours.")
+    if document.status == DocumentStatusEnum.verified:
+        raise HTTPException(
+            status_code=409, detail="A verified document cannot be removed."
+        )
+    await db.delete(document)
+    await db.commit()
+
+
+@router.patch(
+    "/profile-documents/{document_id}/verify", response_model=DocumentOut
+)
+async def verify_profile_document(
+    document_id: int,
+    payload: DocumentVerify,
+    current_user: AdminUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Sheda's own check. Admin only, and the admin is recorded."""
+    document = await db.get(CollectionProfileDocument, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    document.status = payload.status
+    if payload.status == DocumentStatusEnum.verified:
+        document.verified_by_id = current_user.id
+        document.verified_at = _utc_now()
+    else:
+        document.verified_by_id = None
+        document.verified_at = None
+    await db.commit()
+    await db.refresh(document)
+    return DocumentOut.model_validate(document)
 
 
 @router.get("/directory", response_model=List[DirectoryEntryOut])

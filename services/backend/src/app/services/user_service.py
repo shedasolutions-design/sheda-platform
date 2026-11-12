@@ -334,66 +334,53 @@ async def get_websocket_user(
                         subprotocol = protocol
                         break
 
-    if not token:
-        logger.warning("WebSocket auth failed: No token provided")
-        await websocket.close(
-            code=status.WS_1008_POLICY_VIOLATION,
-            reason="WebSocket auth failed: No token provided",
-        )
+    # Accept first, then close with a reason. Closing before the handshake
+    # completes reaches the browser as a bare HTTP 403 with no code or
+    # reason, so the app cannot tell "your login was refused" (stop and
+    # re-authenticate) from "the network dropped" (reconnect).
+    if subprotocol:
+        await websocket.accept(subprotocol=subprotocol)
+    else:
+        await websocket.accept()
+
+    async def refuse(reason: str):
+        logger.warning(f"WebSocket auth failed: {reason}")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
         return None
+
+    if not token:
+        return await refuse("No token provided")
+
+    # The same revocation list every HTTP route checks (logout, password
+    # change). Without this a signed-out token kept chat open.
+    try:
+        if await redis.get(settings.BLACKLIST_PREFIX.format(token)):
+            return await refuse("Token has been revoked")
+    except Exception as e:  # the KV store being down must not block chat
+        logger.error(f"WebSocket revocation check failed: {e}")
 
     try:
         payload: dict = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]  # type: ignore
         )  # type: ignore
-        identifier = payload.get("sub")
-        if not identifier:
-            logger.warning("WebSocket auth failed: No subject in token")
-            await websocket.close(
-                code=status.WS_1008_POLICY_VIOLATION,
-                reason="WebSocket auth failed: No subject in token",
-            )
-            return None
-
-        user: UserInDB = await get_user(identifier, db)  # type: ignore
-        if not user:
-            logger.warning("WebSocket auth failed: User not found")
-            await websocket.close(
-                code=status.WS_1008_POLICY_VIOLATION,
-                reason="WebSocket auth failed: User not found",
-            )
-            return None
-
-        logger.info(f"WebSocket auth successful: {user.email}")
-
-        if not user.is_active:
-            logger.warning("WebSocket auth failed: User inactive")
-            await websocket.close(
-                code=status.WS_1008_POLICY_VIOLATION,
-                reason="WebSocket auth failed: User inactive",
-            )
-            return None
-
-        if not user.verified:
-            logger.warning("WebSocket auth failed: User unverified")
-            await websocket.close(
-                code=status.WS_1008_POLICY_VIOLATION,
-                reason="WebSocket auth failed: User unverified",
-            )
-            return None
-
-        # Accept connection with subprotocol if token was from protocol header
-        if subprotocol:
-            await websocket.accept(subprotocol=subprotocol)
-        else:
-            await websocket.accept()
-
-        return user
-
     except (InvalidTokenError, ExpiredSignatureError) as e:
-        logger.error(f"WebSocket auth error: {e}")
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return None
+        return await refuse(f"Invalid or expired token ({type(e).__name__})")
+
+    identifier = payload.get("sub")
+    if not identifier:
+        return await refuse("No subject in token")
+
+    user: UserInDB = await get_user(identifier, db)  # type: ignore
+    if not user:
+        return await refuse("User not found")
+    # Same rule as the HTTP chat routes (ActiveUser): an active account.
+    # Requiring a verified email here as well meant anyone who could send
+    # messages over HTTP still never received them live.
+    if not user.is_active:
+        return await refuse("User inactive")
+
+    logger.info(f"WebSocket auth successful: user_id={user.id}")
+    return user
 
 
 ActiveVerifiedWSUser = Annotated[BaseUser | Client | Agent, Depends(get_websocket_user)]

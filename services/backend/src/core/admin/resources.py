@@ -300,3 +300,38 @@ class TransactionAuditLogModelView(ModelView):
 
 class MintedPropertyDraftModelView(ModelView):
     icon = "fa fa-file-signature"
+
+
+class VerifiableDocumentModelView(ModelView):
+    """Raise documents and builder licences, edited by Sheda staff.
+
+    Setting a document to `verified` here records which staff member did it
+    and when, exactly as the API's verify routes do; any other status clears
+    both. Without this, a document verified from the panel showed the
+    "Verified by Sheda" badge with nobody named against the check.
+    """
+
+    icon = "fa fa-file-lines"
+    exclude_fields_from_create = ["verified_at"]
+    exclude_fields_from_edit = ["verified_at"]
+
+    async def before_create(self, request: Request, data: Dict[str, Any], obj: Any) -> None:
+        self._stamp(request, obj)
+
+    async def before_edit(self, request: Request, data: Dict[str, Any], obj: Any) -> None:
+        self._stamp(request, obj)
+
+    @staticmethod
+    def _stamp(request: Request, obj: Any) -> None:
+        from datetime import datetime, timezone
+
+        status = getattr(obj.status, "value", obj.status)
+        if status == "verified":
+            # Re-saving an already verified document keeps the original check.
+            if obj.verified_at is None:
+                admin = request.session.get("admin_user") or {}
+                obj.verified_by_id = admin.get("id")
+                obj.verified_at = datetime.now(timezone.utc)
+        else:
+            obj.verified_by_id = None
+            obj.verified_at = None

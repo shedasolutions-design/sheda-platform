@@ -397,6 +397,144 @@ fn enough_objections_hold_the_payment() {
     assert_eq!(p.phases[0].state, PhaseState::Held);
     assert_eq!(p.released.0, 0, "nothing was paid to the builder");
     assert_eq!(p.phases[1].state, PhaseState::Locked);
+    // Holding a phase stops the raise, so the escrow can go back.
+    assert_eq!(p.status, RaiseStatus::Stalled);
+}
+
+// ---- a stopped raise: everyone gets their own share back ------------------
+
+/// Fund, release the first phase (a quarter), then stop the raise.
+fn stopped_after_one_phase(r: &mut Raise) {
+    fund(r);
+    attest_first_phase(r, DAY + 3);
+    ctx("anyone.testnet", 0, DAY + 3 + OBJECTION_WINDOW_NS + 1);
+    let _ = r.release_phase("m120".into(), 0);
+    ctx("sheda.testnet", 1, DAY + 20 * DAY);
+    r.declare_stalled("m120".into());
+}
+
+#[test]
+fn a_stopped_raise_returns_each_investors_share_of_what_was_not_paid_out() {
+    // 1,000,000 raised, 2% fee leaves 980,000; a quarter (245,000) went to
+    // the builder, so 735,000 is left. Ada put in 60%, Bode 40%.
+    let mut r = raise();
+    stopped_after_one_phase(&mut r);
+    assert_eq!(
+        r.reclaim_value("m120".into(), acc("ada.testnet")).0,
+        441_000
+    );
+    assert_eq!(
+        r.reclaim_value("m120".into(), acc("bode.testnet")).0,
+        294_000
+    );
+}
+
+#[test]
+fn one_investor_reclaiming_does_not_change_anyone_elses_share() {
+    let mut r = raise();
+    stopped_after_one_phase(&mut r);
+    let bode_before = r.reclaim_value("m120".into(), acc("bode.testnet")).0;
+
+    ctx("ada.testnet", 1, DAY + 21 * DAY);
+    let _ = r.reclaim("m120".into());
+
+    assert_eq!(r.reclaim_value("m120".into(), acc("ada.testnet")).0, 0);
+    assert_eq!(
+        r.reclaim_value("m120".into(), acc("bode.testnet")).0,
+        bode_before
+    );
+}
+
+#[test]
+#[should_panic(expected = "already reclaimed")]
+fn an_investor_cannot_reclaim_twice() {
+    let mut r = raise();
+    stopped_after_one_phase(&mut r);
+    ctx("ada.testnet", 1, DAY + 21 * DAY);
+    let _ = r.reclaim("m120".into());
+    ctx("ada.testnet", 1, DAY + 21 * DAY);
+    let _ = r.reclaim("m120".into());
+}
+
+#[test]
+#[should_panic(expected = "has stopped")]
+fn reclaiming_from_a_healthy_raise_is_refused() {
+    let mut r = raise();
+    fund(&mut r);
+    ctx("ada.testnet", 1, DAY + 3);
+    let _ = r.reclaim("m120".into());
+}
+
+#[test]
+fn taking_the_cover_does_not_block_or_shrink_the_escrow_reclaim() {
+    // Cover (from the builder's stake) and escrow back are separate claims.
+    let mut r = raise();
+    stopped_after_one_phase(&mut r);
+    let escrow = r.reclaim_value("m120".into(), acc("ada.testnet")).0;
+
+    ctx("ada.testnet", 1, DAY + 21 * DAY);
+    let _ = r.opt_out("m120".into());
+
+    assert_eq!(r.opt_out_value("m120".into(), acc("ada.testnet")).0, 0);
+    assert_eq!(r.reclaim_value("m120".into(), acc("ada.testnet")).0, escrow);
+    ctx("ada.testnet", 1, DAY + 21 * DAY);
+    let _ = r.reclaim("m120".into());
+}
+
+#[test]
+fn reclaiming_the_escrow_does_not_block_the_cover() {
+    let mut r = raise();
+    stopped_after_one_phase(&mut r);
+    ctx("ada.testnet", 1, DAY + 21 * DAY);
+    let _ = r.reclaim("m120".into());
+    assert_eq!(
+        r.opt_out_value("m120".into(), acc("ada.testnet")).0,
+        108_000
+    );
+    ctx("ada.testnet", 1, DAY + 21 * DAY);
+    let _ = r.opt_out("m120".into());
+}
+
+#[test]
+fn a_frozen_phase_lets_everyone_reclaim_without_sheda_stepping_in() {
+    // Holders objecting is enough; nobody has to declare anything.
+    let mut r = raise();
+    fund(&mut r);
+    attest_first_phase(&mut r, DAY + 3);
+    ctx("ada.testnet", 1, DAY + 4);
+    r.object("m120".into(), 0);
+    ctx("anyone.testnet", 0, DAY + 3 + OBJECTION_WINDOW_NS + 1);
+    let _ = r.release_phase("m120".into(), 0);
+
+    // Nothing was released, so all 980,000 left after the fee comes back.
+    assert_eq!(
+        r.reclaim_value("m120".into(), acc("ada.testnet")).0,
+        588_000
+    );
+    assert_eq!(
+        r.reclaim_value("m120".into(), acc("bode.testnet")).0,
+        392_000
+    );
+}
+
+#[test]
+#[should_panic(expected = "nothing more is paid to the builder")]
+fn no_phase_is_paid_once_the_raise_has_stopped() {
+    // Otherwise a payout could land in the middle of investors reclaiming
+    // and shrink the pot their shares were computed from.
+    let mut r = raise();
+    fund(&mut r);
+    attest_first_phase(&mut r, DAY + 3);
+    ctx("sheda.testnet", 1, DAY + 4);
+    r.declare_stalled("m120".into());
+    ctx("anyone.testnet", 0, DAY + 3 + OBJECTION_WINDOW_NS + 1);
+    let _ = r.release_phase("m120".into(), 0);
+}
+
+#[test]
+fn the_objection_window_can_be_read() {
+    let r = raise();
+    assert_eq!(r.objection_window_ns().0, OBJECTION_WINDOW_NS);
 }
 
 #[test]

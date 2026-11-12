@@ -40,6 +40,7 @@ fn vault() -> Vault {
         0,
         0,
         0,
+        None,
     )
 }
 
@@ -57,6 +58,7 @@ fn vault_with_fees(manager_bps: u32, reserve_bps: u32, platform_bps: u32) -> Vau
         manager_bps,
         reserve_bps,
         platform_bps,
+        None,
     )
 }
 
@@ -252,4 +254,91 @@ fn a_thousand_holders_still_reconcile() {
         })
         .sum();
     assert_eq!(total + v.dust / crate::PRECISION, 10_000_000);
+}
+
+// ---- a flat with a known share count: every investor is treated alike ----
+
+/// A vault for a flat that divides into 10,000 shares, as the raise sets it.
+fn capped_vault() -> Vault {
+    ctx(acc("gov.testnet"), 0);
+    Vault::new(
+        "M120 Unit 1B".to_string(),
+        "M120-1B".to_string(),
+        acc("market.testnet"),
+        U64(13),
+        acc("usdt.testnet"),
+        acc("manager.testnet"),
+        acc("gov.testnet"),
+        acc("treasury.testnet"),
+        0,
+        0,
+        0,
+        Some(U128(10_000)),
+    )
+}
+
+#[test]
+fn a_late_claimer_keeps_the_rent_their_shares_earned_before_they_claimed() {
+    // Ada owns 70% and claims at once; Bola owns 30% and claims only after
+    // rent has come in. Bola must still get 30% of it, and Ada no more
+    // than her 70%.
+    let mut v = capped_vault();
+    ctx(acc("gov.testnet"), 1);
+    v.mint_shares(acc("ada.testnet"), U128(7_000));
+
+    v.credit_holders(1_000_000);
+
+    ctx(acc("gov.testnet"), 1);
+    v.mint_shares(acc("bola.testnet"), U128(3_000));
+
+    assert_eq!(v.claimable(acc("ada.testnet")).0, 700_000);
+    assert_eq!(v.claimable(acc("bola.testnet")).0, 300_000);
+}
+
+#[test]
+fn claiming_early_takes_nothing_from_anyone_else() {
+    // Only Ada has claimed. She still gets only her 70%; the other 30%
+    // waits for whoever owns it.
+    let mut v = capped_vault();
+    ctx(acc("gov.testnet"), 1);
+    v.mint_shares(acc("ada.testnet"), U128(7_000));
+    v.credit_holders(1_000_000);
+    assert_eq!(v.claimable(acc("ada.testnet")).0, 700_000);
+}
+
+#[test]
+#[should_panic(expected = "more shares than the flat divides into")]
+fn no_more_shares_can_be_issued_than_the_flat_divides_into() {
+    let mut v = capped_vault();
+    ctx(acc("gov.testnet"), 1);
+    v.mint_shares(acc("ada.testnet"), U128(7_000));
+    ctx(acc("gov.testnet"), 1);
+    v.mint_shares(acc("bola.testnet"), U128(3_001));
+}
+
+#[test]
+fn a_transfer_after_issue_still_does_not_hand_over_past_rent() {
+    // Rent earned before a sale stays with the seller (R6 still holds).
+    let mut v = capped_vault();
+    ctx(acc("gov.testnet"), 1);
+    v.mint_shares(acc("ada.testnet"), U128(10_000));
+    v.credit_holders(1_000_000);
+    v.internal_transfer(&acc("ada.testnet"), &acc("bola.testnet"), 5_000);
+    assert_eq!(v.claimable(acc("ada.testnet")).0, 1_000_000);
+    assert_eq!(v.claimable(acc("bola.testnet")).0, 0);
+}
+
+#[test]
+#[should_panic(expected = "Redeeming takes every share")]
+fn the_first_claimer_cannot_redeem_the_flat_before_everyone_has_claimed() {
+    // Ada holds every share minted so far (7,000) but the flat divides into
+    // 10,000. She must not be able to take the whole flat.
+    let mut v = capped_vault();
+    ctx(acc("gov.testnet"), 1);
+    v.mint_shares(acc("ada.testnet"), U128(7_000));
+    v.custody = crate::Custody::Held {
+        token_id: "13".to_string(),
+    };
+    ctx(acc("ada.testnet"), 1);
+    let _ = v.redeem();
 }

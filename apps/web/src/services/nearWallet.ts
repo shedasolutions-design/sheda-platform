@@ -74,8 +74,11 @@ async function requestSponsoredAccount(
 
 // Test token contracts for automatic minting on testnet
 const TESTNET_AIRDROP_TOKENS = [
-  { contractId: "usdt.fakes.testnet", amount: "5000000", name: "USDT" }, // 5 USDT (6 decimals)
-  { contractId: "usdc.fakes.testnet", amount: "5000000", name: "USDC" }, // 5 USDC (6 decimals)
+  // 500,000 each (6 decimals). Five dollars could not buy a single share or
+  // cover any demo listing, so testers could never reach the end of a deal.
+  // These are test tokens anyone can mint; they are worth nothing.
+  { contractId: "usdt.fakes.testnet", amount: "500000000000", name: "USDT" },
+  { contractId: "usdc.fakes.testnet", amount: "500000000000", name: "USDC" },
 ];
 
 // NEAR Network Configurations

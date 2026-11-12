@@ -106,6 +106,12 @@ pub struct Vault {
 
     // ---- shares ---------------------------------------------------------
     pub total_supply: u128,
+    /// How many shares this flat divides into in total (the raise's
+    /// `total_shares`). When set, rent is divided over all of them from the
+    /// start, so an investor earns their share whenever they claim, and the
+    /// whole flat can only be redeemed by someone holding every share. Zero
+    /// keeps the old behaviour (divide over shares minted so far).
+    pub share_cap: u128,
     /// Once true, no share may ever be minted again. Set when the raise that
     /// funded this unit closes.
     pub supply_frozen: bool,
@@ -152,11 +158,13 @@ impl Vault {
         manager_bps: u32,
         reserve_bps: u32,
         platform_bps: u32,
+        share_cap: Option<U128>,
     ) -> Self {
         require!(
             manager_bps + reserve_bps + platform_bps <= MAX_TOTAL_FEE_BPS,
             "Fees would take more than 30% of rent"
         );
+        let share_cap = share_cap.map(|c| c.0).unwrap_or(0);
         Self {
             name,
             symbol,
@@ -170,6 +178,7 @@ impl Vault {
             reserve_bps,
             platform_bps,
             total_supply: 0,
+            share_cap,
             supply_frozen: false,
             balances: LookupMap::new(StorageKey::Balances),
             acc_per_share: 0,
@@ -246,6 +255,7 @@ impl Vault {
             stablecoin: self.stablecoin.clone(),
             manager: self.manager.clone(),
             total_supply: U128(self.total_supply),
+            share_cap: U128(self.share_cap),
             supply_frozen: self.supply_frozen,
             manager_bps: self.manager_bps,
             reserve_bps: self.reserve_bps,
@@ -286,6 +296,7 @@ pub struct VaultInfo {
     pub stablecoin: AccountId,
     pub manager: AccountId,
     pub total_supply: U128,
+    pub share_cap: U128,
     pub supply_frozen: bool,
     pub manager_bps: u32,
     pub reserve_bps: u32,

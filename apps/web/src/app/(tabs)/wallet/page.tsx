@@ -38,7 +38,9 @@ const short = (s: string, n = 14) => (s.length > n + 3 ? `${s.slice(0, n)}…` :
 function Portfolio() {
   const { walletState, currentNetwork, getAccountTransactions, getTokenBalances, sendTransaction, sendFungibleToken, loading } = useWallet();
   const { run } = useTransactionToast();
-  const { transferProperty } = useNearContract();
+  const { transferProperty, getTestTokens } = useNearContract();
+  const [toppingUp, setToppingUp] = useState(false);
+  const [topUpNote, setTopUpNote] = useState<string | null>(null);
   const { formatPrice, formatUsd, selectedCurrency, setSelectedCurrency } = useCurrency();
   const copy = useCopy();
   const accountId = walletState.account?.accountId;
@@ -358,6 +360,28 @@ function Portfolio() {
             <ArrowUpFromLine size={18} /> Withdraw
           </Button>
         </div>
+        {!isMainnet && (
+          <div className="mt-3">
+            <Button
+              variant="outline"
+              full
+              disabled={toppingUp}
+              onClick={async () => {
+                setToppingUp(true);
+                setTopUpNote(null);
+                const r = await getTestTokens();
+                setToppingUp(false);
+                setTopUpNote(r.success ? "Added 500,000 test USDC and USDT. They can take a few seconds to appear." : r.error || "That didn't work. Please try again.");
+                if (r.success) setTimeout(() => loadTokens(), 4000);
+              }}
+            >
+              {toppingUp ? "Adding test dollars..." : "Get test dollars"}
+            </Button>
+            <p className="mt-1 text-center text-[11px] text-secondaryText">
+              {topUpNote ?? "Testnet only. Free play money for trying bids and investments."}
+            </p>
+          </div>
+        )}
       </section>
 
       <div className="mb-3 grid grid-cols-3 gap-2" role="tablist">

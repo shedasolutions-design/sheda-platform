@@ -29,10 +29,16 @@ export const SUPPORTED_TOKENS = {
 } as const;
 
 /**
- * Default token for payments — use Circle's USDC on testnet
+ * The token Collections raises are priced and paid in.
+ *
+ * Testnet uses usdc.fakes.testnet: it is what every new wallet is given at
+ * set-up and anyone can mint more, so testers can actually invest. Circle's
+ * testnet USDC is only obtainable from Circle's faucet, which left testers
+ * with a balance they could not spend. The v2 raise and stake contracts are
+ * configured with this same token.
  */
 export const DEFAULT_TOKEN = ACTIVE_NETWORK === 'testnet'
-    ? SUPPORTED_TOKENS.testnet.USDC_CIRCLE
+    ? SUPPORTED_TOKENS.testnet.USDC_FAKES
     : SUPPORTED_TOKENS.mainnet.USDC;
 
 /**

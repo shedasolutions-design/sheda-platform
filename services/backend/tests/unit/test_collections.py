@@ -292,3 +292,42 @@ class TestProjectImages:
         )
         names = {d.call.__name__ for d in route.dependant.dependencies if d.call}
         assert not any("current" in n or "active" in n for n in names), names
+
+
+class TestProfileDocuments:
+    """A builder's or manager's licences and registration.
+
+    Anyone may read them (an investor checks them before trusting anyone),
+    only a signed-in owner may add them, and only an admin may mark one
+    verified, so the badge keeps meaning "Sheda checked this".
+    """
+
+    @staticmethod
+    def _route(path, method):
+        from app.routers import collections
+
+        route = next(
+            r
+            for r in collections.router.routes
+            if r.path == path and method in r.methods
+        )
+        return {d.call.__name__ for d in route.dependant.dependencies if d.call}
+
+    def test_reading_a_profiles_documents_needs_no_token(self):
+        names = self._route("/collections/profiles/{profile_id}/documents", "GET")
+        assert not any("current" in n or "active" in n for n in names), names
+
+    def test_adding_a_document_needs_a_signed_in_user(self):
+        names = self._route("/collections/profiles/{profile_id}/documents", "POST")
+        assert any("active" in n or "current" in n for n in names), names
+
+    def test_only_an_admin_can_verify(self):
+        names = self._route("/collections/profile-documents/{document_id}/verify", "PATCH")
+        assert any("admin" in n for n in names), names
+
+    def test_a_new_document_starts_unchecked(self):
+        """The model's default is `uploaded`, never `verified`."""
+        from app.models.collection import CollectionProfileDocument, DocumentStatusEnum
+
+        column = CollectionProfileDocument.__table__.c.status
+        assert column.default.arg == DocumentStatusEnum.uploaded

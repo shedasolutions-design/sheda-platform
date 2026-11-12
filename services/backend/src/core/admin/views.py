@@ -77,8 +77,8 @@ class DashboardView(CustomView):
 CONTRACTS = {
     "testnet": {
         "market": "market.shedauser.testnet",
-        "raise": "sheda-raise-v1.testnet",
-        "stake": "sheda-stake-v1.testnet",
+        "raise": "sheda-raise-v3.testnet",
+        "stake": "sheda-stake-v3.testnet",
     },
     "mainnet": {"market": "", "raise": "", "stake": ""},
 }

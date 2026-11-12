@@ -27,8 +27,12 @@ import { useCollections, useUnitPositions } from "@/hooks/useCollections";
 import { scoreFor } from "@/services/collections/ranking";
 import { formatWithSymbol } from "@/services/collections/money";
 import { DEFAULT_TOKEN } from "@/config/tokens";
+import { useApi } from "@/contexts/ApiContext";
+import { useWallet } from "@/contexts/WalletContext";
+import * as chain from "@/services/collections/chain";
+import apiService from "@/services/api";
+import { DocumentList, DocumentUploader, PhotoAdder, PhotoGallery } from "@/components/collections/Attachments";
 import type {
-  CollectionDocumentStatus,
   CollectionPhase,
   CollectionProfile,
   CollectionProjectDetail,
@@ -46,6 +50,7 @@ import type {
 export default function ProjectDetail() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const { getProject, loading, error, connected } = useCollections();
+  const { user } = useApi();
   const [project, setProject] = useState<CollectionProjectDetail | null>(null);
 
   const load = useCallback(async () => {
@@ -85,6 +90,10 @@ export default function ProjectDetail() {
   }
 
   const released = project.phases_released_bps;
+  // The builder who owns this raise can add its photos and documents here.
+  const isOwner = !!user?.id && project.builder?.user_id === Number(user.id);
+  const errorOf = (r: { ok: boolean; error?: any }) =>
+    r.ok ? null : String(r.error?.detail ?? r.error?.message ?? r.error ?? "That did not save. Please try again.");
 
   return (
     <>
@@ -95,6 +104,20 @@ export default function ProjectDetail() {
           <InterRegular style={{ ...TYPE.label, color: C.textSecondary }}>
             {project.location} · {project.units} units
           </InterRegular>
+          <PhotoGallery urls={project.image_urls ?? []} alt={project.name} />
+          {isOwner ? (
+            <PhotoAdder
+              onAttach={async (urls) => {
+                const start = project.image_urls?.length ?? 0;
+                for (let i = 0; i < urls.length; i++) {
+                  const err = errorOf(await apiService.addCollectionImage(project.slug, { image_url: urls[i], position: start + i }));
+                  if (err) return err;
+                }
+                await load();
+                return null;
+              }}
+            />
+          ) : null}
           {project.description ? (
             <InterRegular style={{ ...TYPE.body, color: C.text }}>
               {project.description}
@@ -144,30 +167,22 @@ export default function ProjectDetail() {
           ) : null}
         </Section>
 
-        {project.documents.length > 0 ? (
+        {project.documents.length > 0 || isOwner ? (
           <Section title="Documents">
-            <Card>
-              <View style={{ gap: 13 }}>
-                {project.documents.map((doc, i) => (
-                  <View key={doc.id} style={{ gap: 13 }}>
-                    {i > 0 ? <Divider /> : null}
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 10,
-                      }}
-                    >
-                      <InterMedium style={{ ...TYPE.body, color: C.text, flexShrink: 1 }}>
-                        {doc.label}
-                      </InterMedium>
-                      <Badge label={DOC_LABEL[doc.status]} tone={DOC_TONE[doc.status]} />
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </Card>
+            <DocumentList
+              documents={project.documents}
+              empty="The builder has not attached any documents yet. Ask for the plans, budget and title before you invest."
+            />
+            {isOwner ? (
+              <DocumentUploader
+                kinds={RAISE_DOCUMENT_KINDS}
+                onAttach={async (label, fileUrl) => {
+                  const err = errorOf(await apiService.addCollectionDocument(project.slug, { label, file_url: fileUrl }));
+                  if (!err) await load();
+                  return err;
+                }}
+              />
+            ) : null}
           </Section>
         ) : null}
 
@@ -186,6 +201,8 @@ export default function ProjectDetail() {
             </InterRegular>
           </Section>
         ) : null}
+
+        {connected ? <MoneyBack slug={project.slug} /> : null}
 
         {connected && project.unit_list.length > 0 ? (
           <YourShares project={project} />
@@ -364,17 +381,17 @@ function PersonRow({ profile, role }: { profile: CollectionProfile; role: string
   );
 }
 
-const DOC_LABEL: Record<CollectionDocumentStatus, string> = {
-  verified: "Verified by Sheda",
-  uploaded: "Uploaded, not verified",
-  missing: "Not provided",
-};
-
-const DOC_TONE = {
-  verified: "positive",
-  uploaded: "caution",
-  missing: "critical",
-} as const;
+/** What a builder is asked to attach to a raise. */
+const RAISE_DOCUMENT_KINDS = [
+  "Building plans (architectural drawings)",
+  "Budget / bill of quantities",
+  "Title document (C of O, Governor's Consent)",
+  "Building approval / permit",
+  "Survey plan",
+  "Structural drawings",
+  "Environmental impact assessment",
+  "Other",
+];
 
 const PHASE_LABEL: Record<CollectionPhase["state"], string> = {
   locked: "Not started",
@@ -430,5 +447,100 @@ function PhaseRow({ phase }: { phase: CollectionPhase }) {
         ) : null}
       </View>
     </View>
+  );
+}
+
+/**
+ * Getting money back from a raise that stopped or failed.
+ *
+ * Read from the contract rather than the backend, because a raise stops on
+ * chain the moment holders freeze a phase. Every investor's amounts are
+ * fixed by the contract and do not change when someone else claims.
+ */
+function MoneyBack({ slug }: { slug: string }) {
+  const { walletState } = useWallet();
+  const accountId = walletState.account?.accountId ?? null;
+  const { reclaimEscrow, claimCover, refundFailedRaise } = useCollections();
+  const [status, setStatus] = useState<string | null>(null);
+  const [owed, setOwed] = useState<{ escrow: string; cover: string }>({ escrow: "0", cover: "0" });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!accountId) return;
+    try {
+      const s = await chain.getRaiseChainStatus(slug);
+      setStatus(s);
+      if (s === "Stalled") setOwed(await chain.getMoneyBack(slug, accountId));
+    } catch {
+      setStatus(null);
+    }
+  }, [slug, accountId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (status !== "Stalled" && status !== "Failed") return null;
+
+  const run = async (label: string, action: () => Promise<{ success: boolean; error?: string }>) => {
+    setBusy(label);
+    setNote(null);
+    const r = await action();
+    setBusy(null);
+    setNote(r.success ? "Sent. It can take a few seconds to arrive in your wallet." : r.error ?? "That did not go through.");
+    if (r.success) setTimeout(load, 4000);
+  };
+
+  if (status === "Failed") {
+    return (
+      <Section title="This raise did not reach its target">
+        <Note>Everything you put in is yours to take back in full.</Note>
+        <CollectionsButton
+          label={busy ? "Sending..." : "Get my money back"}
+          onPress={() => run("refund", () => refundFailedRaise(slug))}
+        />
+        {note ? <InterRegular style={{ ...TYPE.label, color: C.textSecondary }}>{note}</InterRegular> : null}
+      </Section>
+    );
+  }
+
+  const escrow = BigInt(owed.escrow || "0");
+  const cover = BigInt(owed.cover || "0");
+  return (
+    <Section title="This raise has stopped">
+      <Note>
+        Building stopped, either because holders objected to a phase or because Sheda declared it
+        stalled. No more money goes to the builder. Each investor takes back their own share of
+        what was not paid out, plus their share of any cover the builder staked, whenever they
+        choose; nobody else claiming changes your amounts.
+      </Note>
+      <Card>
+        <View style={{ gap: 13 }}>
+          <StatRow>
+            <StatTile label="Unpaid escrow you are owed" value={formatWithSymbol(owed.escrow, DEFAULT_TOKEN)} />
+            <StatTile label="Your share of the builder's cover" value={formatWithSymbol(owed.cover, DEFAULT_TOKEN)} />
+          </StatRow>
+        </View>
+      </Card>
+      {escrow > 0n ? (
+        <CollectionsButton
+          label={busy === "escrow" ? "Sending..." : "Take back my share of the escrow"}
+          onPress={() => run("escrow", () => reclaimEscrow(slug))}
+        />
+      ) : null}
+      {cover > 0n ? (
+        <CollectionsButton
+          label={busy === "cover" ? "Sending..." : "Claim my share of the cover"}
+          onPress={() => run("cover", () => claimCover(slug))}
+        />
+      ) : null}
+      {escrow === 0n && cover === 0n ? (
+        <InterRegular style={{ ...TYPE.label, color: C.textSecondary }}>
+          Nothing is waiting for you here: you have taken your share, or you did not invest in this raise.
+        </InterRegular>
+      ) : null}
+      {note ? <InterRegular style={{ ...TYPE.label, color: C.textSecondary }}>{note}</InterRegular> : null}
+    </Section>
   );
 }

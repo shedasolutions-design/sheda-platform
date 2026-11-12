@@ -28,27 +28,26 @@ export const COLLECTIONS_CONTRACTS = {
     /**
      * Escrow, the phase schedule and the objection window.
      *
-     * Deployed 2026-11-04 from the wasm CI built at
-     * sheda-collection-app-contract, code hash
-     * 6XiSfG7MHr2LyruXZ726rvPwAeBVSYpJktUUwtHkcHjX. Owner and treasury are
-     * the contract's own account on testnet.
-     *
-     * That build predates `set_unit_vault`, `shares_owed` and the unit
-     * list on `get_project`, so shares cannot be claimed against it. Deploy
-     * the current wasm and point `NEXT_PUBLIC_RAISE_CONTRACT_ID` at the new
-     * account, or change this id, before demonstrating the full loop.
-     * docs/DEPLOY_COLLECTIONS.md has the exact steps.
+     * v3, deployed 2026-11-12, built with the `testnet` feature (holders'
+     * objection window of 3 minutes instead of 7 days, so the whole flow
+     * can be tested in one sitting). Owner and treasury are
+     * sheda-council.testnet, a 2-of-3 multisig of sheda-signer-a/b/c, so
+     * no single key can open raises, link vaults or declare a stall. A
+     * frozen or stalled raise lets every investor reclaim their share of
+     * the unpaid escrow and of the builder's cover. Pays in
+     * usdc.fakes.testnet. Flat vaults: sheda-v3-pgt-t2/t3.testnet and
+     * sheda-v3-lgf-f1/f2.testnet, each dividing rent over all 10,000 shares.
      */
-    raise: "sheda-raise-v1.testnet",
+    raise: "sheda-raise-v3.testnet",
     /**
-     * Builder and manager stake, per profile. Code hash
-     * C12mXsaX8QJxvunrRERKr16fFfFiL2yAbeUKzWLZrTpg.
+     * Builder and manager stake, per profile. v3, controller
+     * sheda-raise-v3.testnet, owner the council, stablecoin usdc.fakes.testnet.
      *
      * Its controller is the raise contract, which is what lets a stalled
      * project slash the cover behind it and stops anything else reaching a
      * builder's stake.
      */
-    stakeRegistry: "sheda-stake-v1.testnet",
+    stakeRegistry: "sheda-stake-v3.testnet",
   },
   // Deliberately empty. None of this has been audited, and an id here
   // would be a claim that it had.
