@@ -50,6 +50,8 @@ export interface UserUpdate {
 
 export interface UserShow {
   id: number;
+  /** The wallet on record for this account (backend UserShow.near_account_id). */
+  near_account_id?: string | null;
   avatar_url?: string | null;
   username?: string | null;
   email?: string | null;
