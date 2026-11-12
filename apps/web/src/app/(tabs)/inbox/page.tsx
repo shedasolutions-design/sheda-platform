@@ -11,6 +11,7 @@ import { useApi } from "@/contexts/ApiContext";
 import { useMode } from "@/contexts/ModeContext";
 import { LIST_CACHE_SCOPES, readCachedList, writeCachedList } from "@/services/listCache";
 import { parseOfferMessage, parseOfferResponseMessage } from "@/types/offer";
+import { dealUpdateText, parseDealUpdate } from "@/components/chat/dealUpdate";
 
 interface Conversation {
   other_user_id: number;
@@ -37,9 +38,13 @@ const order = (list: Conversation[]) =>
 /** Offer and response messages are JSON; show them as a sentence. */
 function preview(message: string): string {
   const offer = parseOfferMessage(message);
-  if (offer) return `Offer: ${offer.offeredPrice.toFixed(2)} on "${offer.propertyTitle}"`;
+  // The amount is naira with no currency attached; "Offer: 33745565.00"
+  // read as nonsense. The thread's card shows it properly.
+  if (offer) return `New offer on "${offer.propertyTitle}"`;
   const response = parseOfferResponseMessage(message);
   if (response) return `Offer ${response.status === "accepted" ? "accepted" : "rejected"} on "${response.propertyTitle}"`;
+  const update = parseDealUpdate(message);
+  if (update) return dealUpdateText(update);
   return message;
 }
 
