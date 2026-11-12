@@ -71,3 +71,43 @@ async def test_unknown_chain_id_still_records_the_deal(db: AsyncSession, monkeyp
     record = (await db.execute(select(TransactionRecord).where(TransactionRecord.bid_id == "9"))).scalar_one()
     assert record.property_id == "999"
     assert (await db.execute(select(TransactionNotification))).scalars().all() == []
+
+
+async def test_a_bare_event_still_names_both_sides(db: AsyncSession, monkeypatch):
+    """A viewing booking sends no wallets. The record must still name the
+    seller (listing owner) and the buyer (the sender), or neither person's
+    deal list can find it."""
+    monkeypatch.setattr(notifications, "send_push_notification", _no_push)
+    seller, _, listing = await _setup(db)
+    listing.blockchain_owner_id = "nt-seller.testnet"
+    await db.commit()
+
+    note = await notifications.create_transaction_notification(
+        TransactionNotificationRequest(transaction_id="5", event="appointment_booked",
+                                       recipient_user_id=seller.id, property_id=10, metadata={}),
+        db,
+        sender_wallets=["nt-buyer.testnet"],
+    )
+
+    record = (await db.execute(select(TransactionRecord).where(TransactionRecord.bid_id == "5"))).scalar_one()
+    assert record.seller_wallet_id == "nt-seller.testnet"
+    assert record.buyer_wallet_id == "nt-buyer.testnet"
+    assert note.metadata_payload["property_title"] == "Flat"
+
+
+async def test_the_seller_sending_does_not_become_the_buyer(db: AsyncSession, monkeypatch):
+    monkeypatch.setattr(notifications, "send_push_notification", _no_push)
+    seller, buyer, listing = await _setup(db)
+    listing.blockchain_owner_id = "nt-seller.testnet"
+    await db.commit()
+
+    await notifications.create_transaction_notification(
+        TransactionNotificationRequest(transaction_id="6", event="appointment_accepted",
+                                       recipient_user_id=buyer.id, property_id=10, metadata={}),
+        db,
+        sender_wallets=["nt-seller.testnet"],
+    )
+
+    record = (await db.execute(select(TransactionRecord).where(TransactionRecord.bid_id == "6"))).scalar_one()
+    assert record.seller_wallet_id == "nt-seller.testnet"
+    assert record.buyer_wallet_id is None

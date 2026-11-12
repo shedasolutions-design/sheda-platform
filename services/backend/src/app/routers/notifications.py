@@ -18,6 +18,8 @@ from app.services.user_service import ActiveUser
 from core.dependecies import DBSession
 
 
+from app.services.wallets import get_wallet_ids_for_users
+
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
@@ -31,7 +33,12 @@ async def transaction_update(
     current_user: ActiveUser,
     db: DBSession,
 ):
-    notification = await create_transaction_notification(payload, db)
+    # The sender's own wallets, so the deal record can name the buyer when
+    # the event itself did not.
+    sender_wallets = await get_wallet_ids_for_users([current_user.id], db)
+    if current_user.near_account_id:
+        sender_wallets.append(current_user.near_account_id)
+    notification = await create_transaction_notification(payload, db, sender_wallets)
     return notification
 
 

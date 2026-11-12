@@ -16,7 +16,9 @@ from app.services.push import send_push_notification
 
 
 async def create_transaction_notification(
-    payload: TransactionNotificationRequest, db: AsyncSession
+    payload: TransactionNotificationRequest,
+    db: AsyncSession,
+    sender_wallets: list[str] | None = None,
 ) -> TransactionNotification:
     # payload.property_id is the ON-CHAIN id: every caller sends the bid's
     # property id from the contract, and the deal record stores it that way.
@@ -26,6 +28,27 @@ async def create_transaction_notification(
     # table stayed empty), or, where the numbers overlap, would have linked
     # the notification to somebody else's property.
     chain_id = str(payload.property_id)
+    listing = (
+        await db.execute(
+            select(Property.id, Property.blockchain_owner_id, Property.title)
+            .where(Property.blockchain_property_id == chain_id)
+            .limit(1)
+        )
+    ).first()
+
+    # Fill in who the deal is between when the event did not say. The deal
+    # list finds records by wallet, so a record created by an event without
+    # them (a viewing booking sends none) was invisible to both people. The
+    # seller is the listing's on-chain owner; the buyer is whoever sent the
+    # event, if that is not the seller.
+    metadata = dict(payload.metadata or {})
+    seller_wallet = metadata.get("seller_wallet_id") or (listing.blockchain_owner_id if listing else None)
+    if seller_wallet:
+        metadata.setdefault("seller_wallet_id", seller_wallet)
+    if not metadata.get("buyer_wallet_id"):
+        mine = [w for w in (sender_wallets or []) if w and w != seller_wallet]
+        if mine:
+            metadata["buyer_wallet_id"] = mine[0]
 
     # The deal record first: it does not depend on the listing existing, and
     # a missing listing must not stop the deal's state from advancing.
@@ -33,16 +56,11 @@ async def create_transaction_notification(
         transaction_id=payload.transaction_id,
         event=payload.event,
         property_id=payload.property_id,
-        metadata=payload.metadata,
+        metadata=metadata,
         db=db,
     )
 
-    listing_id = (
-        await db.execute(
-            select(Property.id).where(Property.blockchain_property_id == chain_id).limit(1)
-        )
-    ).scalar_one_or_none()
-    if listing_id is None:
+    if listing is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No listing for on-chain property {chain_id}",
@@ -52,8 +70,12 @@ async def create_transaction_notification(
         transaction_id=payload.transaction_id,
         event=payload.event,
         recipient_user_id=payload.recipient_user_id,
-        property_id=listing_id,
-        metadata_payload={**(payload.metadata or {}), "blockchain_property_id": chain_id},
+        property_id=listing.id,
+        metadata_payload={
+            **(payload.metadata or {}),
+            "blockchain_property_id": chain_id,
+            "property_title": listing.title,
+        },
     )
     db.add(notification)
     await db.commit()
