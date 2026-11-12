@@ -24,8 +24,14 @@ const NEARBLOCKS_API = {
   mainnet: "https://api.nearblocks.io/v3",
 } as const;
 
-/** Polling interval in ms (15 seconds) */
-const POLL_INTERVAL_MS = 15_000;
+/**
+ * Polling interval in ms (30 seconds). NEARBlocks' free API rate-limits per
+ * caller; at 15 s per tab, on top of the wallet's own history reads, the
+ * two-account test saw a steady stream of 429s. Deal changes also reach the
+ * app through chat and notifications, so this is a safety net, not the
+ * primary signal.
+ */
+const POLL_INTERVAL_MS = 30_000;
 /** Maximum backoff on repeated errors (2 minutes) */
 const MAX_BACKOFF_MS = 120_000;
 /** AsyncStorage key prefix for last-seen timestamp */
@@ -171,7 +177,10 @@ export class BlockchainListenerService {
     if (!this.running) return;
 
     this.pollTimer = setTimeout(async () => {
-      await this.poll();
+      // A hidden tab has nobody to show a change to; skip until it is seen.
+      if (typeof document === "undefined" || document.visibilityState !== "hidden") {
+        await this.poll();
+      }
       // Schedule next poll with potential backoff
       const nextDelay =
         this.consecutiveErrors > 0

@@ -184,6 +184,26 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
     }
   };
 
+  // Who the bidder is, for the seller. The card printed the raw wallet,
+  // which for a wallet made without a name is 64 hex characters.
+  const [bidderName, setBidderName] = useState<string | null>(null);
+  useEffect(() => {
+    if (role !== "seller" || !bid.bidder_id) return;
+    let cancelled = false;
+    api
+      .getUserByWallet(bid.bidder_id)
+      .then((r) => {
+        if (!cancelled && r.ok && r.data?.name) setBidderName(r.data.name);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [role, bid.bidder_id]);
+  const bidderLabel =
+    bidderName ??
+    (bid.bidder_id && bid.bidder_id.length > 24 ? `${bid.bidder_id.slice(0, 6)}…${bid.bidder_id.slice(-4)}` : bid.bidder_id);
+
   // Resolve the counterparty's numeric backend user id — buyer's own id
   // isn't known here (only their wallet address, bid.bidder_id), so it needs
   // a lookup; the seller's id is already available as propertyDetails.agent_id.
@@ -1483,7 +1503,7 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
           </a>
         )}
 
-        {role === "seller" && <p className="mt-1 break-all rounded bg-gray-50 px-2 py-1.5 text-[10px] text-secondaryText">Bidder: {bid.bidder_id}</p>}
+        {role === "seller" && <p className="mt-1 break-all rounded bg-gray-50 px-2 py-1.5 text-[10px] text-secondaryText">Bidder: <span title={bid.bidder_id}>{bidderLabel}</span></p>}
       </div>
 
       {actionLoading ? (

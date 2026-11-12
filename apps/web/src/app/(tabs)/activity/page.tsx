@@ -18,7 +18,7 @@ import { stablecoinUnitsToUsd } from "@/constants/exchangeRates";
 function Activities() {
   const router = useRouter();
   const { isSeller, isLoading } = useMode();
-  const { user, getMe, getSchedule, schedule } = useApi();
+  const { getMe, getSchedule, schedule, myListings, getMyListings } = useApi();
   const { formatPrice } = useCurrency();
   const deals = useTransactions();
   const { transactions, ongoing } = deals;
@@ -30,6 +30,12 @@ function Activities() {
   useEffect(() => {
     getMe({ silent: true });
   }, [getMe]);
+  // The seller's listings come from their own endpoint. The profile's
+  // `listing` field is not filled in, so the counts below read 0 for a seller
+  // with a live listing.
+  useEffect(() => {
+    getMyListings({ silent: true }).catch(() => {});
+  }, [getMyListings]);
   useEffect(() => {
     getSchedule()
       .catch(() => {})
@@ -40,7 +46,7 @@ function Activities() {
   const noViewingHours = scheduleChecked && (schedule?.length ?? 0) === 0;
 
   const properties = useMemo(() => {
-    const listing = user?.listing ?? [];
+    const listing = (myListings ?? []).filter(Boolean);
     const total = listing.length;
     const rented = listing.filter((p) => p.status === "rented").length;
     const vacant = listing.filter((p) => p.status === "available").length;
@@ -50,7 +56,7 @@ function Activities() {
       { label: "Rented Homes", value: rented, color: "#00BCD4", percentage: pct(rented) },
       { label: "Vacant homes", value: vacant, color: "#FFC107", percentage: pct(vacant) },
     ];
-  }, [user?.listing]);
+  }, [myListings]);
 
   const revenue = useMemo(() => {
     const settled = transactions.filter((t) => t.role === "seller" && isClosedPhase(t));
