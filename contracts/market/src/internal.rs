@@ -622,7 +622,11 @@ fn internal_buyer_cancel_staged(
         .unwrap_or(&0);
     contract.stable_coin_balances.insert(
         bid.stablecoin_token.clone(),
-        checked_sub_u128(current_balance, bid_refund_total(&bid), "staged cancel refund"),
+        checked_sub_u128(
+            current_balance,
+            bid_refund_total(&bid),
+            "staged cancel refund",
+        ),
     );
 
     let previous_status = format!("{:?}", bid.status);
@@ -1848,7 +1852,11 @@ pub fn internal_refund_escrow_timeout(
         .unwrap_or(&0);
     contract.stable_coin_balances.insert(
         bid.stablecoin_token.clone(),
-        checked_sub_u128(current_balance, bid_refund_total(&bid), "refund_escrow_timeout"),
+        checked_sub_u128(
+            current_balance,
+            bid_refund_total(&bid),
+            "refund_escrow_timeout",
+        ),
     );
 
     let refunded = bid_refund_total(&bid);
@@ -2343,7 +2351,11 @@ pub fn internal_admin_resolve_bid_dispute(
         DisputeResolution::Split => {
             let seller_half = bid.amount / 2;
             (
-                checked_add_u128(bid.amount.saturating_sub(seller_half), bid.damage_deposit, "split refund"),
+                checked_add_u128(
+                    bid.amount.saturating_sub(seller_half),
+                    bid.damage_deposit,
+                    "split refund",
+                ),
                 seller_half,
             )
         }
