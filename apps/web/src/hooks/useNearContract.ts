@@ -79,7 +79,7 @@ export interface UseNearContractReturn {
     params: { bid_id: number; property_id: number }
   ) => Promise<ContractCallResult<void>>;
   raiseTransactionDispute: (
-    params: { bid_id: number; property_id: number }
+    params: { bid_id: number; property_id: number; reason: string }
   ) => Promise<ContractCallResult<void>>;
 
   // Payment
@@ -410,7 +410,7 @@ export function useNearContract(): UseNearContractReturn {
   );
 
   const raiseTransactionDispute = useCallback(
-    (params: { bid_id: number; property_id: number }) =>
+    (params: { bid_id: number; property_id: number; reason: string }) =>
       callMutating(
         (accountId, privateKey) => nearContractService.raiseTransactionDispute(accountId, privateKey, params)
       ),

@@ -1221,6 +1221,16 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
           text: "Raise Dispute",
           style: "destructive",
           onPress: async () => {
+            // The admin resolving it needs to know what went wrong, and the
+            // contract will not open a dispute without a reason.
+            const reason = (typeof window !== "undefined"
+              ? window.prompt("What went wrong? This is shown to the admin who resolves the dispute.") ?? ""
+              : ""
+            ).trim().slice(0, 500);
+            if (reason.length < 10) {
+              Alert.alert("A reason is needed", "Please describe the problem in a sentence or two so the admin can resolve it.");
+              return;
+            }
             try {
               setActionLoading(true);
               const privateKey = await getAuthorizedPrivateKey(
@@ -1245,7 +1255,7 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
                   const bidResult = await nearContractService.raiseTransactionDispute(
                     walletState.account!.accountId,
                     privateKey,
-                    { bid_id: bid.id, property_id: bid.property_id }
+                    { bid_id: bid.id, property_id: bid.property_id, reason }
                   );
                   if (!bidResult.success) {
                     throw new Error(NearContractService.parseContractError(bidResult.error || "Failed to raise dispute"));
