@@ -118,18 +118,33 @@ export function isSponsorableAccountId(accountId: string): boolean {
   return label.length >= 2 && label === sanitizeUsername(label) && !label.includes(".");
 }
 
+/**
+ * An implicit account is the hex of its own ed25519 public key. Funding one
+ * is safe to offer only for the caller's own key: the address then can't be
+ * anyone else's, and the claim check upstream still allows one per login.
+ */
+export function isImplicitFor(accountId: string, pk: PublicKey): boolean {
+  if (!/^[0-9a-f]{64}$/.test(accountId)) return false;
+  return Buffer.from(pk.data).toString("hex") === accountId;
+}
+
 export async function sponsorAccount(
   accountId: string,
   publicKey: string
 ): Promise<SponsorOutcome> {
-  if (!isSponsorableAccountId(accountId)) {
-    return { ok: false, code: "invalid", message: "That account name can't be sponsored." };
-  }
   let pk: PublicKey;
   try {
     pk = PublicKey.fromString(publicKey);
   } catch {
     return { ok: false, code: "invalid", message: "That public key isn't valid." };
+  }
+  // Testnet only: a user who signed up while the funding account was empty
+  // was left holding an implicit address nobody had funded, with no way to
+  // finish. Sending the starting balance to it activates it. On mainnet this
+  // stays off until the owner decides it should cost real NEAR.
+  const implicit = NETWORK === "testnet" && isImplicitFor(accountId, pk);
+  if (!implicit && !isSponsorableAccountId(accountId)) {
+    return { ok: false, code: "invalid", message: "That account name can't be sponsored." };
   }
 
   const key = fundingKey();
@@ -153,6 +168,9 @@ export async function sponsorAccount(
     };
   }
   if (facts.exists) {
+    // An implicit address that already exists is already active: nothing
+    // to do, and no reason to fund it twice.
+    if (implicit) return { ok: true, accountId, initialBalance: "0" };
     return { ok: false, code: "taken", message: "That account name is already taken." };
   }
   const required =
@@ -169,7 +187,13 @@ export async function sponsorAccount(
   );
 
   try {
-    await funding.createAccount(accountId, pk, NEAR.toUnits(INITIAL_BALANCE_NEAR));
+    if (implicit) {
+      // A transfer to an implicit address creates it, with the key its name
+      // encodes as its full-access key.
+      await funding.transfer({ receiverId: accountId, amount: NEAR.toUnits(INITIAL_BALANCE_NEAR) });
+    } else {
+      await funding.createAccount(accountId, pk, NEAR.toUnits(INITIAL_BALANCE_NEAR));
+    }
     return { ok: true, accountId, initialBalance: INITIAL_BALANCE_NEAR };
   } catch (e: any) {
     // Once the transaction is signed and sent, a failure does not prove the

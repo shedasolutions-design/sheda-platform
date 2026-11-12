@@ -423,6 +423,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
               storedAccountId
             );
             if (seedPhrase) {
+              // A testnet wallet left unfunded at sign-up gets activated here,
+              // before the import below would refuse an account not on chain.
+              await nearWalletService
+                .activateUnfundedImplicit(seedPhrase, storedAccountId)
+                .catch((e) => console.warn("WalletContext: activation check failed:", e));
+
               // Import the wallet using the stored seed phrase
               const result = await nearWalletService.importWallet(
                 seedPhrase,

@@ -838,6 +838,39 @@ class NearWalletService {
 
   // ── Token Airdrop ─────────────────────────────────────────────────────
 
+  /**
+   * Testnet: finish setting up a wallet that was created as an implicit
+   * address because Sheda's funding account was empty at sign-up. Asks the
+   * server to send it the starting balance (one funded wallet per login, as
+   * always), then adds the test dollars a normal sign-up gets.
+   *
+   * Returns true when the account exists afterwards. Cheap for everyone
+   * else: a named account or a non-testnet network returns false at once.
+   */
+  async activateUnfundedImplicit(seedPhrase: string, accountId: string): Promise<boolean> {
+    if (this.currentNetwork !== "testnet" || !/^[0-9a-f]{64}$/.test(accountId)) return false;
+    const keyPair = this.deriveKeyPairFromSeedPhrase(seedPhrase);
+    if (this.deriveImplicitAccountId(keyPair) !== accountId) return false;
+    if (await this.withRetry(() => this.accountExists(accountId), "checkAccountExists")) return true;
+
+    const sponsored = await requestSponsoredAccount(accountId, keyPair.getPublicKey().toString());
+    if (!sponsored.ok) {
+      console.warn("NearWalletService: couldn't activate unfunded wallet:", sponsored.message);
+      return false;
+    }
+    for (let i = 0; i < 10 && !(await this.accountExists(accountId)); i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    if (!(await this.accountExists(accountId))) return false;
+    try {
+      await this.airdropTestTokens(accountId, keyPair.toString());
+    } catch (error) {
+      console.warn("NearWalletService: activated, but the test dollars failed:", error);
+    }
+    console.log("NearWalletService: activated unfunded wallet", accountId);
+    return true;
+  }
+
   async airdropTestTokens(
     accountId: string,
     privateKey: string
