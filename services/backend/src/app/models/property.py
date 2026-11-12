@@ -9,6 +9,8 @@ from sqlalchemy import (
     CheckConstraint,
     Integer,
     Time,
+    Index,
+    text,
 )
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 from datetime import datetime, time, timezone
@@ -202,6 +204,16 @@ class PropertyImage(Base):
 
 class Appointment(Base):
     __tablename__ = "appointment"
+    __table_args__ = (
+        Index(
+            "uq_appointment_agent_time_live",
+            "agent_id",
+            "scheduled_at",
+            unique=True,
+            postgresql_where=text("status <> 'canceled'"),
+            sqlite_where=text("status <> 'canceled'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=True)
     client_id: Mapped[int] = mapped_column(
@@ -234,8 +246,11 @@ class Appointment(Base):
     # look at properties before committing money — and every appointment
     # created before this column existed has no deal to point at.
     bid_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # Unique per seller and time among live viewings (see __table_args__).
+    # It used to be unique across the whole platform: two buyers could not
+    # view two different properties at 10:00 on the same day.
     scheduled_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, unique=True
+        DateTime, nullable=False
     )  # NOTE Date/Time of appointment
     # NOTE - Change to sold or rented o the agent cofirmation
     status: Mapped[AppointmentStatEnum] = mapped_column(

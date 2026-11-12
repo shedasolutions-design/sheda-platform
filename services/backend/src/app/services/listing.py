@@ -323,27 +323,37 @@ async def run_book_appointment(
     requested_weekday = requested_time.strftime("%A").upper()
     requested_time_only = requested_time.time()
 
-    # NOTE Check if the requested time matches an available slot
+    # The time must fall inside hours the seller published. A window is a
+    # recurring weekday range, so it is never "used up" by one booking: this
+    # used to set is_booked on the whole window (every Friday 08:00-20:00, say)
+    # and nothing cleared it, so one viewing closed that weekday for good.
     available_slot: Result = await db.execute(
         select(AgentAvailability).where(
             AgentAvailability.agent_id == agent_id,
             AgentAvailability.weekday == requested_weekday,
             AgentAvailability.start_time <= requested_time_only,
             AgentAvailability.end_time > requested_time_only,
-            AgentAvailability.is_booked == False,
         )
     )
-    available_slot = available_slot.scalars().first()  # type: ignore
-
-    if available_slot:
-        available_slot.is_booked = True  # type: ignore
-        scheduled_time = requested_time
-    else:
-        logger.error(f"slots found:{available_slot}")
-        # No available slot, negotiation required
+    if available_slot.scalars().first() is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Requested time is unavailable. Please negotiate a new time.",
+        )
+    scheduled_time = requested_time
+
+    # What is actually taken is this seller at this exact time.
+    taken = await db.execute(
+        select(Appointment.id).where(
+            Appointment.agent_id == agent_id,
+            Appointment.scheduled_at == scheduled_time,
+            Appointment.status != AppointmentStatEnum.canceled,
+        )
+    )
+    if taken.first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That time has just been booked. Please pick another.",
         )
 
     appointment = Appointment(
@@ -358,7 +368,15 @@ async def run_book_appointment(
     )
 
     db.add(appointment)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Two buyers took the same time at the same moment; the index decided.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That time has just been booked. Please pick another.",
+        )
     await db.refresh(appointment)
     return appointment
 
@@ -522,7 +540,23 @@ async def delete_agent_availability(
             detail="Schedule not found or you are not the owner",
         )
 
-    if schedule.is_booked:
+    # An upcoming live viewing inside this window keeps it. (is_booked used
+    # to stand in for this, but it marked the whole recurring window and was
+    # never cleared; it is no longer set.)
+    upcoming = await db.execute(
+        select(Appointment.scheduled_at).where(
+            Appointment.agent_id == schedule.agent_id,
+            Appointment.scheduled_at >= datetime.now(timezone.utc).replace(tzinfo=None),
+            Appointment.status.in_([AppointmentStatEnum.pending, AppointmentStatEnum.confirmed]),
+        )
+    )
+    weekday = str(getattr(schedule.weekday, "value", schedule.weekday)).upper()
+    in_window = any(
+        when.strftime("%A").upper() == weekday
+        and schedule.start_time <= when.time() < schedule.end_time
+        for (when,) in upcoming.all()
+    )
+    if in_window:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
