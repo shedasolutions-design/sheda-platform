@@ -17,6 +17,7 @@ import { useMode } from "@/contexts/ModeContext";
 import useUnreadMessagesCount from "@/hooks/useUnreadMessagesCount";
 import useUnattendedCount from "@/hooks/useUnattendedCount";
 import BackupReminder from "./BackupReminder";
+import MessagePopup from "./chat/MessagePopup";
 
 interface Tab {
   href: string;
@@ -56,6 +57,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen md:flex">
+      <MessagePopup />
       {/* Sidebar, md and up */}
       <nav
         aria-label="Main"

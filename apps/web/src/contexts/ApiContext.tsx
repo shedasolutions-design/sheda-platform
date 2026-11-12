@@ -640,6 +640,7 @@ export function ApiProvider({ children }: ApiProviderProps) {
           message: data.message,
           timestamp: data.created_at || data.timestamp || new Date().toISOString(),
           property_id: data.property_id,
+          sender_name: data.sender_info?.username || undefined,
         };
         dispatch({ type: "ADD_WS_MESSAGE", payload: formattedMsg });
         // The sender stopped typing: they just sent.
