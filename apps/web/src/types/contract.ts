@@ -455,6 +455,10 @@ export interface BidView {
   status: BidStatus;
   updated_at?: number;
   document_token_id?: string;
+  /** Link to the first agreement image, set when the seller releases documents. */
+  document_image_uri?: string | null;
+  /** The seller's description of the agreement. */
+  document_description?: string | null;
   escrow_release_tx?: string;
   // Present in the on-chain Bid struct (nanosecond timestamp) but wasn't
   // declared here before — release_escrow requires

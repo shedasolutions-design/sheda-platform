@@ -11,7 +11,7 @@ import {
   SELLER_STATUS,
 } from "@/types/transaction";
 import { Action } from "@/types/contract";
-import { stablecoinUnitsToNaira } from "@/constants/exchangeRates";
+import { stablecoinUnitsToUsd } from "@/constants/exchangeRates";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
 import PriceDisplay from "@/components/property/PriceDisplay";
 import { formatRelativeTime } from "@/utilities/formatTimestamp";
@@ -50,10 +50,6 @@ const CancelledCard = ({ transaction }: CancelledCardProps) => {
   const bedrooms = propertyDetails?.bedroom || 0;
   const bathrooms = propertyDetails?.bathroom || 0;
   const isLease = bid.action === Action.Lease;
-  const priceNaira = stablecoinUnitsToNaira(
-    parseInt(bid.bid_amount) || 0,
-    ngnPerUsd || 1500
-  );
   const imageSource = propertyDetails?.images?.[0]?.image_url
     ? { uri: propertyDetails.images[0].image_url }
     : property.metadata_uri
@@ -98,7 +94,7 @@ const CancelledCard = ({ transaction }: CancelledCardProps) => {
       <div className="px-3 py-2">
         <DealFacts title={title} location={location} bedrooms={bedrooms} bathrooms={bathrooms} />
         <div className="mt-1 flex items-center justify-between">
-          <PriceDisplay amountFiat={priceNaira} fiatCode="NGN" suffix={isLease ? "/yr" : ""} compact />
+          <PriceDisplay amountUsd={stablecoinUnitsToUsd(parseInt(bid.bid_amount) || 0)} suffix={isLease ? "/yr" : ""} compact />
           {!!updatedAt && <span className="text-xs text-[#878787BF]">{formatRelativeTime(updatedAt)}</span>}
         </div>
         {!!statusLine && <p className="mt-1 rounded bg-gray-50 px-2 py-1.5 text-[11px] italic text-secondaryText">{statusLine}</p>}

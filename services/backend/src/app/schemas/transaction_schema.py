@@ -35,6 +35,9 @@ class TransactionView(BaseModel):
     # appointment-event branch (services/transactions.py), read back out of
     # metadata_payload. One of "booked" | "accepted" | "rejected" | None.
     appointment_status: Optional[str] = None
+    # Every agreement image the seller released. The chain holds only the
+    # first link (document_image_uri); the rest live here.
+    document_urls: Optional[list[str]] = None
     updated_at: Optional[datetime] = None
     property: Optional[TransactionPropertyInfo] = None
     counterparty: Optional[TransactionCounterpartyInfo] = None
