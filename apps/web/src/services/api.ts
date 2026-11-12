@@ -321,6 +321,8 @@ export interface ChatMessageSchema {
   timestamp?: string;
   property_id?: number;
   is_read?: boolean | null;
+  /** Live messages only: the sender's display name, for the message pop-up. */
+  sender_name?: string;
 }
 
 // Detailed chat message with sender/receiver info (returned by /chat/history/{user_id})

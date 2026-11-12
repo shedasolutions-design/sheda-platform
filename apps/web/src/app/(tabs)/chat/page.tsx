@@ -127,14 +127,19 @@ function Chat() {
         const data = await getPropertyById(Number(propertyId));
         setProperty(data);
         const agentId = data.agent_id || (data as any).userId;
-        if (agentId) setAgent(await getAgentProfile(Number(agentId), { silent: true }));
+        // The listing's agent is the other person only when you are the
+        // buyer. A seller opening the thread got their own profile in the
+        // header; the buyer's name passed in (agentName) is used instead.
+        if (agentId && Number(agentId) !== Number(user?.id)) {
+          setAgent(await getAgentProfile(Number(agentId), { silent: true }));
+        }
       } else if (receiverId) {
         setAgent(await getAgentProfile(Number(receiverId), { silent: true }));
       }
     } catch {
       /* header falls back to the name passed in */
     }
-  }, [propertyId, receiverId, getPropertyById, getAgentProfile]);
+  }, [propertyId, receiverId, getPropertyById, getAgentProfile, user?.id]);
 
   const loadHistory = useCallback(async () => {
     const rId = Number(receiverId);

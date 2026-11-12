@@ -826,7 +826,7 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
                 await onPhaseUpdate(bid.id, bid.property_id, TransactionPhase.DOCS_CONFIRMED);
 
                 await sendTransactionMessage({
-                  type: "doc_confirmed",
+                  type: "docs_confirmed",
                   propertyId: bid.property_id,
                   bidId: bid.id,
                   propertyTitle: title,

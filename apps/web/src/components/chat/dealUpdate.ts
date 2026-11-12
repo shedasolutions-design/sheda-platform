@@ -23,6 +23,8 @@ const WORDS: Record<string, string> = {
   appointment_rejected: "Viewing declined",
   docs_released: "Agreement sent",
   docs_confirmed: "Agreement accepted",
+  // One sender spelled it this way; both are accepted.
+  doc_confirmed: "Agreement accepted",
   payment_released: "Payment released",
   transaction_completed: "Deal complete",
   dispute_raised: "Dispute raised",
@@ -52,4 +54,24 @@ export function parseDealUpdate(message: string): DealUpdate | null {
 export function dealUpdateText(update: DealUpdate): string {
   const what = WORDS[update.type] ?? "Deal update";
   return update.propertyTitle ? `${what}: "${update.propertyTitle}"` : what;
+}
+
+/**
+ * One line for any chat message: a deal update, an offer card, or plain
+ * text. Used by the inbox preview and the incoming-message pop-up.
+ */
+export function chatPreview(message: string): string {
+  const update = parseDealUpdate(message);
+  if (update) return dealUpdateText(update);
+  const text = message?.trim() ?? "";
+  if (text.startsWith("{")) {
+    try {
+      const data = JSON.parse(text);
+      if (data?.type === "offer") return `New offer on "${data.propertyTitle ?? "a property"}"`;
+      if (data?.type === "offer_response") return `Offer ${data.status === "accepted" ? "accepted" : "declined"}`;
+    } catch {
+      /* plain text that happens to start with "{" */
+    }
+  }
+  return text;
 }
