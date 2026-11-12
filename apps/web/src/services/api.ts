@@ -469,6 +469,8 @@ export interface TransactionView {
   // upsert_transaction_from_event's appointment-event branch. One of
   // "booked" | "accepted" | "rejected" | null/undefined.
   appointment_status?: string | null;
+  /** Every agreement image the seller released (the chain holds the first). */
+  document_urls?: string[] | null;
   updated_at?: string | null;
   property?: TransactionPropertyInfo | null;
   counterparty?: TransactionCounterpartyInfo | null;

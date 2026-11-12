@@ -5,7 +5,7 @@ import Alert from "@/utilities/alertPolyfill";
 import { router } from "@/lib/router";
 import { Transaction, TransactionPhase } from "@/types/transaction";
 import { Action } from "@/types/contract";
-import { stablecoinUnitsToNaira } from "@/constants/exchangeRates";
+import { stablecoinUnitsToUsd } from "@/constants/exchangeRates";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { useState, useCallback, useEffect } from "react";
 import nearContractService from "@/services/nearContract";
@@ -59,7 +59,6 @@ const ExpireCard = ({ transaction, onPhaseUpdate }: ExpireCardProps) => {
   const location = propertyDetails?.location || "—";
   const bedrooms = propertyDetails?.bedroom || 0;
   const bathrooms = propertyDetails?.bathroom || 0;
-  const priceNaira = stablecoinUnitsToNaira(parseInt(bid.bid_amount) || 0, ngnPerUsd || 1500);
   const imageSource = propertyDetails?.images?.[0]?.image_url
     ? { uri: propertyDetails.images[0].image_url }
     : property.metadata_uri
@@ -402,7 +401,7 @@ const ExpireCard = ({ transaction, onPhaseUpdate }: ExpireCardProps) => {
       <div className="px-3 py-2">
         <DealFacts title={title} location={location} bedrooms={bedrooms} bathrooms={bathrooms} />
         <div className="mt-1">
-          <PriceDisplay amountFiat={priceNaira} fiatCode="NGN" suffix="/yr" compact />
+          <PriceDisplay amountUsd={stablecoinUnitsToUsd(parseInt(bid.bid_amount) || 0)} suffix="/yr" compact />
         </div>
 
         {/* The deposit is the tenant's money in escrow: say when it can be taken. */}

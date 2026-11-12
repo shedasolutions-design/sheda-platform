@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { History } from "lucide-react";
 import { PropertySkeletonList } from "@/components/property/HouseCard";
@@ -31,6 +31,19 @@ export default function DealTabs({ deals }: { deals: ReturnType<typeof useTransa
     const id = setInterval(() => refresh(), 60_000);
     return () => clearInterval(id);
   }, [refresh]);
+
+  // A card's action updates its phase at once, but the bid it holds is the
+  // one read before the action: fields the contract set just now (the escrow
+  // release time, say) were missing until the next minute's poll, so the
+  // buyer saw "Available in 24h" for a 3-minute lock and a stale progress
+  // step. Re-read shortly after, once final state has caught up.
+  const onPhaseUpdate = useCallback(
+    async (bidId: number, propertyId: number, phase: Parameters<typeof updatePhase>[2]) => {
+      await updatePhase(bidId, propertyId, phase);
+      setTimeout(() => refresh(), 4000);
+    },
+    [updatePhase, refresh]
+  );
 
   const lists: Record<Tab, typeof ongoing> = { Ongoing: ongoing, Active: completed, Cancelled: cancelled, Expired: expired };
   const current = lists[tab];
@@ -86,7 +99,7 @@ export default function DealTabs({ deals }: { deals: ReturnType<typeof useTransa
           <ul className="grid gap-4 sm:grid-cols-2">
             {current.map((tx) => (
               <li key={tx.key}>
-                <Card transaction={tx} onPhaseUpdate={updatePhase} />
+                <Card transaction={tx} onPhaseUpdate={onPhaseUpdate} />
               </li>
             ))}
           </ul>

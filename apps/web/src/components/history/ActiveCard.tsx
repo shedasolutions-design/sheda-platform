@@ -9,7 +9,7 @@ import {
   PHASE_LABELS,
   PHASE_COLORS,
 } from "@/types/transaction";
-import { stablecoinUnitsToNaira, formatNaira } from "@/constants/exchangeRates";
+import { stablecoinUnitsToNaira, formatNaira, stablecoinUnitsToUsd } from "@/constants/exchangeRates";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { useState, useEffect, useCallback } from "react";
 import nearContractService from "@/services/nearContract";
@@ -93,7 +93,6 @@ const ActiveCard = ({ transaction, onPhaseUpdate }: ActiveCardProps) => {
   const location = propertyDetails?.location || "—";
   const bedrooms = propertyDetails?.bedroom || 0;
   const bathrooms = propertyDetails?.bathroom || 0;
-  const priceNaira = stablecoinUnitsToNaira(parseInt(bid.bid_amount) || 0, ngnPerUsd || 1500);
   const mode = bid.action === "Lease" ? "rent" : "buy";
   const imageSource = propertyDetails?.images?.[0]?.image_url
     ? { uri: propertyDetails.images[0].image_url }
@@ -229,7 +228,7 @@ const ActiveCard = ({ transaction, onPhaseUpdate }: ActiveCardProps) => {
       <div className="px-3 py-2">
         <DealFacts title={title} location={location} bedrooms={bedrooms} bathrooms={bathrooms} />
         <div className="mt-1">
-          <PriceDisplay amountFiat={priceNaira} fiatCode="NGN" suffix={mode === "rent" ? "/yr" : ""} compact />
+          <PriceDisplay amountUsd={stablecoinUnitsToUsd(parseInt(bid.bid_amount) || 0)} suffix={mode === "rent" ? "/yr" : ""} compact />
         </div>
         <p className="mt-1 rounded bg-gray-50 px-2 py-1.5 text-[10px] text-secondaryText">
           {mode === "rent" ? "🏠 Lease" : "🏡 Purchase"} agreement

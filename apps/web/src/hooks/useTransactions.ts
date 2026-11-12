@@ -254,6 +254,7 @@ export function feedItemToTransaction(
         updatedAt: updatedAtTs,
         documentTokenId: item.document_token_id ?? undefined,
         escrowReleaseTxHash: item.escrow_release_tx ?? undefined,
+        documentUrls: item.document_urls ?? undefined,
         completedAt,
         ...leaseExpiry,
     };
@@ -571,6 +572,7 @@ export function useTransactions(): UseTransactionsReturn {
                     updatedAt: bid.updated_at ?? bid.created_at,
                     documentTokenId: bid.document_token_id ?? undefined,
                     escrowReleaseTxHash: bid.escrow_release_tx ?? undefined,
+                    documentUrls: backendMatch?.document_urls ?? undefined,
                     completedAt,
                     ...leaseExpiry,
                 };

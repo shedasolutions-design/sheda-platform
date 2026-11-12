@@ -109,6 +109,8 @@ export interface Transaction {
     updatedAt: number;
     documentTokenId?: string;
     escrowReleaseTxHash?: string;
+    /** Every agreement image the seller released (the chain holds the first). */
+    documentUrls?: string[];
     /** Timestamp (ms) when the transaction was completed */
     completedAt?: number;
     /** Agreement duration in months (from rental_period_months or default 12) — Lease only */

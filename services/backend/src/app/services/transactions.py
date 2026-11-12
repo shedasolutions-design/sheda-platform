@@ -197,6 +197,10 @@ async def get_transactions(
                 appointment_status=(
                     (record.metadata_payload or {}).get("appointment_status")
                 ),
+                document_urls=(
+                    [u for u in (record.metadata_payload or {}).get("document_urls") or [] if isinstance(u, str)]
+                    or None
+                ),
                 updated_at=record.updated_at,
                 property=property_info,
                 counterparty=counterparty_info,

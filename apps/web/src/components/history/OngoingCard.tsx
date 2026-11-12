@@ -137,6 +137,19 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
     return () => clearInterval(interval);
   }, [escrowReleaseAtMs]);
 
+  // The released agreement: every page the backend kept, else the one the
+  // chain holds.
+  const agreementImages = (
+    transaction.documentUrls && transaction.documentUrls.length > 0
+      ? transaction.documentUrls
+      : bid.document_image_uri
+        ? [bid.document_image_uri]
+        : []
+  ).filter((u): u is string => typeof u === "string" && /^https:\/\//.test(u));
+  const agreementShown =
+    (phase === TransactionPhase.DOCS_RELEASED || phase === TransactionPhase.DOCS_CONFIRMED) &&
+    (agreementImages.length > 0 || !!bid.document_description);
+
   const phaseColor = PHASE_COLORS[phase];
   const statusMessage = role === "buyer" ? BUYER_STATUS[phase] : SELLER_STATUS[phase];
 
@@ -152,7 +165,6 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
   const location = propertyDetails?.location || "—";
   const bedrooms = propertyDetails?.bedroom || 0;
   const bathrooms = propertyDetails?.bathroom || 0;
-  const priceNaira = stablecoinUnitsToNaira(parseInt(bid.bid_amount) || 0, ngnPerUsd || 1500);
   const priceUsd = stablecoinUnitsToUsd(parseInt(bid.bid_amount) || 0);
   const displayPrice = formatPrice(priceUsd);
   const mode = bid.action === "Lease" ? "rent" : "buy";
@@ -771,7 +783,7 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
   const handleConfirmDocuments = async () => {
     Alert.alert(
       "Confirm Documents",
-      "Confirm that you have received and reviewed the property documents?",
+      "Confirm that you have read the agreement shown on this card and accept it? Payment can be released to the seller once the escrow wait ends.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -1416,7 +1428,7 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
           )}
         </ul>
         <div className="mt-1 flex items-center justify-between">
-          <PriceDisplay amountFiat={priceNaira} fiatCode="NGN" suffix={mode === "rent" ? "/yr" : ""} compact />
+          <PriceDisplay amountUsd={stablecoinUnitsToUsd(parseInt(bid.bid_amount) || 0)} suffix={mode === "rent" ? "/yr" : ""} compact />
         </div>
 
         {!isTerminalPhase && (
@@ -1424,6 +1436,31 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
         )}
 
         <p className="my-1 text-xs italic text-secondaryText">{statusMessage}</p>
+
+        {/* The agreement itself. The buyer used to be asked to confirm
+            documents they had never been shown: nothing on the card or in the
+            dialog displayed them. */}
+        {agreementShown && (
+          <div className="my-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-xs font-semibold text-[#333]">Agreement from the seller</p>
+            {bid.document_description && (
+              <p className="mt-1 whitespace-pre-wrap text-xs text-[#555]">{bid.document_description}</p>
+            )}
+            {agreementImages.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {agreementImages.map((url, i) => (
+                  <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="block">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt={`Agreement page ${i + 1}`} className="h-20 w-16 rounded border border-amber-200 object-cover" />
+                  </a>
+                ))}
+              </div>
+            )}
+            {agreementImages.length > 0 && (
+              <p className="mt-1 text-[11px] text-secondaryText">Tap a page to open it full size.</p>
+            )}
+          </div>
+        )}
 
         {phase === TransactionPhase.BID_PENDING && bidExpiresAtMs !== undefined && (
           <p className={`my-1 text-[11px] ${isBidExpired ? "text-red-600" : "text-amber-700"}`}>

@@ -98,13 +98,15 @@ function ReleaseDocument() {
       // stop: the old screen wrote a placeholder or a this-device-only file
       // address on-chain permanently.
       let mediaUri = "";
+      let documentUrls: string[] = [];
       if (images.length > 0) {
         const up = await uploadTransactionDocuments(
           Number(params.bidId),
           images.map(({ uri, fileName, mimeType }) => ({ uri, fileName, mimeType })),
           description.trim() || undefined
         );
-        mediaUri = up?.uploaded_urls?.[0] ?? "";
+        documentUrls = (up?.uploaded_urls ?? []).filter(Boolean);
+        mediaUri = documentUrls[0] ?? "";
         if (!mediaUri) throw new Error("The documents couldn't be uploaded. Please try again.");
       }
 
@@ -131,11 +133,15 @@ function ReleaseDocument() {
         const buyer = await getUserByWallet(params.buyerAccountId);
         if (buyer?.id)
           await sendTransactionNotification({
-            transaction_id: `bid_${bidId}`,
+            // The bid id alone, as every other deal event sends it: "bid_2"
+            // filed this release under a second, separate deal record.
+            transaction_id: String(bidId),
             event: "docs_released",
             recipient_user_id: buyer.id,
             property_id: propertyId,
-            metadata: { propertyTitle: title, transactionHash: result.transactionHash, mediaUri },
+            // All the images: the chain keeps only the first, and the rest
+            // were dropped, so a five-page agreement arrived as one page.
+            metadata: { propertyTitle: title, transactionHash: result.transactionHash, mediaUri, document_urls: documentUrls },
           });
       } catch {
         /* the release itself succeeded */
