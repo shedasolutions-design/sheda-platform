@@ -297,7 +297,8 @@ export function NotificationProvider({
 }: {
     children: React.ReactNode;
 }) {
-    const { wsMessages, getNotifications, markNotificationRead } = useApi();
+    const { wsMessages, getNotifications, markNotificationRead, user } = useApi();
+    const userId = user?.id ?? null;
     const [state, dispatch] = useReducer(notificationReducer, {
         notifications: [],
         unreadCount: 0,
@@ -322,7 +323,10 @@ export function NotificationProvider({
         },
         []
     );
-    const hasFetched = useRef(false);
+    // The user the list was last fetched for. Fetching once on mount ran
+    // before sign-in on a fresh visit, got a 401, and never tried again, so
+    // a new user saw no server notifications until they reloaded the page.
+    const fetchedFor = useRef<number | string | null>(null);
 
     // ---- Load cached notifications first, then fetch from backend ----
 
@@ -363,11 +367,10 @@ export function NotificationProvider({
     }, [getNotifications]);
 
     useEffect(() => {
-        if (!hasFetched.current) {
-            hasFetched.current = true;
-            fetchFromBackend();
-        }
-    }, [fetchFromBackend]);
+        if (userId == null || fetchedFor.current === userId) return;
+        fetchedFor.current = userId;
+        fetchFromBackend();
+    }, [userId, fetchFromBackend]);
 
     // ---- Listen for WebSocket messages ----
 

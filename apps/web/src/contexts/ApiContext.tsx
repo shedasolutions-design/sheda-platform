@@ -1269,15 +1269,33 @@ export function ApiProvider({ children }: ApiProviderProps) {
     dispatch({ type: "SET_TOKEN", payload: token.access_token });
   }, [apiCall, dispatch]);
 
-  const switchAccount = useCallback(async (accountType: "client" | "agent") => {
-    const token = await apiCall(() => apiService.switchAccount(accountType));
-    if (!token) return;
-    await apiService.setToken(token.access_token);
-    await AsyncStorage.setItem("auth_token", token.access_token);
-    dispatch({ type: "SET_TOKEN", payload: token.access_token });
+  // A switch revokes the token it was sent with. Right after sign-up the
+  // profile chooser and the initial mode sync both asked for one at the same
+  // moment, with the same token: the backend answered 500 to the second, and
+  // a switch sent a beat later would carry an already-revoked token. So
+  // switches run one at a time, and a repeat of the one in flight joins it.
+  const switchQueue = useRef<Promise<void>>(Promise.resolve());
+  const switchInFlight = useRef<{ type: "client" | "agent"; done: Promise<void> } | null>(null);
 
-    // Refresh user data
-    await getMe();
+  const switchAccount = useCallback((accountType: "client" | "agent"): Promise<void> => {
+    if (switchInFlight.current?.type === accountType) return switchInFlight.current.done;
+    const run = async () => {
+      const token = await apiCall(() => apiService.switchAccount(accountType));
+      if (!token) return;
+      await apiService.setToken(token.access_token);
+      await AsyncStorage.setItem("auth_token", token.access_token);
+      dispatch({ type: "SET_TOKEN", payload: token.access_token });
+
+      // Refresh user data
+      await getMe();
+    };
+    const done = switchQueue.current.catch(() => {}).then(run);
+    switchQueue.current = done;
+    switchInFlight.current = { type: accountType, done };
+    done.finally(() => {
+      if (switchInFlight.current?.done === done) switchInFlight.current = null;
+    }).catch(() => {});
+    return done;
   }, [apiCall, dispatch, getMe]);
 
   const updateMe = useCallback(async (userData: UserUpdate) => {

@@ -53,11 +53,30 @@ class PostgresKV:
 
         if px is not None and ex is None:
             ex = px / 1000.0
+        from sqlalchemy.exc import IntegrityError
+
+        expires = _now() + timedelta(seconds=ex) if ex else None
         async with self._session() as db:
             row = await self._live(db, name)
             if (nx and row is not None) or (xx and row is None):
                 return None
-            expires = _now() + timedelta(seconds=ex) if ex else None
+            if row is None:
+                db.add(KVEntry(key=name, value=str(value), expires_at=expires))
+            else:
+                row.value = str(value)
+                row.expires_at = expires
+            try:
+                await db.commit()
+                return True
+            except IntegrityError:
+                # Two requests wrote the same new key at once (a token revoked
+                # by two simultaneous calls, say). The other one won the
+                # insert; behave as Redis would and update the row instead.
+                await db.rollback()
+        if nx:
+            return None
+        async with self._session() as db:
+            row = await db.get(KVEntry, name)
             if row is None:
                 db.add(KVEntry(key=name, value=str(value), expires_at=expires))
             else:

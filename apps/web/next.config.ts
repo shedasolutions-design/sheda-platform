@@ -32,6 +32,9 @@ const CONNECT = [
   "https://free.rpc.fastnear.com",
   "https://near-testnet.drpc.org",
   "https://rpc.shitzuapes.xyz",
+  // Testnet wallet fallback when Sheda's funding account is empty
+  // (services/nearWallet.ts, rung 2). Blocked here, that rung could never run.
+  "https://helper.testnet.near.org",
   // Transaction history, prices, cross-chain swaps
   "https://api.nearblocks.io",
   "https://api-testnet.nearblocks.io",

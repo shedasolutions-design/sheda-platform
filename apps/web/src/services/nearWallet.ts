@@ -1552,11 +1552,18 @@ class NearWalletService {
   // never silently reported as non-existence. That false negative is what
   // was making a fully-created wallet appear disconnected after every
   // refresh whenever the shared public testnet RPC hiccuped.
+  //
+  // Newer @near-js versions word it "Can't complete the action because
+  // account X doesn't exist" and tag it AccountDoesNotExist. Missing that
+  // wording is what turned a brand-new implicit wallet (which by design does
+  // not exist until its first deposit) into "We couldn't create your wallet".
   private isAccountNotFoundError(error: any): boolean {
-    const msg = (error?.message || String(error)).toLowerCase();
+    if (error?.type === "AccountDoesNotExist" || error?.cause?.name === "UNKNOWN_ACCOUNT") return true;
+    const msg = (error?.message || String(error)).toLowerCase().trim();
     return (
-      /^account .*? does not exist while viewing$/.test(msg) ||
-      /^account .*? doesn't exist$/.test(msg)
+      /^account \S+ does not exist while viewing$/.test(msg) ||
+      /^account \S+ doesn't exist$/.test(msg) ||
+      /^can't complete the action because account \S+ doesn't exist$/.test(msg)
     );
   }
 
