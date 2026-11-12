@@ -97,7 +97,15 @@ function BookAppointment() {
   const submit = useCallback(
     async (agentId: number) => {
       try {
-        await bookAppointment({ agent_id: agentId, property_id: Number(p.id), requested_time: `${day}T${time}` });
+        // bid_id ties the viewing to the deal: the seller's card and both
+        // timelines find it by bid. Without it the booking saved, but the deal
+        // stayed on "waiting for buyer to book" forever.
+        await bookAppointment({
+          agent_id: agentId,
+          property_id: Number(p.id),
+          requested_time: `${day}T${time}`,
+          ...(p.bidId ? { bid_id: Number(p.bidId) } : {}),
+        });
 
         // Tell the seller's deal card, if this booking belongs to a bid.
         let sellerNotified = false;
