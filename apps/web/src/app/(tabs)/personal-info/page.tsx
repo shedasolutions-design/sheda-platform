@@ -29,7 +29,6 @@ function PersonalInfo() {
   const [location, setLocation] = useState("");
   const [avatar, setAvatar] = useState("");
   const [fullName, setFullName] = useState("");
-  const [agencyName, setAgencyName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [saving, setSaving] = useState(false);
@@ -45,7 +44,6 @@ function PersonalInfo() {
   useEffect(() => {
     if (!user) return;
     setFullName(user.fullname || "");
-    setAgencyName(user.agency_name || "");
     setPhone(user.phone_number || "");
     setEmail(user.email || "");
     setLocation(user.location || "");
@@ -88,7 +86,6 @@ function PersonalInfo() {
         location,
         account_type: user.account_type || "client",
       };
-      if (isSeller) update.agency_name = agencyName.trim();
       if (avatar) update.avatar_url = avatar;
       await updateMe(update as any);
       // Property pages cache agent profiles; drop ours so the change shows.
@@ -141,15 +138,13 @@ function PersonalInfo() {
           }}
         >
           <TextField label="Full Name" placeholder="Enter your full name" value={fullName} onChange={(e) => setFullName(e.target.value)} autoComplete="name" />
-          {isSeller && (
-            <TextField
-              label="Agency Name (optional)"
-              placeholder="Enter agency name (if any)"
-              value={agencyName}
-              onChange={(e) => setAgencyName(e.target.value)}
-              autoComplete="organization"
-            />
-          )}
+          <p className="text-xs text-secondaryText">
+            Selling as an agency or company? Set it in{" "}
+            <a href="/business-profile" className="font-medium text-primary">
+              Business profile
+            </a>
+            .
+          </p>
           <TextField label="Phone number" type="tel" placeholder="+234..." value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
           <TextField label="Email" type="email" placeholder="Enter email address" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
           <LocationField value={location} onChange={setLocation} />

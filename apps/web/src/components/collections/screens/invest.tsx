@@ -196,8 +196,8 @@ function BuilderSide() {
           body="A builder profile is what investors read before backing you. It carries your delivery record and the stake behind your promises, and both are public."
         />
         <CollectionsButton
-          label="Register as a builder"
-          onPress={() => router.push("/collections/become-builder")}
+          label="Set up your builder profile"
+          onPress={() => router.push("/business-profile")}
         />
         <ListRow
           title="See how builders are ranked"

@@ -186,21 +186,7 @@ export default function ProjectDetail() {
           </Section>
         ) : null}
 
-        {project.phases.length > 0 ? (
-          <Section title="How the money is released">
-            <Card>
-              <View style={{ gap: 14 }}>
-                {project.phases.map((phase) => (
-                  <PhaseRow key={phase.id} phase={phase} />
-                ))}
-              </View>
-            </Card>
-            <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
-              Each phase is inspected and signed off before its money is released. Holders have
-              seven days to object, and a quarter of them objecting holds the payment.
-            </InterRegular>
-          </Section>
-        ) : null}
+        {project.phases.length > 0 ? <PhaseList project={project} onChanged={load} /> : null}
 
         {connected ? <MoneyBack slug={project.slug} /> : null}
 
@@ -449,7 +435,80 @@ const PHASE_TONE = {
   released: C.positive,
 } as const;
 
-function PhaseRow({ phase }: { phase: CollectionPhase }) {
+/**
+ * The phase schedule, and the holder's say over each release.
+ *
+ * The contract lets anyone holding shares object while a signed-off phase is
+ * in its window, and a quarter of holders objecting holds the payment. The
+ * app had the call but no button, so holders could not actually object.
+ */
+function PhaseList({ project, onChanged }: { project: CollectionProjectDetail; onChanged: () => void }) {
+  const { positions } = useUnitPositions(project.slug, project.unit_list);
+  const { objectToRelease, loading, connected } = useCollections();
+  const [windowMs, setWindowMs] = useState<number | null>(null);
+  const [busy, setBusy] = useState<number | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => {
+    chain.getObjectionWindowMs().then(setWindowMs);
+  }, []);
+
+  const holder = Object.values(positions).some((p) => BigInt(p?.committedAtomic || "0") > BigInt(0));
+  const windowOpen = (phase: CollectionPhase) =>
+    phase.state === "objection_window" &&
+    (windowMs == null || phase.attested_at_ms == null || Date.now() < phase.attested_at_ms + windowMs);
+
+  const onObject = async (phase: CollectionPhase) => {
+    setBusy(phase.position);
+    setMessage(null);
+    const result = await objectToRelease(project.slug, phase.position);
+    setBusy(null);
+    setMessage(
+      result.success
+        ? "Your objection is recorded. If a quarter of holders object before the window closes, the payment is held."
+        : result.error ?? "Your objection did not go through."
+    );
+    if (result.success) onChanged();
+  };
+
+  const minutes = windowMs ? Math.round(windowMs / 60000) : null;
+  const windowText =
+    minutes == null ? "a set time" : minutes < 120 ? `${minutes} minutes` : `${Math.round(minutes / 1440)} days`;
+
+  return (
+    <Section title="How the money is released">
+      <Card>
+        <View style={{ gap: 14 }}>
+          {project.phases.map((phase) => (
+            <PhaseRow
+              key={phase.id}
+              phase={phase}
+              canObject={connected && holder && windowOpen(phase)}
+              objecting={busy === phase.position && loading}
+              onObject={() => onObject(phase)}
+            />
+          ))}
+        </View>
+      </Card>
+      {message ? <Note>{message}</Note> : null}
+      <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
+        Each phase is inspected and signed off before its money is released. Holders have {windowText} to
+        object, and a quarter of them objecting holds the payment and stops the raise.
+      </InterRegular>
+    </Section>
+  );
+}
+
+function PhaseRow({
+  phase,
+  canObject = false,
+  objecting = false,
+  onObject,
+}: {
+  phase: CollectionPhase;
+  canObject?: boolean;
+  objecting?: boolean;
+  onObject?: () => void;
+}) {
   const done = phase.state === "released";
   const colour = PHASE_TONE[phase.state];
 
@@ -481,6 +540,9 @@ function PhaseRow({ phase }: { phase: CollectionPhase }) {
             <InterRegular style={{ ...TYPE.micro, color: C.caution }}>
               Holders can object to this release until the window closes.
             </InterRegular>
+            {canObject && onObject ? (
+              <CollectionsButton label="Object to this release" variant="quiet" loading={objecting} onPress={onObject} />
+            ) : null}
           </View>
         ) : null}
       </View>
