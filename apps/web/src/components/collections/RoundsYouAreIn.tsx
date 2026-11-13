@@ -25,7 +25,7 @@ interface Row {
  * look.
  */
 export default function RoundsYouAreIn({ accountId }: { accountId: string | null }) {
-  const { closeRaise, refundFailedRaise } = useCollections();
+  const { closeRaise, refundFailedRaise, withdrawFromRound } = useCollections();
   const { formatPrice, formatUsd, selectedCurrency } = useCurrency();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -74,6 +74,18 @@ export default function RoundsYouAreIn({ accountId }: { accountId: string | null
   }, [load]);
 
   if (!rows || rows.length === 0) return null;
+
+  const takeOut = async (row: Row, unit: string) => {
+    const key = row.project.slug + ":" + unit;
+    setBusy(key);
+    const r = await withdrawFromRound(row.project.slug, unit);
+    setBusy(null);
+    setNote({
+      ...note,
+      [row.project.slug]: r.success ? "Taken out. It arrives in your wallet in a few seconds." : r.error ?? "That did not go through.",
+    });
+    if (r.success) setTimeout(load, 4000);
+  };
 
   const getMoneyBack = async (row: Row) => {
     const slug = row.project.slug;
@@ -174,6 +186,29 @@ export default function RoundsYouAreIn({ accountId }: { accountId: string | null
                     : "View round"}
               </Link>
             </div>
+            {pos.canWithdraw && pos.units.length > 0 ? (
+              <div className="mt-3 space-y-1.5 border-t border-borderColor pt-3">
+                <p className="inline-flex items-center gap-1 text-xs text-secondaryText">
+                  Changed your mind? You can take your money out until{" "}
+                  {pos.withdrawUntilMs ? new Date(pos.withdrawUntilMs).toLocaleString() : "the last days"}.
+                  <InfoTip label="About taking money out">
+                    While a round is filling you can take back what you put into a flat. Not once it is full, and not in
+                    its last days, because the builder is counting on that money.
+                  </InfoTip>
+                </p>
+                {pos.units.map((u) => (
+                  <button
+                    key={u.code}
+                    type="button"
+                    disabled={busy === project.slug + ":" + u.code}
+                    onClick={() => takeOut(row, u.code)}
+                    className="w-full rounded-xl border border-borderColor py-2 text-sm font-medium text-primaryText disabled:opacity-60"
+                  >
+                    {busy === project.slug + ":" + u.code ? "Sending…" : `Take out ${money(u.committed)} (flat ${u.code})`}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {note[project.slug] ? <p className="mt-2 text-xs text-secondaryText">{note[project.slug]}</p> : null}
           </article>
         );

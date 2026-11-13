@@ -14,7 +14,14 @@ import { useCollections } from "@/hooks/useCollections";
 import { amountForShares, bpsToPercent, ownershipBps, parseAmount, sharesForAmount } from "@/services/collections/money";
 import { DEFAULT_TOKEN } from "@/config/tokens";
 import { RAISE_CAN_WITHDRAW, RAISE_CONTRACT_ID } from "@/config/collections";
-import { getChainSharesSold, getRaiseChainState, getStablecoinBalance } from "@/services/collections/chain";
+import {
+  getChainSharesSold,
+  getRaiseChainState,
+  getRaiseTerms,
+  getStablecoinBalance,
+  type RaiseCandidate,
+  type RaiseTerms,
+} from "@/services/collections/chain";
 import { DEFAULT_FEE_BPS, perPeriod, rentRangeOf, yearlyRentFor } from "@/services/collections/rent";
 import { INFO, INVEST_RISKS, PROJECT_TYPE_TEXT } from "@/services/collections/copy";
 import type { CollectionProjectDetail, CollectionUnit } from "@/services/api";
@@ -52,6 +59,9 @@ export default function ChooseUnit() {
   const [readPack, setReadPack] = useState(false);
   const [readRisks, setReadRisks] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
+  // v5 raises: the managers investors choose between, and this investor's pick.
+  const [terms, setTerms] = useState<RaiseTerms | null>(null);
+  const [vote, setVote] = useState<string | null>(null);
 
   const token = DEFAULT_TOKEN;
   const money = (atomic: bigint | string) => {
@@ -69,6 +79,7 @@ export default function ChooseUnit() {
       /* keep the backend's figures */
     }
     setProject(result);
+    setTerms(await getRaiseTerms(result.slug).catch(() => null));
   }, [getProject, slug]);
 
   useEffect(() => {
@@ -115,10 +126,22 @@ export default function ChooseUnit() {
   const cost = unit ? BigInt(amountForShares(shares, unit.price_atomic, unit.total_shares)) : 0n;
   const tooMany = BigInt(shares || "0") > available;
   const short = balance !== null && cost > balance;
+  // A vote is asked for only when there is a real choice.
+  const choosing = Boolean(open && terms && terms.candidates.length > 1);
+  const nominationFor = (c: RaiseCandidate) =>
+    project.nominations?.find((n) => n.profile?.near_account_id === c.account) ?? null;
+  const candidateName = (c: RaiseCandidate) => nominationFor(c)?.profile?.display_name ?? c.account;
+  const chosen = terms?.candidates.find((c) => c.account === vote) ?? (terms && terms.candidates.length === 1 ? terms.candidates[0] : null);
+  // The chosen manager's fee plus the vault's 5% reserve and Sheda's 2%.
+  const feeBps = chosen ? chosen.fee_bps + 700 : DEFAULT_FEE_BPS;
   const range = unit ? rentRangeOf(unit) : null;
-  const rent = range && unit ? perPeriod(yearlyRentFor(BigInt(shares || "0"), BigInt(unit.total_shares), range, DEFAULT_FEE_BPS), "month") : null;
+  const rent = range && unit ? perPeriod(yearlyRentFor(BigInt(shares || "0"), BigInt(unit.total_shares), range, feeBps), "month") : null;
   const pack = project.documents.find((d) => d.is_pack && d.file_url);
-  const pledgeOf = project.manager?.pledge ?? project.nominations?.find((n) => n.status === "accepted")?.pledge ?? null;
+  const pledgeOf =
+    (chosen ? nominationFor(chosen)?.pledge : null) ??
+    project.manager?.pledge ??
+    project.nominations?.find((n) => n.status === "accepted")?.pledge ??
+    null;
 
   const continueFromAmount = () => {
     if (!atomic || atomicBig < minimum) {
@@ -127,6 +150,10 @@ export default function ChooseUnit() {
     }
     if (tooMany) {
       setPopup(`Only ${available.toString()} shares are left in ${unit?.label}. Try a smaller amount.`);
+      return;
+    }
+    if (choosing && !vote) {
+      setPopup("Choose the property manager you want for this building.");
       return;
     }
     setStep("terms");
@@ -140,6 +167,7 @@ export default function ChooseUnit() {
       amountAtomic: cost.toString(),
       projectSlug: project.slug,
       unitCode: unit.code,
+      vote: choosing ? vote : null,
     });
     if (result.success) {
       setTxHash(result.transactionHash ?? "submitted");
@@ -284,6 +312,41 @@ export default function ChooseUnit() {
                 <Row label="In your wallet" value={money(balance)} tone={short ? "bad" : undefined} />
               ) : null}
             </dl>
+            {choosing && terms ? (
+              <section className="space-y-2">
+                <p className="inline-flex items-center gap-1 text-sm font-medium text-primaryText">
+                  Choose the property manager
+                  <InfoTip label="About choosing the manager">
+                    The builder suggested these managers. Investors vote with their money, and the one with the most
+                    votes when the round fills inspects each building phase and runs the flats. You can change your
+                    vote until then.
+                  </InfoTip>
+                </p>
+                {terms.candidates.map((c) => {
+                  const on = vote === c.account;
+                  return (
+                    <button
+                      key={c.account}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => setVote(c.account)}
+                      className={`flex w-full items-center justify-between rounded-xl border p-3 text-left ${
+                        on ? "border-2 border-primary bg-primaryLight" : "border-borderColor"
+                      }`}
+                    >
+                      <span>
+                        <span className="block text-sm font-medium text-primaryText">{candidateName(c)}</span>
+                        {c.self_managed ? (
+                          <span className="block text-xs text-amber-700">The builder&apos;s own company</span>
+                        ) : null}
+                      </span>
+                      <span className="text-sm text-secondaryText">{c.fee_bps / 100}% of rent</span>
+                    </button>
+                  );
+                })}
+              </section>
+            ) : null}
+
             {short ? (
               <p className="text-sm text-red-700">
                 Your wallet has less than this.{" "}
@@ -376,7 +439,10 @@ export default function ChooseUnit() {
               <Row label="Location" value={project.location} />
               <Row label="Type" value={PROJECT_TYPE_TEXT[project.project_type ?? "under_construction"]} />
               <Row label="Flat" value={unit.label} />
-              <Row label="Manager" value={project.manager?.display_name ?? "Chosen by investors"} />
+              <Row
+                label={choosing ? "Your vote for manager" : "Manager"}
+                value={chosen ? candidateName(chosen) : project.manager?.display_name ?? "Chosen by investors"}
+              />
             </dl>
             <dl className="space-y-2 rounded-2xl border border-borderColor p-4 text-sm">
               <p className="pb-1 font-medium text-primaryText">Your investment</p>

@@ -12,6 +12,7 @@
  */
 
 import nearContractService from "@/services/nearContract";
+import { raiseOf } from "@/services/collections/raiseRegistry";
 import {
   COLLECTIONS_GAS,
   COLLECTIONS_MARKETPLACE_ID,
@@ -154,12 +155,12 @@ export async function getUnitPosition(
   if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
 
   const [committed, shares] = await Promise.all([
-    nearContractService.viewOn<string>(RAISE_CONTRACT_ID, "get_commitment", {
+    nearContractService.viewOn<string>(raiseOf(projectSlug), "get_commitment", {
       project_id: projectSlug,
       account_id: accountId,
       unit: unitCode,
     }),
-    nearContractService.viewOn<string>(RAISE_CONTRACT_ID, "shares_owed", {
+    nearContractService.viewOn<string>(raiseOf(projectSlug), "shares_owed", {
       project_id: projectSlug,
       unit: unitCode,
       account_id: accountId,
@@ -297,6 +298,8 @@ export async function commitToRaise(
     amountAtomic: string;
     projectSlug: string;
     unitCode: string;
+    /** v5 raises: the manager this investor votes for. */
+    vote?: string | null;
   }
 ): Promise<ContractCallResult<void>> {
   if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
@@ -308,7 +311,11 @@ export async function commitToRaise(
       receiver_id: params.escrowAccountId,
       amount: params.amountAtomic,
       memo: null,
-      msg: JSON.stringify({ project: params.projectSlug, unit: params.unitCode }),
+      msg: JSON.stringify({
+        project: params.projectSlug,
+        unit: params.unitCode,
+        ...(params.vote ? { vote: params.vote } : {}),
+      }),
     },
     gas: tgas(COLLECTIONS_GAS.FT_TRANSFER_CALL),
     attachedDeposit: ONE_YOCTO,
@@ -393,7 +400,7 @@ export async function requestInspection(
 ): Promise<ContractCallResult<void>> {
   if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
   return nearContractService.callOn(accountId, privateKey, {
-    contractId: RAISE_CONTRACT_ID,
+    contractId: raiseOf(projectSlug),
     methodName: "request_inspection",
     args: { project_id: projectSlug, phase: phaseIndex },
     gas: tgas(COLLECTIONS_GAS.MANAGER_ACTION),
@@ -419,7 +426,7 @@ export async function claimShares(
 ): Promise<ContractCallResult<void>> {
   if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
   return nearContractService.callOn(accountId, privateKey, {
-    contractId: RAISE_CONTRACT_ID,
+    contractId: raiseOf(projectSlug),
     methodName: "claim_shares",
     args: { project_id: projectSlug, unit: unitCode },
     gas: tgas(COLLECTIONS_GAS.CLAIM_SHARES),
@@ -444,7 +451,7 @@ export async function attestPhase(
 ): Promise<ContractCallResult<void>> {
   if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
   return nearContractService.callOn(accountId, privateKey, {
-    contractId: RAISE_CONTRACT_ID,
+    contractId: raiseOf(projectSlug),
     methodName: "attest",
     args: { project_id: projectSlug, phase: phaseIndex },
     gas: tgas(COLLECTIONS_GAS.MANAGER_ACTION),
@@ -462,7 +469,7 @@ export async function objectToRelease(
 ): Promise<ContractCallResult<void>> {
   if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
   return nearContractService.callOn(accountId, privateKey, {
-    contractId: RAISE_CONTRACT_ID,
+    contractId: raiseOf(projectSlug),
     methodName: "object",
     args: { project_id: projectSlug, phase: phaseIndex },
     gas: tgas(COLLECTIONS_GAS.MANAGER_ACTION),
@@ -494,7 +501,7 @@ export async function withChainState<
       status: string;
       phases?: { state: string; attested_at_ns?: number | string }[];
       units?: { code: string; price: number | string; total_shares: number | string; raised: number | string }[];
-    } | null>(project.escrow_account_id || RAISE_CONTRACT_ID, "get_project", { project_id: project.slug });
+    } | null>(project.escrow_account_id || raiseOf(project.slug), "get_project", { project_id: project.slug });
     if (!live) return project;
     const snake = (s: string) => s.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
     const sold: Record<string, string> = {};
@@ -544,7 +551,7 @@ export async function releasePhase(
 ): Promise<ContractCallResult<void>> {
   if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
   return nearContractService.callOn(accountId, privateKey, {
-    contractId: RAISE_CONTRACT_ID,
+    contractId: raiseOf(projectSlug),
     methodName: "release_phase",
     args: { project_id: projectSlug, phase: phaseIndex },
     gas: tgas(COLLECTIONS_GAS.CLAIM),
@@ -562,7 +569,7 @@ export async function getRaiseChainState(
     status: string;
     raised: string | number;
     target: string | number;
-  } | null>(RAISE_CONTRACT_ID, "get_project", { project_id: projectSlug });
+  } | null>(raiseOf(projectSlug), "get_project", { project_id: projectSlug });
   return project ? { status: project.status, raised: String(project.raised), target: String(project.target) } : null;
 }
 
@@ -580,7 +587,7 @@ export async function closeRaise(
 ): Promise<ContractCallResult<void>> {
   if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
   return nearContractService.callOn(accountId, privateKey, {
-    contractId: RAISE_CONTRACT_ID,
+    contractId: raiseOf(projectSlug),
     methodName: "close_raise",
     args: { project_id: projectSlug },
     gas: tgas(COLLECTIONS_GAS.MANAGER_ACTION),
@@ -619,7 +626,7 @@ export async function getChainSharesSold(
 export async function getRaiseChainStatus(projectSlug: string): Promise<string | null> {
   if (!hasRaiseContract()) return null;
   const project = await nearContractService.viewOn<{ status: string } | null>(
-    RAISE_CONTRACT_ID,
+    raiseOf(projectSlug),
     "get_project",
     { project_id: projectSlug }
   );
@@ -637,11 +644,11 @@ export async function getMoneyBack(
 ): Promise<{ escrow: string; cover: string }> {
   if (!hasRaiseContract()) return { escrow: "0", cover: "0" };
   const [escrow, cover] = await Promise.all([
-    nearContractService.viewOn<string>(RAISE_CONTRACT_ID, "reclaim_value", {
+    nearContractService.viewOn<string>(raiseOf(projectSlug), "reclaim_value", {
       project_id: projectSlug,
       account_id: accountId,
     }),
-    nearContractService.viewOn<string>(RAISE_CONTRACT_ID, "opt_out_value", {
+    nearContractService.viewOn<string>(raiseOf(projectSlug), "opt_out_value", {
       project_id: projectSlug,
       account_id: accountId,
     }),
@@ -657,7 +664,7 @@ export async function reclaimEscrow(
 ): Promise<ContractCallResult<void>> {
   if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
   return nearContractService.callOn(accountId, privateKey, {
-    contractId: RAISE_CONTRACT_ID,
+    contractId: raiseOf(projectSlug),
     methodName: "reclaim",
     args: { project_id: projectSlug },
     gas: tgas(COLLECTIONS_GAS.CLAIM),
@@ -674,7 +681,7 @@ export async function claimCover(
 ): Promise<ContractCallResult<void>> {
   if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
   return nearContractService.callOn(accountId, privateKey, {
-    contractId: RAISE_CONTRACT_ID,
+    contractId: raiseOf(projectSlug),
     methodName: "opt_out",
     args: { project_id: projectSlug },
     gas: tgas(COLLECTIONS_GAS.CLAIM),
@@ -691,7 +698,7 @@ export async function refundFailedRaise(
 ): Promise<ContractCallResult<void>> {
   if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
   return nearContractService.callOn(accountId, privateKey, {
-    contractId: RAISE_CONTRACT_ID,
+    contractId: raiseOf(projectSlug),
     methodName: "refund",
     args: { project_id: projectSlug },
     gas: tgas(COLLECTIONS_GAS.CLAIM),
@@ -709,6 +716,12 @@ export interface RoundPosition {
   committed: bigint;
   refunded: boolean;
   sharesOwed: bigint;
+  /** What this account has in each flat. */
+  units: { code: string; committed: bigint }[];
+  /** v5 only: may take money out of this round right now. */
+  canWithdraw: boolean;
+  /** v5 only: when withdrawals stop, ms since epoch. */
+  withdrawUntilMs: number | null;
 }
 
 /**
@@ -720,7 +733,7 @@ export async function getRoundPosition(projectSlug: string, accountId: string): 
   if (!hasRaiseContract()) return null;
   const committed = BigInt(
     String(
-      (await nearContractService.viewOn<string>(RAISE_CONTRACT_ID, "get_total_commitment", {
+      (await nearContractService.viewOn<string>(raiseOf(projectSlug), "get_total_commitment", {
         project_id: projectSlug,
         account_id: accountId,
       })) ?? "0"
@@ -734,8 +747,8 @@ export async function getRoundPosition(projectSlug: string, accountId: string): 
       target: string | number;
       deadline_ns: string | number;
       units: { code: string }[];
-    } | null>(RAISE_CONTRACT_ID, "get_project", { project_id: projectSlug }),
-    nearContractService.viewOn<boolean>(RAISE_CONTRACT_ID, "has_opted_out_view", {
+    } | null>(raiseOf(projectSlug), "get_project", { project_id: projectSlug }),
+    nearContractService.viewOn<boolean>(raiseOf(projectSlug), "has_opted_out_view", {
       project_id: projectSlug,
       account_id: accountId,
     }),
@@ -744,7 +757,7 @@ export async function getRoundPosition(projectSlug: string, accountId: string): 
   const owed = await Promise.all(
     (project.units ?? []).map((u) =>
       nearContractService
-        .viewOn<string>(RAISE_CONTRACT_ID, "shares_owed", {
+        .viewOn<string>(raiseOf(projectSlug), "shares_owed", {
           project_id: projectSlug,
           unit: u.code,
           account_id: accountId,
@@ -753,14 +766,29 @@ export async function getRoundPosition(projectSlug: string, accountId: string): 
         .catch(() => BigInt(0))
     )
   );
+  const unitCommitments = await Promise.all(
+    (project.units ?? []).map(async (u) => ({
+      code: u.code,
+      committed: await getCommitmentToUnit(projectSlug, accountId, u.code).catch(() => BigInt(0)),
+    }))
+  );
+  const deadlineMs = Number(BigInt(String(project.deadline_ns)) / BigInt(1_000_000));
+  const raised = BigInt(String(project.raised));
+  const target = BigInt(String(project.target));
+  // Only a v5 raise answers withdraw_cutoff_ns.
+  const cutoff = await getWithdrawCutoffMs(projectSlug);
+  const withdrawUntilMs = cutoff == null ? null : deadlineMs - cutoff;
   return {
     status: project.status,
-    raised: BigInt(String(project.raised)),
-    target: BigInt(String(project.target)),
-    deadlineMs: Number(BigInt(String(project.deadline_ns)) / BigInt(1_000_000)),
+    raised,
+    target,
+    deadlineMs,
     committed,
     refunded: Boolean(refunded),
     sharesOwed: owed.reduce((a, b) => a + b, BigInt(0)),
+    units: unitCommitments.filter((u) => u.committed > BigInt(0)),
+    canWithdraw: withdrawUntilMs != null && project.status === "Open" && raised < target && Date.now() < withdrawUntilMs,
+    withdrawUntilMs,
   };
 }
 
@@ -797,4 +825,308 @@ export async function getFlatStage(vaultId: string): Promise<FlatStage> {
 export async function getStablecoinBalance(token: string, accountId: string): Promise<bigint> {
   const v = await nearContractService.viewOn<string>(token, "ft_balance_of", { account_id: accountId });
   return BigInt(String(v ?? "0"));
+}
+
+// ---- v5: manager vote, withdrawals, approvals --------------------------------
+
+export interface RaiseCandidate {
+  account: string;
+  fee_bps: number;
+  self_managed: boolean;
+  votes: string;
+}
+
+/** A raise's v5 terms, or null on a v4 raise (no candidates there). */
+export interface RaiseTerms {
+  candidates: RaiseCandidate[];
+  selfManaged: boolean;
+  managerFeeBps: number;
+  packHash: string;
+  manager: string;
+  status: string;
+  deadlineMs: number;
+  raised: bigint;
+  target: bigint;
+}
+
+export async function getRaiseTerms(projectSlug: string): Promise<RaiseTerms | null> {
+  if (!hasRaiseContract()) return null;
+  const p = await nearContractService.viewOn<{
+    candidates?: { account: string; fee_bps: number; self_managed: boolean; votes: string | number }[];
+    self_managed?: boolean;
+    manager_fee_bps?: number;
+    pack_hash?: string;
+    manager: string;
+    status: string;
+    deadline_ns: string | number;
+    raised: string | number;
+    target: string | number;
+  } | null>(raiseOf(projectSlug), "get_project", { project_id: projectSlug });
+  if (!p || !Array.isArray(p.candidates)) return null;
+  return {
+    candidates: p.candidates.map((c) => ({ ...c, votes: String(c.votes) })),
+    selfManaged: Boolean(p.self_managed),
+    managerFeeBps: p.manager_fee_bps ?? 0,
+    packHash: p.pack_hash ?? "",
+    manager: p.manager,
+    status: p.status,
+    deadlineMs: Number(BigInt(String(p.deadline_ns)) / BigInt(1_000_000)),
+    raised: BigInt(String(p.raised)),
+    target: BigInt(String(p.target)),
+  };
+}
+
+export async function getWithdrawCutoffMs(projectSlug: string): Promise<number | null> {
+  try {
+    const ns = await nearContractService.viewOn<string | number>(raiseOf(projectSlug), "withdraw_cutoff_ns", {});
+    return Number(BigInt(String(ns)) / BigInt(1_000_000));
+  } catch {
+    return null;
+  }
+}
+
+export async function getMyVote(projectSlug: string, accountId: string): Promise<string | null> {
+  try {
+    return (
+      (await nearContractService.viewOn<string | null>(raiseOf(projectSlug), "get_vote", {
+        project_id: projectSlug,
+        account_id: accountId,
+      })) ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+export async function getCommitmentToUnit(projectSlug: string, accountId: string, unit: string): Promise<bigint> {
+  const v = await nearContractService.viewOn<string>(raiseOf(projectSlug), "get_commitment", {
+    project_id: projectSlug,
+    account_id: accountId,
+    unit,
+  });
+  return BigInt(String(v ?? "0"));
+}
+
+export async function hasApprovedPhase(projectSlug: string, phase: number, accountId: string): Promise<boolean> {
+  try {
+    return Boolean(
+      await nearContractService.viewOn<boolean>(raiseOf(projectSlug), "has_approved", {
+        project_id: projectSlug,
+        phase,
+        account_id: accountId,
+      })
+    );
+  } catch {
+    return false;
+  }
+}
+
+function signedCall(
+  accountId: string,
+  privateKey: string,
+  contractId: string,
+  methodName: string,
+  args: Record<string, unknown>,
+  opts: { gas: bigint; yocto: boolean; key: string }
+): Promise<ContractCallResult<void>> {
+  return nearContractService.callOn(accountId, privateKey, {
+    contractId,
+    methodName,
+    args,
+    gas: tgas(opts.gas),
+    attachedDeposit: opts.yocto ? ONE_YOCTO : NO_DEPOSIT,
+    dedupeKey: opts.key,
+  });
+}
+
+export function voteForManager(accountId: string, privateKey: string, projectSlug: string, candidate: string) {
+  return signedCall(accountId, privateKey, raiseOf(projectSlug), "vote_manager", { project_id: projectSlug, candidate }, {
+    gas: COLLECTIONS_GAS.MANAGER_ACTION,
+    yocto: false,
+    key: "vote:" + accountId + ":" + projectSlug + ":" + candidate,
+  });
+}
+
+export function withdrawFromRound(accountId: string, privateKey: string, projectSlug: string, unit: string) {
+  return signedCall(accountId, privateKey, raiseOf(projectSlug), "withdraw", { project_id: projectSlug, unit }, {
+    gas: COLLECTIONS_GAS.CLAIM,
+    yocto: true,
+    key: "withdraw:" + accountId + ":" + projectSlug + ":" + unit,
+  });
+}
+
+export function approvePhase(accountId: string, privateKey: string, projectSlug: string, phase: number) {
+  return signedCall(accountId, privateKey, raiseOf(projectSlug), "approve", { project_id: projectSlug, phase }, {
+    gas: COLLECTIONS_GAS.MANAGER_ACTION,
+    yocto: true,
+    key: "approve:" + accountId + ":" + projectSlug + ":" + phase,
+  });
+}
+
+// ---- v5 vaults: the share market and manager votes ---------------------------
+
+export interface ShareListing {
+  id: number;
+  seller: string;
+  shares: string;
+  pricePerShare: string;
+}
+
+export interface ShareOffer {
+  id: number;
+  buyer: string;
+  shares: string;
+  pricePerShare: string;
+}
+
+/** Listings in a v5 vault; null if the vault has no market (v4). */
+export async function getShareListings(vaultId: string): Promise<ShareListing[] | null> {
+  try {
+    const rows = await nearContractService.viewOn<[number, { seller: string; shares: string; price_per_share: string }][]>(
+      vaultId,
+      "get_listings",
+      { from: 0, limit: 100 }
+    );
+    return rows.map(([id, l]) => ({
+      id: Number(id),
+      seller: l.seller,
+      shares: String(l.shares),
+      pricePerShare: String(l.price_per_share),
+    }));
+  } catch {
+    return null;
+  }
+}
+
+export async function getShareOffers(vaultId: string): Promise<ShareOffer[] | null> {
+  try {
+    const rows = await nearContractService.viewOn<[number, { buyer: string; shares: string; price_per_share: string }][]>(
+      vaultId,
+      "get_offers",
+      { from: 0, limit: 100 }
+    );
+    return rows.map(([id, o]) => ({
+      id: Number(id),
+      buyer: o.buyer,
+      shares: String(o.shares),
+      pricePerShare: String(o.price_per_share),
+    }));
+  } catch {
+    return null;
+  }
+}
+
+export async function getLockedShares(vaultId: string, accountId: string): Promise<bigint> {
+  try {
+    return BigInt(String(await nearContractService.viewOn<string>(vaultId, "locked_shares", { account_id: accountId })));
+  } catch {
+    return BigInt(0);
+  }
+}
+
+export function listShares(accountId: string, privateKey: string, vaultId: string, shares: string, pricePerShare: string) {
+  return signedCall(accountId, privateKey, vaultId, "list_shares", { shares, price_per_share: pricePerShare }, {
+    gas: COLLECTIONS_GAS.MANAGER_ACTION,
+    yocto: false,
+    key: "list:" + accountId + ":" + vaultId + ":" + shares + ":" + pricePerShare,
+  });
+}
+
+export function cancelShareListing(accountId: string, privateKey: string, vaultId: string, listingId: number) {
+  return signedCall(accountId, privateKey, vaultId, "cancel_listing", { listing_id: listingId }, {
+    gas: COLLECTIONS_GAS.MANAGER_ACTION,
+    yocto: false,
+    key: "unlist:" + accountId + ":" + vaultId + ":" + listingId,
+  });
+}
+
+/** Pay for shares from a listing; whatever is not used comes back. */
+export function buyShares(
+  accountId: string,
+  privateKey: string,
+  p: { stablecoin: string; vaultId: string; listingId: number; shares: string; amountAtomic: string }
+) {
+  return signedCall(
+    accountId,
+    privateKey,
+    p.stablecoin,
+    "ft_transfer_call",
+    { receiver_id: p.vaultId, amount: p.amountAtomic, memo: null, msg: JSON.stringify({ buy: p.listingId, shares: p.shares }) },
+    { gas: COLLECTIONS_GAS.FT_TRANSFER_CALL, yocto: true, key: "buy:" + accountId + ":" + p.vaultId + ":" + p.listingId + ":" + p.shares }
+  );
+}
+
+/** Post a standing offer: the money waits in the vault at your price. */
+export function postShareOffer(
+  accountId: string,
+  privateKey: string,
+  p: { stablecoin: string; vaultId: string; shares: string; pricePerShare: string }
+) {
+  const amount = (BigInt(p.shares) * BigInt(p.pricePerShare)).toString();
+  return signedCall(
+    accountId,
+    privateKey,
+    p.stablecoin,
+    "ft_transfer_call",
+    {
+      receiver_id: p.vaultId,
+      amount,
+      memo: null,
+      msg: JSON.stringify({ offer: { shares: p.shares, price_per_share: p.pricePerShare } }),
+    },
+    { gas: COLLECTIONS_GAS.FT_TRANSFER_CALL, yocto: true, key: "offer:" + accountId + ":" + p.vaultId + ":" + p.shares + ":" + p.pricePerShare }
+  );
+}
+
+export function sellToOffer(accountId: string, privateKey: string, vaultId: string, offerId: number, shares: string) {
+  return signedCall(accountId, privateKey, vaultId, "sell_to_offer", { offer_id: offerId, shares }, {
+    gas: COLLECTIONS_GAS.CLAIM,
+    yocto: true,
+    key: "sell:" + accountId + ":" + vaultId + ":" + offerId + ":" + shares,
+  });
+}
+
+export function cancelShareOffer(accountId: string, privateKey: string, vaultId: string, offerId: number) {
+  return signedCall(accountId, privateKey, vaultId, "cancel_offer", { offer_id: offerId }, {
+    gas: COLLECTIONS_GAS.CLAIM,
+    yocto: true,
+    key: "unoffer:" + accountId + ":" + vaultId + ":" + offerId,
+  });
+}
+
+export async function getVaultManagerVote(
+  vaultId: string,
+  accountId: string
+): Promise<{ manager: string; fee_bps: number } | null> {
+  try {
+    return await nearContractService.viewOn<{ manager: string; fee_bps: number } | null>(vaultId, "get_manager_vote", {
+      account_id: accountId,
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function getManagerVoteSupport(vaultId: string, manager: string, feeBps: number): Promise<bigint> {
+  try {
+    return BigInt(String(await nearContractService.viewOn<string>(vaultId, "manager_vote_support", { manager, fee_bps: feeBps })));
+  } catch {
+    return BigInt(0);
+  }
+}
+
+export function voteVaultManager(accountId: string, privateKey: string, vaultId: string, manager: string, feeBps: number) {
+  return signedCall(accountId, privateKey, vaultId, "vote_manager", { manager, fee_bps: feeBps }, {
+    gas: COLLECTIONS_GAS.MANAGER_ACTION,
+    yocto: false,
+    key: "vvote:" + accountId + ":" + vaultId + ":" + manager + ":" + feeBps,
+  });
+}
+
+export function applyVaultManagerVote(accountId: string, privateKey: string, vaultId: string, manager: string, feeBps: number) {
+  return signedCall(accountId, privateKey, vaultId, "apply_manager_vote", { manager, fee_bps: feeBps }, {
+    gas: COLLECTIONS_GAS.CLAIM,
+    yocto: false,
+    key: "vapply:" + accountId + ":" + vaultId + ":" + manager + ":" + feeBps,
+  });
 }

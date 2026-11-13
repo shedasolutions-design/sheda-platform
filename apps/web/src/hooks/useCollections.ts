@@ -207,6 +207,7 @@ export function useCollections() {
         amountAtomic: string;
         projectSlug: string;
         unitCode: string;
+        vote?: string | null;
       }) => signed((id, key) => chain.commitToRaise(id, key, params)),
       [signed]
     ),
@@ -268,6 +269,56 @@ export function useCollections() {
     objectToRelease: useCallback(
       (slug: string, phaseIndex: number) =>
         signed((id, key) => chain.objectToRelease(id, key, slug, phaseIndex)),
+      [signed]
+    ),
+
+    // ---- v5 ----
+    voteForManager: useCallback(
+      (slug: string, candidate: string) => signed((id, key) => chain.voteForManager(id, key, slug, candidate)),
+      [signed]
+    ),
+    withdrawFromRound: useCallback(
+      (slug: string, unit: string) => signed((id, key) => chain.withdrawFromRound(id, key, slug, unit)),
+      [signed]
+    ),
+    approvePhase: useCallback(
+      (slug: string, phase: number) => signed((id, key) => chain.approvePhase(id, key, slug, phase)),
+      [signed]
+    ),
+    listShares: useCallback(
+      (vault: string, shares: string, price: string) => signed((id, key) => chain.listShares(id, key, vault, shares, price)),
+      [signed]
+    ),
+    cancelShareListing: useCallback(
+      (vault: string, listingId: number) => signed((id, key) => chain.cancelShareListing(id, key, vault, listingId)),
+      [signed]
+    ),
+    buyShares: useCallback(
+      (p: { stablecoin: string; vaultId: string; listingId: number; shares: string; amountAtomic: string }) =>
+        signed((id, key) => chain.buyShares(id, key, p)),
+      [signed]
+    ),
+    postShareOffer: useCallback(
+      (p: { stablecoin: string; vaultId: string; shares: string; pricePerShare: string }) =>
+        signed((id, key) => chain.postShareOffer(id, key, p)),
+      [signed]
+    ),
+    sellToOffer: useCallback(
+      (vault: string, offerId: number, shares: string) => signed((id, key) => chain.sellToOffer(id, key, vault, offerId, shares)),
+      [signed]
+    ),
+    cancelShareOffer: useCallback(
+      (vault: string, offerId: number) => signed((id, key) => chain.cancelShareOffer(id, key, vault, offerId)),
+      [signed]
+    ),
+    voteVaultManager: useCallback(
+      (vault: string, manager: string, feeBps: number) =>
+        signed((id, key) => chain.voteVaultManager(id, key, vault, manager, feeBps)),
+      [signed]
+    ),
+    applyVaultManagerVote: useCallback(
+      (vault: string, manager: string, feeBps: number) =>
+        signed((id, key) => chain.applyVaultManagerVote(id, key, vault, manager, feeBps)),
       [signed]
     ),
   };

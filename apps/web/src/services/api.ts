@@ -1,5 +1,6 @@
 
 import AsyncStorage from "@/lib/storage";
+import { rememberRaise } from "@/services/collections/raiseRegistry";
 
 import {
   activeBase,
@@ -1889,20 +1890,24 @@ class ApiService {
       query.set("builder_profile_id", String(params.builderProfileId));
     }
     const suffix = query.toString() ? `?${query}` : "";
-    return this.request<CollectionProjectSummary[]>(
+    const r = await this.request<CollectionProjectSummary[]>(
       `/api/v1/collections/projects${suffix}`,
       options
     );
+    if (r.ok) r.data.forEach((p) => rememberRaise(p.slug, p.escrow_account_id));
+    return r;
   }
 
   async getCollectionProject(
     slug: string,
     options?: RequestInit & { timeout?: number; silent?: boolean }
   ): Promise<ApiResponse<CollectionProjectDetail>> {
-    return this.request<CollectionProjectDetail>(
+    const r = await this.request<CollectionProjectDetail>(
       `/api/v1/collections/projects/${encodeURIComponent(slug)}`,
       options
     );
+    if (r.ok) rememberRaise(r.data.slug, r.data.escrow_account_id);
+    return r;
   }
 
   async getMyCollectionProjects(): Promise<ApiResponse<CollectionProjectSummary[]>> {
