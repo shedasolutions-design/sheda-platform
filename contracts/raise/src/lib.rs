@@ -485,6 +485,7 @@ impl Raise {
             })
             .collect();
 
+        let first_candidate = manager.clone();
         self.projects.insert(
             &project_id,
             &Project {
@@ -503,7 +504,7 @@ impl Raise {
                 platform_bps,
                 guarantee_bps,
                 candidates: vec![Candidate {
-                    account: manager.clone(),
+                    account: first_candidate,
                     fee_bps: 0,
                     self_managed: false,
                     votes: 0,
