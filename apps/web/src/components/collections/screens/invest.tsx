@@ -183,12 +183,10 @@ function BuyerSide() {
         </div>
       )}
 
-      <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+      {/* Raising money is for sellers only; their entry is on the seller side. */}
+      <div className="mt-6 text-sm">
         <Link href="/collections/directory" className="font-medium text-primary">
           Builders and managers
-        </Link>
-        <Link href="/business-profile" className="font-medium text-primary">
-          Raise money for a building
         </Link>
       </div>
       <p className="mt-4 inline-flex items-center gap-1 text-xs text-secondaryText">
