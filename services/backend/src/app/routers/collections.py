@@ -1198,6 +1198,63 @@ async def post_phase_update(
     return PhaseUpdateOut.model_validate(update)
 
 
+# ---- chain terms (Sheda ops) -------------------------------------------------
+
+
+@router.get("/admin/projects/{slug}/chain-terms")
+async def chain_terms(slug: str, current_user: AdminUser, db: AsyncSession = Depends(get_db)):
+    """Everything the council needs to open a raise on the v5 contract.
+
+    Admin only. The candidates are the managers who accepted, with the fee
+    they accepted at; the pack hash is the fingerprint recorded when the
+    project pack was uploaded. Ops uses this for `create_project` and
+    `set_terms`, so the chain carries exactly what investors were shown.
+    """
+    project = (
+        await db.execute(select(CollectionProject).where(CollectionProject.slug == slug))
+    ).scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    units = (
+        (
+            await db.execute(
+                select(CollectionUnit)
+                .where(CollectionUnit.project_id == project.id)
+                .order_by(CollectionUnit.code)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    pack = next((d for d in project.documents if d.is_pack and d.file_url), None)
+    candidates = [
+        {
+            "near_account_id": n.profile.near_account_id if n.profile else None,
+            "display_name": n.profile.display_name if n.profile else None,
+            "fee_bps": n.fee_bps,
+            "self_managed": n.self_managed,
+        }
+        for n in project.nominations
+        if n.status == "accepted"
+    ]
+    return {
+        "slug": project.slug,
+        "status": project.status,
+        "project_type": project.project_type,
+        "builder_near_account": project.builder.near_account_id if project.builder else None,
+        "candidates": candidates,
+        "pack_sha256": pack.sha256 if pack else None,
+        "pack_url": pack.file_url if pack else None,
+        "target_atomic": str(sum(int(u.price_atomic) for u in units)),
+        "units": [
+            {"code": u.code, "label": u.label, "price_atomic": u.price_atomic, "total_shares": u.total_shares}
+            for u in units
+        ],
+        "phases": [{"name": p.name, "tranche_bps": p.tranche_bps} for p in project.phases],
+        "closes_at": project.closes_at.isoformat() if project.closes_at else None,
+    }
+
+
 # ---- manager nominations ---------------------------------------------------
 
 
