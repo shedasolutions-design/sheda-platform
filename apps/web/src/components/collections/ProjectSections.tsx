@@ -13,6 +13,7 @@ import apiService, {
 } from "@/services/api";
 import { getFlatStage, type FlatStage } from "@/services/collections/chain";
 import { INFO, INVEST_RISKS } from "@/services/collections/copy";
+import { RAISE_CAN_WITHDRAW } from "@/config/collections";
 
 // ---- builder ---------------------------------------------------------------
 
@@ -277,8 +278,10 @@ export function MoreInformation({ project }: { project: CollectionProjectDetail 
         </Accordion>
         <Accordion title="Selling your shares">{INFO.resale}</Accordion>
         <Accordion title="Leaving a round">
-          While a round is filling you can take your money out, except in its last 7 days. If it does not fill by its
-          deadline, everyone gets everything back.
+          {RAISE_CAN_WITHDRAW
+            ? "While a round is filling you can take your money out, except in its last 7 days. "
+            : ""}
+          If a round does not fill by its deadline, everyone gets everything back from Portfolio.
         </Accordion>
         <Accordion title="Risks">
           <ul className="list-disc space-y-1 pl-4">

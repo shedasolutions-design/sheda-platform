@@ -13,7 +13,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useCollections } from "@/hooks/useCollections";
 import { amountForShares, bpsToPercent, ownershipBps, parseAmount, sharesForAmount } from "@/services/collections/money";
 import { DEFAULT_TOKEN } from "@/config/tokens";
-import { RAISE_CONTRACT_ID } from "@/config/collections";
+import { RAISE_CAN_WITHDRAW, RAISE_CONTRACT_ID } from "@/config/collections";
 import { getChainSharesSold, getRaiseChainState, getStablecoinBalance } from "@/services/collections/chain";
 import { DEFAULT_FEE_BPS, perPeriod, rentRangeOf, yearlyRentFor } from "@/services/collections/rent";
 import { INFO, INVEST_RISKS, PROJECT_TYPE_TEXT } from "@/services/collections/copy";
@@ -321,10 +321,10 @@ export default function ChooseUnit() {
             <section className="space-y-2 rounded-2xl border border-borderColor p-4 text-sm leading-relaxed text-secondaryText">
               <p className="font-medium text-primaryText">What you are buying</p>
               <p>
-                {shares} shares of {unit.label}, {bpsToPercent(ownershipBps(shares, unit.total_shares))} of that flat: its rent
-                and a say in who manages it. Your money waits in the raise contract until the round fills; if it does not
-                fill by the deadline, you get it all back. You can take it out while the round is filling, except in its
-                last 7 days.
+                {shares} share{shares === "1" ? "" : "s"} of {unit.label}, {bpsToPercent(ownershipBps(shares, unit.total_shares))} of
+                that flat: its rent and a say in who manages it. Your money waits in the raise contract until the round
+                fills; if it does not fill by the deadline, you get it all back.
+                {RAISE_CAN_WITHDRAW ? " You can take it out while the round is filling, except in its last 7 days." : ""}
               </p>
             </section>
             <section className="space-y-2 rounded-2xl border border-borderColor p-4 text-sm">

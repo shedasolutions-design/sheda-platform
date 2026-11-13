@@ -130,3 +130,11 @@ export const NO_DEPOSIT = 0n;
  * without first asking the chain what the denominator is.
  */
 export const SHARES_PER_UNIT = 10_000n;
+
+/**
+ * Whether the deployed raise contract lets an investor take money out of a
+ * round that is still filling. The v4 contract does not; v5 does (except in
+ * a round's last 7 days). Screens only offer or mention it when true, so the
+ * app never promises what the contract cannot do.
+ */
+export const RAISE_CAN_WITHDRAW = process.env.NEXT_PUBLIC_RAISE_CAN_WITHDRAW === "true";
