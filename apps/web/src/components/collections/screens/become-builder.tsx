@@ -3,7 +3,7 @@
 import { InterRegular, InterSemiBold } from "@/components/collections/rn";
 import { useState } from "react";
 import { TextInput, View } from "@/components/collections/rn";
-import { Stack, router } from "@/components/collections/nav";
+import { Stack, router, useLocalSearchParams } from "@/components/collections/nav";
 import { useWallet } from "@/contexts/WalletContext";
 import {
   C,
@@ -39,8 +39,11 @@ export default function BecomeBuilder() {
   const { walletState } = useWallet();
   const { profiles, reload } = useMyCollectionProfiles();
 
-  const [role, setRole] = useState<CollectionRole>("builder");
-  const [displayName, setDisplayName] = useState("");
+  // Business profile links here with the role and the agency name, so a
+  // company is one name across the marketplace and Collections.
+  const params = useLocalSearchParams<{ role?: string; name?: string }>();
+  const [role, setRole] = useState<CollectionRole>(params.role === "manager" ? "manager" : "builder");
+  const [displayName, setDisplayName] = useState(typeof params.name === "string" ? params.name : "");
   const [location, setLocation] = useState("");
   const [about, setAbout] = useState("");
   const [partOfGroup, setPartOfGroup] = useState("");
@@ -72,7 +75,8 @@ export default function BecomeBuilder() {
       return;
     }
     await reload();
-    router.replace(`/collections/person/${response.data.id}`);
+    // Back to where profiles are managed; the public page is linked there.
+    router.replace("/business-profile");
   };
 
   return (

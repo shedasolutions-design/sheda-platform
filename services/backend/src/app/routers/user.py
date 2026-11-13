@@ -63,8 +63,21 @@ router = APIRouter(
     description="Get Current User Profile",
     status_code=status.HTTP_200_OK,
 )
-async def get_me(current_user: ActiveUser):
-    return current_user
+async def get_me(current_user: ActiveUser, db: DBSession):
+    # The agency name lives on the person's seller row. Signed in as a buyer
+    # they still own it (Business profile shows and edits it), so carry it
+    # across rather than answering "none".
+    out = UserShow.model_validate(current_user)
+    if not getattr(current_user, "agency_name", None):
+        from sqlalchemy import select as _select
+
+        from app.models.user import Agent
+
+        agency = (
+            await db.execute(_select(Agent.agency_name).where(Agent.email == current_user.email).limit(1))
+        ).scalar_one_or_none()
+        out.agency_name = agency
+    return out
 
 
 @router.get("/{user_id}", response_model=UserShow, status_code=status.HTTP_200_OK)

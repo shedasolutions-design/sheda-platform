@@ -31,11 +31,41 @@ async def update_pfp(user: BaseUserSchema, db: AsyncSession, file_path: str):
     await db.refresh(user)
 
 
+# Who the person is: the same on their buyer and seller rows. Editing these
+# on one row used to leave the other with the old name or photo, so one
+# person appeared differently across the app.
+PERSON_FIELDS = {"fullname", "avatar_url", "phone_number", "location", "username", "email"}
+# The marketplace face of a seller: lives on the agent row only.
+AGENT_FIELDS = {"agency_name"}
+# Never set by the person themselves. kyc_status and rating were writable
+# through this endpoint, so anyone could mark themselves verified or rate
+# themselves five stars.
+SYSTEM_FIELDS = {"kyc_status", "rating"}
+
+
 async def update_user(update_data: UserUpdate, db: AsyncSession, user: UserInDB):
-    for key, value in update_data.model_dump(exclude_unset=True).items():
-        setattr(user, key, value)
+    from app.models.user import BaseUser
+    from app.utils.enums import AccountTypeEnum
+
+    changes = {k: v for k, v in update_data.model_dump(exclude_unset=True).items() if k not in SYSTEM_FIELDS}
+    person = {k: v for k, v in changes.items() if k in PERSON_FIELDS}
+    agency = {k: v for k, v in changes.items() if k in AGENT_FIELDS}
+
+    rows = (
+        await db.execute(
+            select(BaseUser).where(
+                BaseUser.email == user.email, BaseUser.account_type != AccountTypeEnum.admin
+            )
+        )
+    ).scalars().all() or [user]
+    for row in rows:
+        for key, value in person.items():
+            setattr(row, key, value)
+        if agency and isinstance(row, Agent):
+            for key, value in agency.items():
+                setattr(row, key, (value or "").strip() or None)
+        db.add(row)
     try:
-        db.add(user)
         await db.commit()
         await db.refresh(user)
         return user

@@ -97,6 +97,11 @@ class UserUpdate(BaseUserSchema):
     ] = None
     fullname: Optional[str] = None
     location: Optional[str] = None
+    # The seller's agency or company, shown on their listings. It was sent by
+    # the app but missing here, so it was silently dropped on every save.
+    agency_name: Annotated[Optional[str], Field(max_length=50)] = None
+    # Kept in the response; never applied from a request (see
+    # services/profile.SYSTEM_FIELDS).
     kyc_status: Optional[KycStatusEnum] = None
     rating: Optional[float] = None
 

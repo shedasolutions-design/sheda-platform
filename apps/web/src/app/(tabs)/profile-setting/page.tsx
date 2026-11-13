@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Bell, KeyRound, Lock, Trash2, Unplug, User, Wallet } from "lucide-react";
+import { Bell, KeyRound, Lock, Trash2, Unplug, User, Wallet, Briefcase } from "lucide-react";
 import AuthGuard from "@/components/auth/AuthGuard";
 import PageHeader from "@/components/ui/PageHeader";
 import FeedbackModal, { type FeedbackType } from "@/components/ui/FeedbackModal";
@@ -65,6 +65,7 @@ function Settings() {
 
   const items: MenuItem[] = [
     { key: "info", icon: User, label: "Profile Info", href: "/personal-info" },
+    { key: "business", icon: Briefcase, label: "Business profile", href: "/business-profile" },
     { key: "notifications", icon: Bell, label: "Notification settings", href: "/notification-setting" },
     { key: "recovery", icon: Wallet, label: "Wallet backup & recovery", href: "/wallet-recovery" },
     { key: "pin", icon: KeyRound, label: pinConfigured ? "Change transaction PIN" : "Set up transaction PIN", onClick: handlePin },
