@@ -70,9 +70,9 @@ The blockchain is deliberately not the product. It is what makes the escrow rele
 
 ---
 
-## Collections: fractional ownership
+## Invest (Collections): fractional ownership
 
-The second item on the Sheda roadmap, and the reason most of this repository exists.
+The second item on the Sheda roadmap, and the reason most of this repository exists. People see it as **Invest**; the code calls it Collections.
 
 > **Fractional Ownership & Yield Investments.** Affordable entry into premium properties, NFT-backed ownership receipts, and transparent yield distribution.
 
@@ -105,16 +105,22 @@ NEP-171 NFT  ──owned by──>  Vault account  ──shares──>  NEP-141 
 
 ## How a raise works
 
-1. A builder registers. The profile is public and permanent: delivery record, stake posted, anything ever slashed.
-2. They open a raise: what is being built, the flats it divides into, and a phase schedule that must release **exactly** 100% of the target. Less strands money in escrow with no phase that frees it; more promises money the raise never collected.
-3. Sheda checks the documents and publishes it on chain. Deliberately not the builder's step: the terms are what investors commit against.
-4. People commit, choosing a specific flat. Money moves by `ft_transfer_call`, so the transfer and the record of whose it is happen in one transaction and cannot come apart.
-5. The build runs a phase at a time. The builder says a phase is finished; an **independent** property manager inspects and attests; holders then have seven days to object, and a quarter of them objecting holds the payment.
-6. Once let, rent arrives at the flat's vault and is divided among its shareholders.
+1. A builder registers. The profile is public and permanent: logo, delivery record, stake posted, anything ever slashed.
+2. They open a raise: project type (off-plan, under construction, or completed and ready to rent), map location, the flats it divides into with each flat's expected yearly rent, a minimum investment, and a phase schedule that must release **exactly** 100% of the target. A completed building has one handover payment.
+3. They suggest up to three **property managers** near the project. Each manager accepts with their fee and their **pledge**, the terms they work to; accepting fixes both for that raise. The builder's own company may be suggested only when nobody else is available, and investors are told.
+4. They upload the **project pack**: every agreement and term in one document. A raise cannot open without it, its SHA-256 fingerprint is recorded on chain, and it cannot be swapped once money is in.
+5. Sheda checks the documents and opens the raise on chain. Deliberately not the builder's step: the terms are what investors commit against.
+6. People invest in four steps (flat, amount, terms, confirm), choosing a specific flat and **voting for a manager** with their money. While a round fills they may take their money out, except when it is full or in its last 7 days. If it misses its deadline, everyone takes everything back.
+7. When the round fills, the most-voted manager is fixed. The build runs a phase at a time: the builder says a phase is finished, the manager inspects and signs off, and holders have seven days to object; a quarter objecting holds the payment. If the manager is the builder's own company, each payment instead needs **approval from more than half** of the money.
+8. Once let, rent arrives at the flat's vault and is divided among its shareholders, after the manager's fee, a 5% repair reserve and Sheda's 2%.
 
-Nothing in step 5 can be done by one party. A builder who could mark their own phase complete would make the schedule decorative. A manager who could release without the objection window would leave holders a vote they never get to use.
+Holders can **sell shares to each other** inside each flat's vault: listed shares stay in the seller's balance and keep earning rent until sold, and a buyer's payment and the shares move in one transaction. Buy offers work the other way round. Holders of more than half of a flat's shares can **replace its manager**.
+
+Followers of a building (everyone who invested or bought shares, or tapped Follow) get **Invest updates** in the app and by email: a round closing or missing its deadline, filling, phases signed off and paid, the build stopping, flats handed over, listed and let.
 
 If the build stalls, the builder's posted stake is what investors recover. A guarantee the builder can walk away from is not a guarantee.
+
+**Fees.** Sheda takes 2% of every completed transaction and nothing from refunds: a raise once it fills, rent, share sales, and home sales and rentals on the marketplace. Testnet fees go to `shedauser.testnet`; mainnet's will go to `shedasolutions.near`.
 
 ---
 
@@ -218,16 +224,20 @@ NEAR testnet. Built by CI and deployed from that wasm, so the binary is one anyo
 
 | Contract | Account |
 | --- | --- |
-| Marketplace | `market-v2.shedauser.testnet` (owner: the council; replaced `market.shedauser.testnet`, whose key was lost) |
-| Raise, escrow and phases | `sheda-raise-v4.testnet` (owner: 2-of-3 council `sheda-council.testnet`; per-flat vaults `sheda-v4-pgt-t2/t3.testnet`, `sheda-v4-lgf-f1/f2.testnet`, listed on the marketplace above; pays in `usdc.fakes.testnet`; testnet timings) |
-| Stake registry | `sheda-stake-v4.testnet` |
+| Marketplace (v5: 2% fee on completed owner payments, set by the council with `set_platform_fee`) | `market-v2.shedauser.testnet` (owner: the council; replaced `market.shedauser.testnet`, whose key was lost) |
+| Raise v5: escrow, phases, manager vote, withdrawals | `sheda-raise-v5.testnet` (owner: 2-of-3 council `sheda-council.testnet`; fees to `shedauser.testnet`; pays in `usdc.fakes.testnet`; testnet timings: 3-minute objection window, 2-minute withdrawal cutoff) |
+| Raise v4 (the two raises opened before v5) | `sheda-raise-v4.testnet` |
+| Flat vaults (v5: rent, share market, manager vote) | One per flat, governed by its raise. The v4 flats `sheda-v4-pgt-t2/t3.testnet` and `sheda-v4-lgf-f1/f2.testnet` were upgraded to v5 code with `migrate()`. |
+| Stake registry | `sheda-stake-v5.testnet` (v5), `sheda-stake-v4.testnet` (v4) |
 
 The registry's controller is the raise contract. That is the entire authority to touch a builder's stake: a stalled project can slash the cover allocated to it, and nothing else can reach it.
 
-The current raise wasm adds `set_unit_vault`, `shares_owed` and the unit list on
-`get_project`, which the v1 account does not have. Point the web app at a v2
-deployment with `NEXT_PUBLIC_RAISE_CONTRACT_ID` (or by editing
-`apps/web/src/config/collections.ts`) before demonstrating the claim loop.
+Each project record names its own raise contract (`escrow_account_id`), and the
+app routes every call for that project there, so v4 and v5 raises live side by
+side. A v5 raise is opened by the council with `create_project` then `set_terms`
+(candidate managers and the project pack's fingerprint), using the terms from
+`GET /api/v1/collections/admin/projects/{slug}/chain-terms`. The Collections
+wasm is built by [`.github/workflows/collections-wasm.yml`](.github/workflows/collections-wasm.yml).
 
 The marketplace deploys from [`.github/workflows/deploy-market-production.yml`](.github/workflows/deploy-market-production.yml); [contracts/market/DEPLOYMENT.md](contracts/market/DEPLOYMENT.md) covers the first deploy, migrations and the required variables.
 
@@ -244,7 +254,7 @@ the exact NEAR CLI command to sign on your own computer. The panel never holds t
 Each part stands alone.
 
 ```bash
-# Contracts: 71 unit tests + 29 marketplace integration tests
+# Contracts: 105 unit tests + 37 marketplace integration tests
 cd contracts
 cargo test --workspace --lib
 cargo test -p sheda-contract        # marketplace tests drive a near-workspaces node
@@ -253,7 +263,7 @@ cargo clippy -p sheda-collection-raise -p sheda-collection-vault \
 cargo clippy -p sheda-contract --all-targets -- -W clippy::all
 cargo build --workspace --target wasm32-unknown-unknown --release
 
-# Backend: 131 tests; API docs at /sheda-docs, admin panel at /sheda-backend
+# Backend: 155 tests; API docs at /sheda-docs, admin panel at /sheda-backend
 cd services/backend
 cp .env.example .env.local && pip install -r requirements-server.txt
 alembic upgrade head && uvicorn main:app --reload --app-dir src
@@ -309,16 +319,17 @@ development needs `eval` and live-reload sockets they would block.
 | Web app: every screen, on market.sheda.app and testing.sheda.app | Working |
 | Marketplace: listings, inspections, offers, escrow, leases, documents, disputes | Working |
 | Built-in wallet: created and funded automatically at sign-up; import, recovery, Google backup | Working |
-| Collections: browse, rank, open a raise, commit, claim shares, claim rent | Working in the current code; the live v1 raise needs the v2 runbook before shares can be claimed |
+| Invest: browse, rank, open a raise, four-step investing, manager vote, withdraw, claim shares, claim rent, share market, Invest updates | Working on testnet (raise v5 live; v4 flats upgraded) |
 | Admin panel: dashboard, every table, Smart contracts | Working |
-| Contracts: vault, raise, stake registry | 71 tests; current wasm is ahead of the live v1 raise deployment |
+| Contracts: vault, raise, stake registry, marketplace | 105 unit + 37 integration tests; raise and vault v5 live on testnet, live smoke tests passed |
 | Mainnet | **Not live.** Backend and database are ready; contracts aren't deployed and the funding account is empty. |
 | Per-unit vault deployment | **Operator runbook, not a factory.** `docs/DEPLOY_COLLECTIONS.md` deploys a vault, registers it with the raise and records it in the backend. |
-| Cross-contract tests | **Partial.** The marketplace contract has integration tests under `contracts/market/tests`; the vault/raise paths that call it have none, including the failure paths that assume a failed transfer means the money never left. |
+| Cross-contract tests | **Partial.** The marketplace has integration tests under `contracts/market/tests`, including rent reaching a vault and the 2% fee. The raise-to-vault paths are covered by live testnet smoke tests, not yet by sandbox tests. |
 | Manager screens | **Working.** A manager sees managed raises, requests, and signs off a phase from the Sign-offs screen; the client cannot sign with the wrong account. |
 | Chain-event indexer | **Working for raise and stake facts.** `services/backend/scripts/sync_collections_chain.py` rebuilds builder and manager chain records. Occupancy and rent-period counts need the lease/vault event pipeline and stay at zero until it exists. |
+| Invest updates | **Working.** The backend reads followed raises from the chain every 10 minutes (and when someone opens notifications), and turns each change into an in-app update and an email. `POST /api/v1/collections/admin/lifecycle-sweep` with `X-Cron-Key` runs it on demand. |
 | Security | Code review done (Nov 2026): data leaks, upload overwrites and unchecked payment actions fixed; admin lockout and authenticator codes; browser security rules. **External contract audit not done.** |
-| Email | **Not configured.** No Brevo key yet, so sign-up codes and notifications aren't emailed. |
+| Email | **Working** through Brevo on testnet and mainnet: sign-up codes, deal updates and Invest updates. |
 
 Still ahead on the Sheda roadmap: real estate services integration (management, legal, insurance), and on-chain importation of existing property.
 

@@ -151,9 +151,11 @@ export function AssetsList({
   return (
     <>
       {error && <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">{error}</p>}
-      <ul className="grid gap-3 sm:grid-cols-2">
+      {/* grid-cols-1 is minmax(0, 1fr): without it the implicit column grows to
+          a long title's full width and the row runs off the screen. */}
+      <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {assets.map((a) => (
-          <li key={a.id}>
+          <li key={a.id} className="min-w-0">
             <button type="button" onClick={() => onPress(a)} className="flex w-full items-center gap-3 rounded-xl border border-borderColor p-3 text-left hover:border-primary">
               <img
                 src={a.imageUri || "/images/apt-1.png"}
@@ -166,7 +168,7 @@ export function AssetsList({
                   {a.stateLabel ?? "Not listed"}
                 </span>
               </span>
-              <ChevronRight size={18} className="text-secondaryText" />
+              <ChevronRight size={18} className="shrink-0 text-secondaryText" />
             </button>
           </li>
         ))}
