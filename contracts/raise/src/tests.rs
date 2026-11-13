@@ -988,3 +988,196 @@ fn someone_who_committed_nothing_cannot_claim() {
     ctx("passerby.testnet", 1, DAY + 4);
     let _ = r.claim_shares("m120".into(), "1a".into());
 }
+
+// ---- v5: manager vote, withdrawals, self-managed approval ------------------
+
+fn with_terms(r: &mut Raise, candidates: Vec<(&str, u32, bool)>) {
+    with_project(r);
+    ctx("sheda.testnet", 1, DAY);
+    r.set_terms(
+        "m120".into(),
+        candidates
+            .into_iter()
+            .map(|(a, f, s)| (acc(a), f, s))
+            .collect(),
+        "ab".repeat(32),
+    );
+}
+
+fn commit_vote(r: &mut Raise, who: &str, unit: &str, amount: u128, vote: &str, now: u64) {
+    ctx("usdt.testnet", 0, now);
+    let msg = format!(
+        r#"{{"project":"m120","unit":"{}","vote":"{}"}}"#,
+        unit, vote
+    );
+    let _ = r.ft_on_transfer(acc(who), U128(amount), msg);
+}
+
+#[test]
+fn the_most_voted_manager_is_chosen_when_the_round_fills() {
+    let mut r = raise();
+    with_terms(
+        &mut r,
+        vec![("eze.testnet", 800, false), ("okon.testnet", 600, false)],
+    );
+    commit_vote(
+        &mut r,
+        "ada.testnet",
+        "1a",
+        600_000,
+        "okon.testnet",
+        DAY + 1,
+    );
+    commit_vote(
+        &mut r,
+        "bode.testnet",
+        "1b",
+        400_000,
+        "eze.testnet",
+        DAY + 1,
+    );
+    ctx("anyone.testnet", 0, DAY + 2);
+    r.close_raise("m120".into());
+    let p = r.get_project("m120".into()).unwrap();
+    assert_eq!(p.manager, acc("okon.testnet"));
+    assert_eq!(p.manager_fee_bps, 600);
+    assert!(!p.self_managed);
+    assert_eq!(p.pack_hash.len(), 64);
+}
+
+#[test]
+fn changing_a_vote_moves_all_of_its_weight() {
+    let mut r = raise();
+    with_terms(
+        &mut r,
+        vec![("eze.testnet", 800, false), ("okon.testnet", 600, false)],
+    );
+    commit_vote(&mut r, "ada.testnet", "1a", 300_000, "eze.testnet", DAY + 1);
+    ctx("ada.testnet", 0, DAY + 2);
+    r.vote_manager("m120".into(), acc("okon.testnet"));
+    let p = r.get_project("m120".into()).unwrap();
+    assert_eq!(p.candidates[0].votes, 0);
+    assert_eq!(p.candidates[1].votes, 300_000);
+    assert_eq!(
+        r.get_vote("m120".into(), acc("ada.testnet")),
+        Some(acc("okon.testnet"))
+    );
+}
+
+#[test]
+#[should_panic(expected = "flagged as self-managed")]
+fn the_builder_may_manage_only_when_flagged() {
+    let mut r = raise();
+    with_terms(&mut r, vec![("builder.testnet", 500, false)]);
+}
+
+#[test]
+#[should_panic(expected = "terms are fixed")]
+fn terms_cannot_change_once_money_arrived() {
+    let mut r = raise();
+    with_terms(&mut r, vec![("eze.testnet", 800, false)]);
+    commit(&mut r, "ada.testnet", "1a", 1_000, DAY + 1);
+    ctx("sheda.testnet", 1, DAY + 2);
+    r.set_terms(
+        "m120".into(),
+        vec![(acc("okon.testnet"), 100, false)],
+        String::new(),
+    );
+}
+
+#[test]
+fn withdrawing_takes_the_commitment_and_its_vote_off_the_books() {
+    let mut r = raise();
+    with_terms(
+        &mut r,
+        vec![("eze.testnet", 800, false), ("okon.testnet", 600, false)],
+    );
+    commit_vote(&mut r, "ada.testnet", "1a", 250_000, "eze.testnet", DAY + 1);
+    ctx("ada.testnet", 1, DAY + 2);
+    let _ = r.withdraw("m120".into(), "1a".into());
+    let p = r.get_project("m120".into()).unwrap();
+    assert_eq!(p.raised.0, 0);
+    assert_eq!(p.units[0].raised, 0);
+    assert_eq!(p.candidates[0].votes, 0);
+    assert_eq!(
+        r.get_total_commitment("m120".into(), acc("ada.testnet")).0,
+        0
+    );
+}
+
+#[test]
+#[should_panic(expected = "Too close to the deadline")]
+fn no_withdrawing_in_the_last_days() {
+    let mut r = raise();
+    with_terms(&mut r, vec![("eze.testnet", 800, false)]);
+    commit(&mut r, "ada.testnet", "1a", 250_000, DAY + 1);
+    // Deadline is DAY + 30 days; a day before it is inside the cutoff.
+    ctx("ada.testnet", 1, DAY + 29 * DAY);
+    let _ = r.withdraw("m120".into(), "1a".into());
+}
+
+#[test]
+#[should_panic(expected = "full and about to close")]
+fn no_withdrawing_from_a_full_round() {
+    let mut r = raise();
+    with_terms(&mut r, vec![("eze.testnet", 800, false)]);
+    commit(&mut r, "ada.testnet", "1a", 600_000, DAY + 1);
+    commit(&mut r, "bode.testnet", "1b", 400_000, DAY + 1);
+    ctx("ada.testnet", 1, DAY + 2);
+    let _ = r.withdraw("m120".into(), "1a".into());
+}
+
+fn self_managed_funded(r: &mut Raise) {
+    with_terms(r, vec![("builder.testnet", 500, true)]);
+    commit(r, "ada.testnet", "1a", 600_000, DAY + 1);
+    commit(r, "bode.testnet", "1b", 400_000, DAY + 1);
+    ctx("anyone.testnet", 0, DAY + 2);
+    r.close_raise("m120".into());
+    ctx("builder.testnet", 1, DAY + 3);
+    r.request_inspection("m120".into(), 0);
+    ctx("builder.testnet", 1, DAY + 4);
+    r.attest("m120".into(), 0);
+}
+
+#[test]
+#[should_panic(expected = "needs approval from more than half")]
+fn a_self_managed_phase_is_not_paid_without_approval() {
+    let mut r = raise();
+    self_managed_funded(&mut r);
+    ctx("anyone.testnet", 0, DAY + 4 + OBJECTION_WINDOW_NS + 1);
+    let _ = r.release_phase("m120".into(), 0);
+}
+
+#[test]
+fn a_self_managed_phase_is_paid_once_more_than_half_approve() {
+    let mut r = raise();
+    self_managed_funded(&mut r);
+    assert!(r.get_project("m120".into()).unwrap().self_managed);
+    ctx("ada.testnet", 1, DAY + 5);
+    r.approve("m120".into(), 0);
+    ctx("anyone.testnet", 0, DAY + 6);
+    let _ = r.release_phase("m120".into(), 0);
+    let p = r.get_project("m120".into()).unwrap();
+    assert_eq!(p.phases[0].state, PhaseState::Released);
+}
+
+#[test]
+#[should_panic(expected = "needs approval from more than half")]
+fn exactly_half_is_not_enough() {
+    let mut r = raise();
+    with_terms(&mut r, vec![("builder.testnet", 500, true)]);
+    commit(&mut r, "ada.testnet", "1a", 500_000, DAY + 1);
+    commit(&mut r, "bode.testnet", "1a", 100_000, DAY + 1);
+    commit(&mut r, "bode.testnet", "1b", 400_000, DAY + 1);
+    ctx("anyone.testnet", 0, DAY + 2);
+    r.close_raise("m120".into());
+    ctx("builder.testnet", 1, DAY + 3);
+    r.request_inspection("m120".into(), 0);
+    ctx("builder.testnet", 1, DAY + 4);
+    r.attest("m120".into(), 0);
+    ctx("ada.testnet", 1, DAY + 5);
+    r.approve("m120".into(), 0);
+    // Past the window too, so only the approval rule can stop it.
+    ctx("anyone.testnet", 0, DAY + 4 + OBJECTION_WINDOW_NS + 1);
+    let _ = r.release_phase("m120".into(), 0);
+}

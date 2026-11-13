@@ -54,7 +54,7 @@ async fn test_version_and_default_windows() -> Result<(), Box<dyn std::error::Er
     let contract = deploy().await?;
 
     let version: u32 = contract.view("get_version").await?.json()?;
-    assert_eq!(version, 4, "a freshly initialised contract should be v4");
+    assert_eq!(version, 5, "a freshly initialised contract should be v5");
 
     let windows: [u64; 6] = contract.view("get_cancellation_windows").await?.json()?;
     assert_eq!(

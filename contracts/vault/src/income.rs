@@ -192,7 +192,7 @@ impl Vault {
         self.pay(to, amount, PayKind::Reserve)
     }
 
-    fn pay(&mut self, to: AccountId, amount: u128, kind: PayKind) -> Promise {
+    pub(crate) fn pay(&mut self, to: AccountId, amount: u128, kind: PayKind) -> Promise {
         ext_ft::ext(self.stablecoin.clone())
             .with_attached_deposit(ONE_YOCTO)
             .with_static_gas(GAS_FOR_FT_TRANSFER)

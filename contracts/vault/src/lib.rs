@@ -17,7 +17,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
-use near_sdk::collections::LookupMap;
+use near_sdk::collections::{LookupMap, UnorderedMap, Vector};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, near, require, AccountId, BorshStorageKey, PanicOnDefault};
@@ -27,12 +27,14 @@ mod ext;
 mod income;
 mod market;
 mod shares;
+mod trade;
 
 #[cfg(test)]
 mod tests;
 
 pub use ext::*;
 pub use shares::ShareMetadata;
+pub use trade::{Listing, ManagerVote, Offer, TRADE_FEE_BPS};
 
 /// Fixed-point scale for the income accumulator.
 ///
@@ -57,6 +59,12 @@ enum StorageKey {
     Balances,
     Credited,
     Unclaimed,
+    // Appended in v5; existing prefixes keep their places.
+    Listings,
+    Offers,
+    Locked,
+    ManagerVotes,
+    Voters,
 }
 
 /// Where the unit is in its life.
@@ -140,10 +148,93 @@ pub struct Vault {
     /// Set while a cross-contract call is in flight, so a second one cannot
     /// start against stale state.
     pub busy: bool,
+
+    // ---- v5: the share market and holder votes ---------------------------
+    pub(crate) listings: UnorderedMap<u64, Listing>,
+    pub(crate) offers: UnorderedMap<u64, Offer>,
+    pub next_trade_id: u64,
+    /// Shares each holder has listed, still in their balance but unmovable.
+    pub(crate) locked: LookupMap<AccountId, u128>,
+    pub(crate) manager_votes: LookupMap<AccountId, ManagerVote>,
+    pub(crate) voters: Vector<AccountId>,
+}
+
+/// The vault's layout before v5, for `migrate`.
+#[derive(BorshDeserialize)]
+#[borsh(crate = "near_sdk::borsh")]
+struct VaultV4 {
+    name: String,
+    symbol: String,
+    marketplace: AccountId,
+    property_id: u64,
+    stablecoin: AccountId,
+    manager: AccountId,
+    governor: AccountId,
+    treasury: AccountId,
+    manager_bps: u32,
+    reserve_bps: u32,
+    platform_bps: u32,
+    total_supply: u128,
+    share_cap: u128,
+    supply_frozen: bool,
+    balances: LookupMap<AccountId, u128>,
+    acc_per_share: u128,
+    credited: LookupMap<AccountId, u128>,
+    unclaimed: LookupMap<AccountId, u128>,
+    dust: u128,
+    last_accounted: u128,
+    reserve: u128,
+    owed_manager: u128,
+    owed_treasury: u128,
+    custody: Custody,
+    busy: bool,
 }
 
 #[near]
 impl Vault {
+    /// Bring a v4 vault's state forward after deploying v5 code to it.
+    /// Holders, rent and custody carry over unchanged; the market starts
+    /// empty.
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate() -> Self {
+        let old: VaultV4 =
+            env::state_read().unwrap_or_else(|| env::panic_str("No v4 state to migrate"));
+        Self {
+            name: old.name,
+            symbol: old.symbol,
+            marketplace: old.marketplace,
+            property_id: old.property_id,
+            stablecoin: old.stablecoin,
+            manager: old.manager,
+            governor: old.governor,
+            treasury: old.treasury,
+            manager_bps: old.manager_bps,
+            reserve_bps: old.reserve_bps,
+            platform_bps: old.platform_bps,
+            total_supply: old.total_supply,
+            share_cap: old.share_cap,
+            supply_frozen: old.supply_frozen,
+            balances: old.balances,
+            acc_per_share: old.acc_per_share,
+            credited: old.credited,
+            unclaimed: old.unclaimed,
+            dust: old.dust,
+            last_accounted: old.last_accounted,
+            reserve: old.reserve,
+            owed_manager: old.owed_manager,
+            owed_treasury: old.owed_treasury,
+            custody: old.custody,
+            busy: old.busy,
+            listings: UnorderedMap::new(StorageKey::Listings),
+            offers: UnorderedMap::new(StorageKey::Offers),
+            next_trade_id: 0,
+            locked: LookupMap::new(StorageKey::Locked),
+            manager_votes: LookupMap::new(StorageKey::ManagerVotes),
+            voters: Vector::new(StorageKey::Voters),
+        }
+    }
+
     #[init]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -191,6 +282,12 @@ impl Vault {
             owed_treasury: 0,
             custody: Custody::AwaitingUnit,
             busy: false,
+            listings: UnorderedMap::new(StorageKey::Listings),
+            offers: UnorderedMap::new(StorageKey::Offers),
+            next_trade_id: 0,
+            locked: LookupMap::new(StorageKey::Locked),
+            manager_votes: LookupMap::new(StorageKey::ManagerVotes),
+            voters: Vector::new(StorageKey::Voters),
         }
     }
 
@@ -228,7 +325,7 @@ impl Vault {
     pub fn set_manager(&mut self, manager: AccountId) {
         Self::assert_one_yocto();
         self.assert_governor();
-        self.manager = manager;
+        self.change_manager(manager, None);
     }
 
     #[payable]

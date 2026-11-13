@@ -261,3 +261,57 @@ export function PhotoAdder({ onAttach }: { onAttach: (urls: string[]) => Promise
     </div>
   );
 }
+
+/** A company logo or photo: shows the current one and replaces it on pick. */
+export function LogoPicker({
+  value,
+  onChange,
+  fallback,
+}: {
+  value: string | null;
+  onChange: (url: string) => void;
+  fallback: string;
+}) {
+  const { uploadFile } = useApi();
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const onFile = async (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return setNote("Choose an image.");
+    if (file.size > 5 * 1024 * 1024) return setNote("Images can be up to 5 MB.");
+    setBusy(true);
+    setNote(null);
+    const asset = fileToAsset(file);
+    try {
+      const url = fileUrlOf(await uploadFile("property", asset));
+      if (!url) throw new Error("The upload did not return a link.");
+      onChange(url);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : "The image could not be uploaded.");
+    } finally {
+      URL.revokeObjectURL(asset.uri);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gray-100 text-sm font-semibold text-secondaryText">
+        {value ? <img src={value} alt="" className="h-full w-full object-cover" /> : fallback}
+      </span>
+      <input ref={input} type="file" accept="image/*" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => input.current?.click()}
+        className="inline-flex items-center gap-2 rounded-xl border border-borderColor px-3 py-2 text-sm font-medium text-primaryText disabled:opacity-60"
+      >
+        {busy ? <Spinner size={14} /> : <ImagePlus size={14} aria-hidden="true" />}
+        {value ? "Change logo" : "Add logo or photo"}
+      </button>
+      {note ? <p className="text-xs text-red-700">{note}</p> : null}
+    </div>
+  );
+}

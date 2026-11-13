@@ -35,6 +35,13 @@ pub trait Vault {
 
 #[ext_contract(ext_self)]
 pub trait RaiseCallbacks {
+    fn on_withdrawn(
+        &mut self,
+        project_id: String,
+        unit: String,
+        who: AccountId,
+        amount: U128,
+    ) -> bool;
     fn on_reclaimed(
         &mut self,
         project_id: String,

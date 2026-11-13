@@ -30,7 +30,9 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Enum as SAEnum,
+    Float,
     ForeignKey,
+    JSON,
     Integer,
     String,
     Text,
@@ -145,6 +147,20 @@ class CollectionProfile(Base):
     #: apart from is_active on the user so suspending a builder does not also
     #: lock them out of the marketplace.
     suspended: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    #: Company logo or photo investors see on every raise. Falls back to the
+    #: account's own photo when empty.
+    logo_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    #: Managers only: the share of rent they take, in basis points, and their
+    #: pledge, the terms they work to. A manager also inspects and signs off
+    #: building phases, so the pledge covers both. Both are snapshotted onto
+    #: a nomination when accepted, so a later edit never changes what
+    #: investors in an earlier raise agreed to.
+    fee_bps: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    pledge: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pledge_updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
@@ -285,6 +301,21 @@ class CollectionProject(Base):
     closes_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    #: "off_plan", "under_construction" or "completed". A completed building
+    #: has one handover phase: money is released once the manager has taken
+    #: it over, not on a construction schedule.
+    project_type: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="under_construction"
+    )
+    address: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    #: Smallest amount one investor may put in, atomic units. Empty means a
+    #: single share.
+    min_investment_atomic: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    #: What the lifecycle sweep last saw on chain, to notice changes.
+    chain_snapshot: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    last_swept_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
@@ -317,6 +348,75 @@ class CollectionProject(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    nominations = relationship(
+        "CollectionManagerNomination",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="CollectionManagerNomination.id",
+    )
+    updates = relationship(
+        "CollectionProjectUpdate",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="CollectionProjectUpdate.created_at.desc()",
+    )
+
+
+class CollectionManagerNomination(Base):
+    """A property manager the builder suggests for a raise.
+
+    The builder suggests up to three; each must accept, and accepting
+    snapshots their fee and pledge as they stood, so investors vote on fixed
+    terms. Investors then choose among the accepted ones. The builder's own
+    company may be nominated when no other manager is available; that is
+    recorded as self-managed and shown to investors plainly.
+    """
+
+    __tablename__ = "collection_manager_nomination"
+    __table_args__ = (
+        UniqueConstraint("project_id", "profile_id", name="uq_collection_nomination"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("collection_project.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    profile_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("collection_profile.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    #: "invited", "accepted" or "declined".
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="invited")
+    self_managed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    fee_bps: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    pledge: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    project = relationship("CollectionProject", back_populates="nominations", lazy="selectin")
+    profile = relationship("CollectionProfile", lazy="selectin")
+
+
+class CollectionProjectUpdate(Base):
+    """News for holders that is not tied to one building phase: progress,
+    rental reports, maintenance, announcements. Posted by the builder or the
+    raise's manager."""
+
+    __tablename__ = "collection_project_update"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("collection_project.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    author_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    author_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    kind: Mapped[str] = mapped_column(String(24), nullable=False, default="progress")
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    image_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    project = relationship("CollectionProject", back_populates="updates", lazy="selectin")
 
 
 class CollectionProjectImage(Base):
@@ -363,6 +463,12 @@ class CollectionDocument(Base):
         default=DocumentStatusEnum.missing,
     )
     file_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    #: The project pack: every agreement and term for the raise in one
+    #: document. One is required before a raise can be published.
+    is_pack: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: SHA-256 of the file as uploaded, so anyone can check that the
+    #: document they read is the one investors committed against.
+    sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     #: Who at Sheda marked it verified, and when. A verification nobody is
     #: named against is a claim with no one behind it.
@@ -538,6 +644,11 @@ class CollectionUnit(Base):
     price_atomic: Mapped[str] = mapped_column(String(40), nullable=False, default="0")
     total_shares: Mapped[str] = mapped_column(String(40), nullable=False, default="0")
     shares_sold: Mapped[str] = mapped_column(String(40), nullable=False, default="0")
+    #: The builder's expected yearly rent for the whole flat, low and high,
+    #: in atomic units. Their own research, backed by the raise documents;
+    #: investors use it to estimate what a stake might earn. Optional.
+    rent_min_atomic: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    rent_max_atomic: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     #: The vault that owns this unit once it exists.
     vault_account_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
@@ -549,3 +660,45 @@ class CollectionUnit(Base):
     )
 
     project = relationship("CollectionProject", lazy="selectin")
+
+
+
+class CollectionWatch(Base):
+    """Someone following a raise: they invested, bought shares, or tapped
+    Follow. The contracts cannot list investors, so this is who hears about
+    the building's progress."""
+
+    __tablename__ = "collection_watch"
+    __table_args__ = (UniqueConstraint("project_id", "user_id", name="uq_collection_watch"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("collection_project.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    near_account_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class CollectionNotification(Base):
+    """One thing an investor should know about a building they follow."""
+
+    __tablename__ = "collection_notification"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    project_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("collection_project.id", ondelete="CASCADE"), nullable=True
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    link: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    #: Unique per person and event, so a sweep never repeats itself.
+    dedupe_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

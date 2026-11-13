@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import apiService, { type InvestNotification } from "@/services/api";
 import AuthGuard from "@/components/auth/AuthGuard";
 import PageHeader from "@/components/ui/PageHeader";
 import { useMode } from "@/contexts/ModeContext";
@@ -24,11 +25,21 @@ function Notifications() {
   const router = useRouter();
   const { notifications, unreadCount, markAsRead, markAllAsRead, clearAll, refreshNotifications } = useNotifications();
   const { isSeller } = useMode();
+  // Invest updates come from their own feed: buildings you invest in or follow.
+  const [invest, setInvest] = useState<InvestNotification[]>([]);
 
   useEffect(() => {
     refreshNotifications().catch?.(() => {});
+    apiService.getInvestNotifications().then((r) => r.ok && setInvest(r.data));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const investUnread = invest.filter((n) => !n.is_read).length;
+  const readInvest = () => {
+    if (!investUnread) return;
+    apiService.readInvestNotifications();
+    setInvest(invest.map((n) => ({ ...n, is_read: true })));
+  };
 
   const open = (n: AppNotification) => {
     markAsRead(n.id);
@@ -43,14 +54,48 @@ function Notifications() {
       <PageHeader
         title="Notifications"
         actions={
-          unreadCount > 0 ? (
-            <button type="button" onClick={markAllAsRead} className="px-2 text-[13px] font-medium text-primary hover:underline">
+          unreadCount + investUnread > 0 ? (
+            <button
+              type="button"
+              onClick={() => {
+                markAllAsRead();
+                readInvest();
+              }}
+              className="px-2 text-[13px] font-medium text-primary hover:underline"
+            >
               Mark all read
             </button>
           ) : undefined
         }
       />
       <div className="mx-auto max-w-2xl px-5 pb-16 pt-4">
+        {invest.length > 0 ? (
+          <section className="mb-6">
+            <h2 className="mb-2 text-sm font-semibold text-primaryText">Invest updates</h2>
+            <ul className="flex flex-col gap-2.5">
+              {invest.map((n) => (
+                <li key={n.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      readInvest();
+                      if (n.link) router.push(n.link);
+                    }}
+                    className={`w-full rounded-xl border p-3 text-left ${
+                      n.is_read ? "border-borderColor bg-white" : "border-red-200 bg-red-50/40"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-primaryText">{n.title}</span>
+                      <span className="shrink-0 text-[11px] text-secondaryText">{timeAgo(n.created_at)}</span>
+                    </div>
+                    <p className="mt-0.5 text-[13px] text-secondaryText">{n.body}</p>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         {unreadCount > 0 && (
           <p className="mb-4 rounded-lg border border-red-200 bg-red-50 p-2.5 text-center text-xs font-medium text-red-800">
             You have {unreadCount} unread notification{unreadCount !== 1 ? "s" : ""}

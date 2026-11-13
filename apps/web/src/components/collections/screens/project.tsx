@@ -4,17 +4,35 @@ import { InterMedium, InterRegular, InterSemiBold } from "@/components/collectio
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, View } from "@/components/collections/rn";
 import { Stack, router, useLocalSearchParams } from "@/components/collections/nav";
-import { TierBadge } from "@/components/collections/Score";
+import { Building, MapPin } from "lucide-react";
+import { useCurrency } from "@/contexts/CurrencyContext";
+import InfoTip, { MoreText } from "@/components/ui/InfoTip";
 import {
-  Avatar,
+  BuilderStrip,
+  FollowButton,
+  ManagerSection,
+  MoreInformation,
+  ProjectPackCard,
+  ProjectTimeline,
+  UpdatesFeed,
+} from "@/components/collections/ProjectSections";
+import { OsmMap } from "@/components/collections/RaiseExtras";
+import { PROJECT_TYPE_TEXT } from "@/services/collections/copy";
+import {
+  DEFAULT_FEE_BPS,
+  perPeriod,
+  rentRangeOf,
+  sharePriceOf,
+  sharesFor,
+  yearlyRentFor,
+  type Period,
+} from "@/services/collections/rent";
+import {
   Badge,
   C,
   Card,
-  Chevron,
   CollectionsButton,
-  Divider,
   Empty,
-  ListRow,
   Meter,
   Note,
   Screen,
@@ -24,7 +42,6 @@ import {
   TYPE,
 } from "@/components/collections/ui";
 import { useCollections, useUnitPositions } from "@/hooks/useCollections";
-import { scoreFor } from "@/services/collections/ranking";
 import { formatWithSymbol } from "@/services/collections/money";
 import { DEFAULT_TOKEN } from "@/config/tokens";
 import { useApi } from "@/contexts/ApiContext";
@@ -34,7 +51,6 @@ import apiService from "@/services/api";
 import { DocumentList, DocumentUploader, PhotoAdder, PhotoGallery } from "@/components/collections/Attachments";
 import type {
   CollectionPhase,
-  CollectionProfile,
   CollectionProjectDetail,
 } from "@/services/api";
 
@@ -52,6 +68,7 @@ export default function ProjectDetail() {
   const { getProject, loading, error, connected } = useCollections();
   const { user } = useApi();
   const [project, setProject] = useState<CollectionProjectDetail | null>(null);
+  const [tab, setTab] = useState<"about" | "updates">("about");
 
   const load = useCallback(async () => {
     const result = await getProject(String(slug));
@@ -99,106 +116,128 @@ export default function ProjectDetail() {
     <>
       <Stack.Screen options={{ title: "Project" }} />
       <Screen>
-        <View style={{ gap: 9 }}>
-          <InterSemiBold style={{ ...TYPE.display, color: C.text }}>{project.name}</InterSemiBold>
-          <InterRegular style={{ ...TYPE.label, color: C.textSecondary }}>
-            {project.location} · {project.units} units
-          </InterRegular>
-          <PhotoGallery urls={project.image_urls ?? []} alt={project.name} />
-          {isOwner ? (
-            <PhotoAdder
-              onAttach={async (urls) => {
-                const start = project.image_urls?.length ?? 0;
-                for (let i = 0; i < urls.length; i++) {
-                  const err = errorOf(await apiService.addCollectionImage(project.slug, { image_url: urls[i], position: start + i }));
-                  if (err) return err;
-                }
-                await load();
-                return null;
-              }}
-            />
-          ) : null}
-          {project.description ? (
-            <InterRegular style={{ ...TYPE.body, color: C.text }}>
-              {project.description}
-            </InterRegular>
-          ) : null}
-        </View>
+        <PhotoGallery urls={project.image_urls ?? []} alt={project.name} />
+        {isOwner ? (
+          <PhotoAdder
+            onAttach={async (urls) => {
+              const start = project.image_urls?.length ?? 0;
+              for (let i = 0; i < urls.length; i++) {
+                const err = errorOf(await apiService.addCollectionImage(project.slug, { image_url: urls[i], position: start + i }));
+                if (err) return err;
+              }
+              await load();
+              return null;
+            }}
+          />
+        ) : null}
 
-        <Card>
-          <View style={{ gap: 13 }}>
-            <StatRow>
-              <StatTile
-                label="Estimated return"
-                value={
-                  project.estimated_return_pct != null
-                    ? `${project.estimated_return_pct}% a year`
-                    : "Not stated"
-                }
-                note="the builder's figure"
-              />
-              <StatTile
-                label="Released so far"
-                value={`${(released / 100).toFixed(0)}%`}
-                tone={released > 0 ? "positive" : "plain"}
-                note="of the raise"
-              />
-            </StatRow>
+        <ProjectSummary project={project} />
+        {project.builder ? <BuilderStrip builder={project.builder} /> : null}
+        {user ? (
+          <div className="flex justify-end">
+            <FollowButton slug={project.slug} />
+          </div>
+        ) : null}
 
-            <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
-              The return is the builder&apos;s own estimate. Sheda does not verify it and does not
-              guarantee it. What the raise is worth and what it has collected are held on chain,
-              not here.
-            </InterRegular>
-          </View>
-        </Card>
+        <div className="flex border-b border-borderColor" role="tablist">
+          {(["about", "updates"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+              className={`flex-1 py-2.5 text-sm font-medium ${
+                tab === t ? "border-b-2 border-primary text-primary" : "text-secondaryText"
+              }`}
+            >
+              {t === "about" ? "About" : `Updates${updateCount(project) ? ` (${updateCount(project)})` : ""}`}
+            </button>
+          ))}
+        </div>
 
-        <Section title="Who is behind this">
-          {project.builder ? <PersonRow profile={project.builder} role="Builder" /> : null}
-          {project.manager ? (
-            <PersonRow profile={project.manager} role="Property manager" />
-          ) : null}
-          {sameGroup(project) ? (
-            <Note>
-              The manager is part of the builder&apos;s own group, so they may not sign off these
-              construction phases. An independent reviewer is required before any money is
-              released.
-            </Note>
-          ) : null}
-        </Section>
-
-        {project.documents.length > 0 || isOwner ? (
-          <Section title="Documents">
-            <DocumentList
-              documents={project.documents}
-              empty="The builder has not attached any documents yet. Ask for the plans, budget and title before you invest."
-            />
-            {isOwner ? (
-              <DocumentUploader
-                kinds={RAISE_DOCUMENT_KINDS}
-                onAttach={async (label, fileUrl) => {
-                  const err = errorOf(await apiService.addCollectionDocument(project.slug, { label, file_url: fileUrl }));
-                  if (!err) await load();
-                  return err;
-                }}
-              />
+        {tab === "updates" ? (
+          <UpdatesFeed
+            project={project}
+            canPost={isOwner || (!!user?.id && project.manager?.user_id === Number(user.id))}
+            onPosted={load}
+          />
+        ) : (
+          <>
+            {project.description ? (
+              <div>
+                <h2 className="mb-1 text-sm font-semibold text-primaryText">Description</h2>
+                <MoreText text={project.description} className="text-sm leading-relaxed text-secondaryText" />
+              </div>
             ) : null}
-          </Section>
-        ) : null}
 
-        {project.phases.length > 0 ? <PhaseList project={project} onChanged={load} /> : null}
+            <ProjectTimeline project={project} />
 
-        {connected ? <MoneyBack slug={project.slug} /> : null}
+            <KeyNumbers project={project} released={released} />
 
-        {connected && project.unit_list.length > 0 ? (
-          <YourShares project={project} />
-        ) : null}
+            {["stalled", "failed", "cancelled"].includes(project.status) ? null : (
+              <RentEstimator project={project} isOwner={isOwner} onChanged={load} />
+            )}
+
+            {project.latitude != null && project.longitude != null ? (
+              <section className="space-y-2">
+                <h2 className="text-sm font-semibold text-primaryText">Location</h2>
+                <OsmMap lat={project.latitude} lon={project.longitude} label={project.name} />
+                <p className="text-xs text-secondaryText">{project.address || project.location}</p>
+              </section>
+            ) : null}
+
+            <ManagerSection project={project} />
+
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold text-primaryText">Project pack and documents</h2>
+              <ProjectPackCard project={project} />
+              {project.documents.some((d) => !d.is_pack) ? (
+                <DocumentList documents={project.documents.filter((d) => !d.is_pack)} />
+              ) : null}
+              {isOwner ? (
+                <DocumentUploader
+                  kinds={RAISE_DOCUMENT_KINDS}
+                  onAttach={async (label, fileUrl) => {
+                    const err = errorOf(
+                      await apiService.addCollectionDocument(project.slug, {
+                        label,
+                        file_url: fileUrl,
+                        is_pack: label === PACK_KIND,
+                      })
+                    );
+                    if (!err) await load();
+                    return err;
+                  }}
+                />
+              ) : null}
+            </section>
+
+            {project.phases.length > 0 ? <PhaseList project={project} onChanged={load} /> : null}
+
+            <MoreInformation project={project} />
+
+            {connected ? <MoneyBack slug={project.slug} /> : null}
+
+            {connected && project.unit_list.length > 0 ? <YourShares project={project} /> : null}
+          </>
+        )}
 
         {project.unit_list.length > 0 ? (
-          <CollectionsButton
-            label="Choose a unit"
-            onPress={() => router.push(`/collections/project/${project.slug}/units`)}
-          />
+          <div className="sticky bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 -mx-1 bg-white/95 px-1 pb-3 pt-2 backdrop-blur md:bottom-0">
+            <button
+              type="button"
+              onClick={() => router.push(`/collections/project/${project.slug}/units`)}
+              className="w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-white hover:bg-[#a82227]"
+            >
+              {project.status === "open" ? "Invest now" : "See the flats"}
+            </button>
+            {project.status !== "open" && !["stalled", "failed", "cancelled"].includes(project.status) ? (
+              <a href="/collections/shares" className="mt-2 block text-center text-sm font-medium text-primary">
+                Round closed? Buy from investors
+              </a>
+            ) : null}
+          </div>
         ) : (
           <Empty
             title="No units listed yet"
@@ -209,6 +248,393 @@ export default function ProjectDetail() {
     </>
   );
 }
+
+function updateCount(project: CollectionProjectDetail): number {
+  return (project.updates?.length ?? 0) + project.phases.reduce((n, ph) => n + (ph.updates?.length ?? 0), 0);
+}
+
+/** Live funding figures from the flats; shares sold come from the contract. */
+function fundingOf(project: CollectionProjectDetail) {
+  let target = 0n;
+  let raised = 0n;
+  let open = 0;
+  let minShare: bigint | null = null;
+  for (const u of project.unit_list) {
+    const price = BigInt(u.price_atomic || "0");
+    const total = BigInt(u.total_shares || "0");
+    const sold = BigInt(u.shares_sold || "0");
+    target += price;
+    if (total > 0n) {
+      raised += (sold * price) / total;
+      const per = price / total;
+      if (minShare === null || per < minShare) minShare = per;
+    }
+    if (sold < total) open += 1;
+  }
+  const pct = target > 0n ? Math.min(100, Number((raised * 100n) / target)) : 0;
+  return { target, raised, open, minShare, pct };
+}
+
+const STATUS_TEXT: Record<string, string> = {
+  draft: "Draft, not open yet",
+  open: "Open to invest",
+  funded: "Fully funded",
+  building: "Being built",
+  delivered: "Completed",
+  stalled: "Stopped",
+  failed: "Did not reach target",
+  cancelled: "Cancelled",
+};
+
+function barOf(status: string, pct: number): { cls: string; width: number } {
+  if (status === "open") return { cls: "bg-primary", width: pct };
+  if (status === "funded" || status === "building" || status === "delivered") return { cls: "bg-green-500", width: 100 };
+  return { cls: "bg-gray-300", width: 100 };
+}
+
+/** USDC atomic units (6 decimals) shown in the person's chosen currency, as on Invest. */
+function useMoney() {
+  const { formatPrice, formatUsd, selectedCurrency } = useCurrency();
+  return (atomic: bigint) => {
+    const usd = Number(atomic) / 1_000_000;
+    return selectedCurrency === "USD" ? formatUsd(usd) : `${formatPrice(usd)} (${formatUsd(usd)})`;
+  };
+}
+
+function ProjectSummary({ project }: { project: CollectionProjectDetail }) {
+  const { pct, raised, target } = fundingOf(project);
+  const money = useMoney();
+  const open = project.status === "open";
+  return (
+    <div className="space-y-3">
+      <div>
+        <h1 className="text-lg font-semibold text-primaryText">{project.name}</h1>
+        <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-secondaryText">
+          <MapPin size={13} /> {project.location}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2 text-xs text-primaryText">
+        <span className="inline-flex items-center gap-1 rounded-lg border border-borderColor px-2.5 py-1">
+          <Building size={13} /> {project.units} flat{project.units === 1 ? "" : "s"}
+        </span>
+        <span className="rounded-lg border border-borderColor px-2.5 py-1">
+          {STATUS_TEXT[project.status] ?? project.status}
+        </span>
+        {project.project_type ? (
+          <span className="rounded-lg border border-borderColor px-2.5 py-1">
+            {PROJECT_TYPE_TEXT[project.project_type] ?? project.project_type}
+          </span>
+        ) : null}
+      </div>
+      <div className="flex items-end justify-between gap-3">
+        <p className="text-lg font-semibold text-primaryText">
+          {project.estimated_return_pct != null ? `${project.estimated_return_pct}% a year` : "Return not stated"}
+          <span className="ml-1 text-xs font-normal text-secondaryText">est.</span>
+        </p>
+        {open ? <p className="text-sm font-medium text-primary">{pct}% funded</p> : null}
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+        <div
+          className={`h-full rounded-full ${barOf(project.status, pct).cls}`}
+          style={{ width: `${barOf(project.status, pct).width}%` }}
+        />
+      </div>
+      {target > 0n ? (
+        <p className="text-xs text-secondaryText">
+          {money(raised)} raised of {money(target)}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function KeyNumbers({ project, released }: { project: CollectionProjectDetail; released: number }) {
+  const { open, minShare } = fundingOf(project);
+  const money = useMoney();
+  const rows: [React.ReactNode, string][] = [
+    ["Flats open to invest", `${open} of ${project.unit_list.length || project.units}`],
+    ["Price per share", minShare != null ? `from ${money(minShare)}` : "—"],
+    [
+      <span key="r" className="inline-flex items-center gap-1">
+        Estimated return
+        <InfoTip label="About the estimated return">
+          The builder&apos;s own estimate. Sheda does not check it and does not guarantee any return.
+        </InfoTip>
+      </span>,
+      project.estimated_return_pct != null ? `${project.estimated_return_pct}% a year` : "Not stated",
+    ],
+    [
+      <span key="d" className="inline-flex items-center gap-1">
+        Paid to the builder
+        <InfoTip label="About payments to the builder">
+          Investors&apos; money is held by the raise contract and paid out phase by phase, only after each phase
+          is inspected and signed off. These figures are read from the blockchain, not from Sheda.
+        </InfoTip>
+      </span>,
+      `${(released / 100).toFixed(0)}% of the raise`,
+    ],
+  ];
+  return (
+    <dl className="space-y-2 text-sm">
+      {rows.map(([k, v], i) => (
+        <div key={i} className="flex justify-between gap-3">
+          <dt className="text-secondaryText">{k}</dt>
+          <dd className="font-medium text-primaryText">{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+const PERIODS: { id: Period; label: string; suffix: string }[] = [
+  { id: "day", label: "Day", suffix: "a day" },
+  { id: "month", label: "Month", suffix: "a month" },
+  { id: "year", label: "Year", suffix: "a year" },
+];
+
+const toAtomic = (usd: string): bigint => {
+  const n = Number(usd.replace(/,/g, ""));
+  return Number.isFinite(n) && n > 0 ? BigInt(Math.round(n * 1_000_000)) : 0n;
+};
+
+/**
+ * What a stake might earn in rent, from the builder's expected rent range.
+ *
+ * Starts from what this person already put into the flat, or $100 if
+ * nothing. Counts whole shares only (the contract sells no fractions) and
+ * takes off the vault's real fees where the vault exists, the launch fees
+ * where it does not yet.
+ */
+function RentEstimator({
+  project,
+  isOwner,
+  onChanged,
+}: {
+  project: CollectionProjectDetail;
+  isOwner: boolean;
+  onChanged: () => void;
+}) {
+  const money = useMoney();
+  const { positions } = useUnitPositions(project.slug, project.unit_list);
+  const priced = project.unit_list.filter((u) => rentRangeOf(u) && sharePriceOf(u));
+  const [code, setCode] = useState<string | null>(null);
+  const [amount, setAmount] = useState<string | null>(null);
+  const [period, setPeriod] = useState<Period>("month");
+  const [fees, setFees] = useState<Record<string, number>>({});
+
+  const unit = priced.find((u) => u.code === code) ?? priced[0] ?? null;
+  const committed = unit ? BigInt(positions[unit.code]?.committedAtomic || "0") : 0n;
+  const amountText = amount ?? (committed > 0n ? String(Number(committed) / 1_000_000) : "100");
+
+  useEffect(() => {
+    let alive = true;
+    const vaults = project.unit_list.filter((u) => u.vault_account_id);
+    Promise.all(
+      vaults.map(async (u) => {
+        try {
+          const info = await chain.getVaultInfo(u.vault_account_id as string);
+          return [u.code, info.manager_bps + info.reserve_bps + info.platform_bps] as const;
+        } catch {
+          return null;
+        }
+      })
+    ).then((rows) => {
+      if (alive) setFees(Object.fromEntries(rows.filter((r): r is readonly [string, number] => r !== null)));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [project.unit_list]);
+
+  if (!unit) {
+    return (
+      <div className="rounded-2xl border border-borderColor p-4">
+        <h2 className="text-sm font-semibold text-primaryText">Rent you could earn</h2>
+        <p className="mt-1 text-sm text-secondaryText">The builder has not given an expected rent yet.</p>
+        {isOwner ? <RentEditor project={project} onChanged={onChanged} /> : null}
+      </div>
+    );
+  }
+
+  const range = rentRangeOf(unit)!;
+  const total = BigInt(unit.total_shares);
+  const shares = sharesFor(toAtomic(amountText), unit);
+  const feeBps = fees[unit.code] ?? DEFAULT_FEE_BPS;
+  const shown = perPeriod(yearlyRentFor(shares > total ? total : shares, total, range, feeBps), period);
+  const suffix = PERIODS.find((p) => p.id === period)!.suffix;
+  const pct = total > 0n ? (Number((shares > total ? total : shares) * 10_000n / total) / 100).toString() : "0";
+  const minShare = sharePriceOf(unit)!;
+
+  return (
+    <div className="rounded-2xl border border-borderColor p-4">
+      <div className="flex items-center gap-1">
+        <h2 className="text-sm font-semibold text-primaryText">Rent you could earn</h2>
+        <InfoTip label="How this estimate works">
+          Uses the builder&apos;s expected rent for the whole flat, from their research on rents nearby (see the
+          documents). Your part is your share of the flat, after the vault&apos;s fees ({feeBps / 100}%). Rent
+          starts only once the flat is finished and let, and empty months earn nothing. An estimate, not a promise.
+        </InfoTip>
+      </div>
+
+      {priced.length > 1 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {priced.map((u) => (
+            <button
+              key={u.code}
+              type="button"
+              onClick={() => {
+                setCode(u.code);
+                setAmount(null);
+              }}
+              className={`rounded-lg px-3 py-1.5 text-xs ${
+                u.code === unit.code ? "bg-primary text-white" : "bg-primaryLight text-secondaryText"
+              }`}
+            >
+              {u.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <label className="mt-3 block text-xs text-secondaryText">
+        {committed > 0n && amount === null ? "What you put in (USD)" : "If you invest (USD)"}
+        <input
+          inputMode="decimal"
+          value={amountText}
+          onChange={(e) => setAmount(e.target.value)}
+          className="mt-1 w-full rounded-xl border border-borderColor px-3 py-2.5 text-base text-primaryText outline-none focus:border-primary"
+        />
+      </label>
+      <p className="mt-1 text-xs text-secondaryText">
+        {shares > 0n
+          ? `${shares > total ? total : shares} shares, ${pct}% of ${unit.label}`
+          : `One share costs ${money(minShare)}`}
+        {shares > total ? " (the whole flat)" : ""}
+      </p>
+
+      <div className="mt-3 flex rounded-xl bg-gray-100 p-1 text-xs" role="tablist">
+        {PERIODS.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            role="tab"
+            aria-selected={period === p.id}
+            onClick={() => setPeriod(p.id)}
+            className={`flex-1 rounded-lg py-1.5 ${period === p.id ? "bg-white font-medium text-primaryText shadow-sm" : "text-secondaryText"}`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      <p className="mt-3 text-xl font-semibold text-primaryText">
+        {money(shown.min)} – {money(shown.max)}
+        <span className="ml-1 text-xs font-normal text-secondaryText">{suffix}</span>
+      </p>
+      <p className="mt-1 text-xs text-secondaryText">
+        Whole flat lets for {money(range.min)} – {money(range.max)} a year, by the builder&apos;s estimate.
+      </p>
+
+      {isOwner ? <RentEditor project={project} onChanged={onChanged} /> : null}
+    </div>
+  );
+}
+
+/**
+ * The builder sets each flat's expected yearly rent. Same rule as the
+ * server: editable on a draft, and on an open raise only where none was
+ * given, since investors may have committed against a figure once shown.
+ */
+function RentEditor({ project, onChanged }: { project: CollectionProjectDetail; onChanged: () => void }) {
+  const editable = project.unit_list.filter((u) => project.status === "draft" || !rentRangeOf(u));
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState<Record<string, { lo: string; hi: string }>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  if (editable.length === 0) return null;
+
+  const valueOf = (code: string, rangeLo?: string | null, rangeHi?: string | null) =>
+    values[code] ?? {
+      lo: rangeLo ? String(Number(rangeLo) / 1_000_000) : "",
+      hi: rangeHi ? String(Number(rangeHi) / 1_000_000) : "",
+    };
+
+  const save = async (code: string, lo: string, hi: string) => {
+    const a = toAtomic(lo);
+    const b = toAtomic(hi);
+    if (a <= 0n || b <= 0n) return setMessage("Enter both a low and a high yearly rent.");
+    if (a > b) return setMessage("The low rent is more than the high rent.");
+    setBusy(code);
+    setMessage(null);
+    const r = await apiService.setCollectionUnitRent(project.slug, code, {
+      rent_min_atomic: a.toString(),
+      rent_max_atomic: b.toString(),
+    });
+    setBusy(null);
+    if (!r.ok) {
+      const err = r.error as { detail?: unknown; message?: string } | undefined;
+      return setMessage(String(err?.detail ?? err?.message ?? "That did not save. Please try again."));
+    }
+    setMessage(project.status === "draft" ? "Saved." : "Saved. It is now fixed for this raise.");
+    onChanged();
+  };
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="mt-3 text-sm font-medium text-primary">
+        Set expected rent
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-4 space-y-3 border-t border-borderColor pt-3">
+      <p className="inline-flex items-center gap-1 text-xs text-secondaryText">
+        Yearly rent for each whole flat
+        <InfoTip label="About setting rent">
+          Base it on rents for similar flats nearby and add that research to the documents. On an open raise you
+          can add it once, and it cannot be changed after.
+        </InfoTip>
+      </p>
+      {editable.map((u) => {
+        const v = valueOf(u.code, u.rent_min_atomic, u.rent_max_atomic);
+        const set = (patch: Partial<{ lo: string; hi: string }>) => setValues({ ...values, [u.code]: { ...v, ...patch } });
+        return (
+          <div key={u.code} className="space-y-2">
+            <p className="text-sm font-medium text-primaryText">{u.label}</p>
+            <div className="flex gap-2">
+              <input
+                inputMode="decimal"
+                placeholder="Low (USD)"
+                value={v.lo}
+                onChange={(e) => set({ lo: e.target.value })}
+                className="min-w-0 flex-1 rounded-xl border border-borderColor px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+              <input
+                inputMode="decimal"
+                placeholder="High (USD)"
+                value={v.hi}
+                onChange={(e) => set({ hi: e.target.value })}
+                className="min-w-0 flex-1 rounded-xl border border-borderColor px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+              <button
+                type="button"
+                disabled={busy === u.code}
+                onClick={() => save(u.code, v.lo, v.hi)}
+                className="rounded-xl bg-primary px-4 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {busy === u.code ? "…" : "Save"}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+      {message ? <p className="text-xs text-secondaryText">{message}</p> : null}
+    </div>
+  );
+}
+
 
 const CLAIMABLE_STATUSES = new Set(["funded", "building", "delivered"]);
 
@@ -368,45 +794,11 @@ function YourShares({ project }: { project: CollectionProjectDetail }) {
   );
 }
 
-/** R2. A manager inside the builder's own group may not inspect its work. */
-function sameGroup(project: CollectionProjectDetail): boolean {
-  const group = project.manager?.part_of_group?.trim().toLowerCase();
-  const builder = project.builder?.display_name.trim().toLowerCase();
-  return Boolean(group && builder && group === builder);
-}
-
-function PersonRow({ profile, role }: { profile: CollectionProfile; role: string }) {
-  const score = scoreFor(profile);
-
-  return (
-    <ListRow
-      leading={<Avatar name={profile.display_name} size={40} />}
-      title={profile.display_name}
-      subtitle={`${role}${profile.location ? ` · ${profile.location}` : ""}`}
-      onPress={() => router.push(`/collections/person/${profile.id}`)}
-      right={
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <View style={{ alignItems: "flex-end", gap: 3 }}>
-            {score.tier === "unrated" ? (
-              <TierBadge tier="unrated" />
-            ) : (
-              <>
-                <InterSemiBold style={{ ...TYPE.heading, color: C.text }}>
-                  {score.total}
-                </InterSemiBold>
-                <TierBadge tier={score.tier} />
-              </>
-            )}
-          </View>
-          <Chevron />
-        </View>
-      }
-    />
-  );
-}
-
 /** What a builder is asked to attach to a raise. */
+const PACK_KIND = "Project pack (every agreement and term)";
+
 const RAISE_DOCUMENT_KINDS = [
+  PACK_KIND,
   "Building plans (architectural drawings)",
   "Budget / bill of quantities",
   "Title document (C of O, Governor's Consent)",
@@ -444,13 +836,51 @@ const PHASE_TONE = {
  */
 function PhaseList({ project, onChanged }: { project: CollectionProjectDetail; onChanged: () => void }) {
   const { positions } = useUnitPositions(project.slug, project.unit_list);
-  const { objectToRelease, loading, connected } = useCollections();
+  const { objectToRelease, approvePhase, loading, connected } = useCollections();
+  const { walletState } = useWallet();
+  const me = walletState.account?.accountId ?? null;
   const [windowMs, setWindowMs] = useState<number | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // v5: a raise managed by the builder's own company pays a phase only once
+  // more than half of the money approves it.
+  const [selfManaged, setSelfManaged] = useState(false);
+  const [approved, setApproved] = useState<Record<number, boolean>>({});
   useEffect(() => {
     chain.getObjectionWindowMs().then(setWindowMs);
-  }, []);
+    chain
+      .getRaiseTerms(project.slug)
+      .then((t) => setSelfManaged(Boolean(t?.selfManaged)))
+      .catch(() => setSelfManaged(false));
+  }, [project.slug]);
+  useEffect(() => {
+    if (!selfManaged || !me) return;
+    let alive = true;
+    Promise.all(
+      project.phases
+        .filter((ph) => ph.state === "objection_window")
+        .map(async (ph) => [ph.position, await chain.hasApprovedPhase(project.slug, ph.position, me)] as const)
+    ).then((rows) => alive && setApproved(Object.fromEntries(rows)));
+    return () => {
+      alive = false;
+    };
+  }, [selfManaged, me, project.slug, project.phases]);
+
+  const onApprove = async (phase: CollectionPhase) => {
+    setBusy(phase.position);
+    setMessage(null);
+    const result = await approvePhase(project.slug, phase.position);
+    setBusy(null);
+    setMessage(
+      result.success
+        ? "Your approval is recorded. The payment goes to the builder once more than half of investors approve."
+        : result.error ?? "Your approval did not go through."
+    );
+    if (result.success) {
+      setApproved({ ...approved, [phase.position]: true });
+      onChanged();
+    }
+  };
 
   const holder = Object.values(positions).some((p) => BigInt(p?.committedAtomic || "0") > BigInt(0));
   const windowOpen = (phase: CollectionPhase) =>
@@ -485,15 +915,22 @@ function PhaseList({ project, onChanged }: { project: CollectionProjectDetail; o
               canObject={connected && holder && windowOpen(phase)}
               objecting={busy === phase.position && loading}
               onObject={() => onObject(phase)}
+              canApprove={
+                selfManaged && connected && holder && phase.state === "objection_window" && !approved[phase.position]
+              }
+              onApprove={() => onApprove(phase)}
             />
           ))}
         </View>
       </Card>
       {message ? <Note>{message}</Note> : null}
-      <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
-        Each phase is inspected and signed off before its money is released. Holders have {windowText} to
-        object, and a quarter of them objecting holds the payment and stops the raise.
-      </InterRegular>
+      <p className="inline-flex items-center gap-1 text-xs text-secondaryText">
+        Paid phase by phase, after inspection.
+        <InfoTip label="How payments are released">
+          Each phase is inspected and signed off before its money is released. Holders then have {windowText} to
+          object, and if a quarter of them object, the payment is held and the raise stops.
+        </InfoTip>
+      </p>
     </Section>
   );
 }
@@ -503,11 +940,15 @@ function PhaseRow({
   canObject = false,
   objecting = false,
   onObject,
+  canApprove = false,
+  onApprove,
 }: {
   phase: CollectionPhase;
   canObject?: boolean;
   objecting?: boolean;
   onObject?: () => void;
+  canApprove?: boolean;
+  onApprove?: () => void;
 }) {
   const done = phase.state === "released";
   const colour = PHASE_TONE[phase.state];
@@ -540,6 +981,9 @@ function PhaseRow({
             <InterRegular style={{ ...TYPE.micro, color: C.caution }}>
               Holders can object to this release until the window closes.
             </InterRegular>
+            {canApprove && onApprove ? (
+              <CollectionsButton label="Approve this payment" loading={objecting} onPress={onApprove} />
+            ) : null}
             {canObject && onObject ? (
               <CollectionsButton label="Object to this release" variant="quiet" loading={objecting} onPress={onObject} />
             ) : null}

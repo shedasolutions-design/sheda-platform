@@ -640,3 +640,45 @@ async fn test_failed_claim_restores_the_holder_entitlement() -> TestResult {
 
     Ok(())
 }
+
+/// With the platform fee switched on, the landlord (here, the vault) is paid
+/// the rent less 2% and the fee wallet receives the 2%, in the same flow, with
+/// nothing left behind in the marketplace's books.
+#[tokio::test]
+async fn test_rent_pays_the_landlord_less_the_platform_fee() -> TestResult {
+    let worker = near_workspaces::sandbox().await?;
+    let fx = setup(&worker, true, true).await?;
+
+    // holder_b stands in for Sheda's fee wallet: it is registered with the token.
+    fx.market
+        .call("set_platform_fee")
+        .args_json(json!({ "fee_bps": 200, "wallet": fx.holder_b.id() }))
+        .transact()
+        .await?
+        .into_result()?;
+    let wallet_before = ft_balance(&fx.ft, fx.holder_b.id()).await?;
+
+    let bid_id = place_lease_bid(&fx).await?;
+    let accepted = fx
+        .seller
+        .call(fx.vault.id(), "accept_bid")
+        .args_json(json!({ "bid_id": bid_id.to_string() }))
+        .deposit(ONE_YOCTO)
+        .max_gas()
+        .transact()
+        .await?;
+    assert_no_failed_receipts(&accepted, "accept_bid with a platform fee");
+
+    let fee = RENT * 200 / 10_000;
+    assert_eq!(ft_balance(&fx.ft, fx.vault.id()).await?, RENT - fee);
+    assert_eq!(
+        ft_balance(&fx.ft, fx.holder_b.id()).await? - wallet_before,
+        fee
+    );
+    assert_eq!(
+        market_ledger(&fx).await?,
+        0,
+        "the whole bid should have left the books"
+    );
+    Ok(())
+}

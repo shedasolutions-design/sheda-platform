@@ -16,6 +16,37 @@ use crate::{
     ShedaContract,
 };
 
+/// Sheda's share of a completed payment to an owner. Zero until a fee
+/// wallet is configured, so a deploy changes nothing until the council
+/// turns the fee on.
+pub fn platform_fee(contract: &ShedaContract, amount: u128) -> u128 {
+    match contract.fee_wallet {
+        Some(_) => amount * u128::from(contract.platform_fee_bps) / 10_000,
+        None => 0,
+    }
+}
+
+/// Send the fee once the owner's payment has succeeded. Sent from the
+/// success branch so a failed owner payment never pays a fee. If the fee
+/// transfer itself fails the tokens simply stay in the contract.
+pub fn pay_platform_fee(contract: &mut ShedaContract, token: &AccountId, fee: u128) {
+    if fee == 0 {
+        return;
+    }
+    let Some(wallet) = contract.fee_wallet.clone() else {
+        return;
+    };
+    let current = *contract.stable_coin_balances.get(token).unwrap_or(&0);
+    contract
+        .stable_coin_balances
+        .insert(token.clone(), current.saturating_sub(fee));
+    let _ = ft_contract::ext(token.clone())
+        .with_attached_deposit(NearToken::from_yoctonear(1))
+        .with_static_gas(Gas::from_tgas(10))
+        .ft_transfer(wallet, U128(fee));
+    log!("platform fee {} sent", fee);
+}
+
 fn checked_add_u128(left: u128, right: u128, label: &str) -> u128 {
     left.checked_add(right)
         .unwrap_or_else(|| env::panic_str(&format!("Overflow in {}", label)))
@@ -234,11 +265,13 @@ pub fn internal_accept_bid(contract: &mut ShedaContract, property_id: u64, bid_i
         },
     );
 
-    // Part 1: Transfer stablecoin from contract to property owner
+    // Part 1: Transfer stablecoin from contract to property owner, less
+    // Sheda's fee, which follows once this payment has succeeded.
+    let owner_net = bid.amount - platform_fee(contract, bid.amount);
     let promise = ft_contract::ext(bid.stablecoin_token.clone())
         .with_attached_deposit(NearToken::from_yoctonear(1))
         .with_static_gas(Gas::from_tgas(30))
-        .ft_transfer(owner_id.clone(), U128(bid.amount));
+        .ft_transfer(owner_id.clone(), U128(owner_net));
 
     // Update stablecoin balance after payment to seller
     let current_balance = *contract
@@ -247,7 +280,7 @@ pub fn internal_accept_bid(contract: &mut ShedaContract, property_id: u64, bid_i
         .unwrap_or(&0);
     contract.stable_coin_balances.insert(
         bid.stablecoin_token.clone(),
-        checked_sub_u128(current_balance, bid.amount, "accept_bid balance"),
+        checked_sub_u128(current_balance, owner_net, "accept_bid balance"),
     );
 
     // Part 2: Callback to handle success/failure
@@ -265,7 +298,16 @@ pub fn accept_bid_callback(contract: &mut ShedaContract, property_id: u64, bid_i
     match env::promise_result(0) {
         PromiseResult::Successful(_) => {
             log!("ft_transfer successful, proceeding with NFT transfer and bid updates");
+            let (token, fee) = {
+                let bids: &Vec<Bid> = contract.bids.get(&property_id).expect("Bid does not exist");
+                let bid = get_bid_from_list(bids, bid_id);
+                (
+                    bid.stablecoin_token.clone(),
+                    platform_fee(contract, bid.amount),
+                )
+            };
             finalize_accepted_bid(contract, property_id, bid_id);
+            pay_platform_fee(contract, &token, fee);
         }
         PromiseResult::Failed => {
             log!("ft_transfer failed, reverting. NFT and bid remain unchanged");
@@ -282,7 +324,11 @@ pub fn accept_bid_callback(contract: &mut ShedaContract, property_id: u64, bid_i
                 .unwrap_or(&0);
             contract.stable_coin_balances.insert(
                 bid.stablecoin_token.clone(),
-                checked_add_u128(current_balance, bid.amount, "accept_bid revert"),
+                checked_add_u128(
+                    current_balance,
+                    bid.amount - platform_fee(contract, bid.amount),
+                    "accept_bid revert",
+                ),
             );
 
             if let Some(bids) = contract.bids.get_mut(&property_id) {
@@ -1213,10 +1259,11 @@ pub fn internal_accept_lease_renewal(
         },
     );
 
+    let owner_net = bid.amount - platform_fee(contract, bid.amount);
     let promise = ft_contract::ext(bid.stablecoin_token.clone())
         .with_attached_deposit(NearToken::from_yoctonear(1))
         .with_static_gas(Gas::from_tgas(30))
-        .ft_transfer(owner_id.clone(), U128(bid.amount));
+        .ft_transfer(owner_id.clone(), U128(owner_net));
 
     let current_balance = *contract
         .stable_coin_balances
@@ -1224,7 +1271,7 @@ pub fn internal_accept_lease_renewal(
         .unwrap_or(&0);
     contract.stable_coin_balances.insert(
         bid.stablecoin_token.clone(),
-        checked_sub_u128(current_balance, bid.amount, "accept_lease_renewal balance"),
+        checked_sub_u128(current_balance, owner_net, "accept_lease_renewal balance"),
     );
 
     promise.then(
@@ -1340,6 +1387,8 @@ pub fn accept_lease_renewal_callback(
                     new_end_time,
                 },
             );
+            let fee = platform_fee(contract, bid.amount);
+            pay_platform_fee(contract, &bid.stablecoin_token, fee);
         }
         PromiseResult::Failed => {
             let bid = {
@@ -1353,7 +1402,11 @@ pub fn accept_lease_renewal_callback(
                 .unwrap_or(&0);
             contract.stable_coin_balances.insert(
                 bid.stablecoin_token.clone(),
-                checked_add_u128(current_balance, bid.amount, "accept_lease_renewal revert"),
+                checked_add_u128(
+                    current_balance,
+                    bid.amount - platform_fee(contract, bid.amount),
+                    "accept_lease_renewal revert",
+                ),
             );
 
             if let Some(bids) = contract.bids.get_mut(&property_id) {
@@ -1585,10 +1638,11 @@ pub fn internal_release_escrow(
         );
     }
 
+    let owner_net = bid.amount - platform_fee(contract, bid.amount);
     let promise = ft_contract::ext(bid.stablecoin_token.clone())
         .with_attached_deposit(NearToken::from_yoctonear(1))
         .with_static_gas(Gas::from_tgas(30))
-        .ft_transfer(property.owner_id.clone(), U128(bid.amount));
+        .ft_transfer(property.owner_id.clone(), U128(owner_net));
 
     let current_balance = *contract
         .stable_coin_balances
@@ -1596,7 +1650,7 @@ pub fn internal_release_escrow(
         .unwrap_or(&0);
     contract.stable_coin_balances.insert(
         bid.stablecoin_token.clone(),
-        checked_sub_u128(current_balance, bid.amount, "release_escrow"),
+        checked_sub_u128(current_balance, owner_net, "release_escrow"),
     );
 
     promise.then(
@@ -1663,6 +1717,8 @@ pub fn release_escrow_callback(contract: &mut ShedaContract, property_id: u64, b
                     );
                 }
             }
+            let fee = platform_fee(contract, bid.amount);
+            pay_platform_fee(contract, &bid.stablecoin_token, fee);
         }
         PromiseResult::Failed => {
             let bid = {
@@ -1676,7 +1732,11 @@ pub fn release_escrow_callback(contract: &mut ShedaContract, property_id: u64, b
                 .unwrap_or(&0);
             contract.stable_coin_balances.insert(
                 bid.stablecoin_token.clone(),
-                checked_add_u128(current_balance, bid.amount, "release_escrow revert"),
+                checked_add_u128(
+                    current_balance,
+                    bid.amount - platform_fee(contract, bid.amount),
+                    "release_escrow revert",
+                ),
             );
 
             if let Some(bids) = contract.bids.get_mut(&property_id) {

@@ -137,6 +137,45 @@ pub struct ShedaContract {
 
     // Upgrade governance
     pub version: u32,
+
+    // v5: Sheda's fee on completed payments to owners (sales, rent, renewals).
+    /// Basis points of each completed owner payment. 200 = 2%.
+    pub platform_fee_bps: u32,
+    /// Where the fee goes. While unset no fee is taken at all.
+    pub fee_wallet: Option<AccountId>,
+}
+
+/// The contract's layout at version 4, read by `migrate`. Borsh is
+/// positional, so this must match the v4 struct field for field.
+#[derive(near_sdk::borsh::BorshDeserialize)]
+#[borsh(crate = "near_sdk::borsh")]
+pub struct ShedaContractV4 {
+    pub tokens: NonFungibleToken,
+    pub metadata: LazyOption<NFTContractMetadata>,
+    pub properties: IterableMap<u64, Property>,
+    pub bids: IterableMap<u64, Vec<Bid>>,
+    pub leases: IterableMap<u64, Lease>,
+    pub property_counter: u64,
+    pub bid_counter: u64,
+    pub lease_counter: u64,
+    pub property_per_owner: IterableMap<AccountId, Vec<u64>>,
+    pub lease_per_tenant: IterableMap<AccountId, Vec<u64>>,
+    pub admins: IterableSet<AccountId>,
+    pub owner_id: AccountId,
+    pub accepted_stablecoin: Vec<AccountId>,
+    pub stable_coin_balances: IterableMap<AccountId, u128>,
+    pub reentrancy_locks: IterableSet<String>,
+    pub bid_expiry_ns: u64,
+    pub escrow_release_delay_ns: u64,
+    pub lost_bid_claim_delay_ns: u64,
+    pub path_a_cancellation_window_ns: u64,
+    pub path_b_stage1_window_ns: u64,
+    pub path_b_stage2_window_ns: u64,
+    pub stalled_deal_timeout_ns: u64,
+    pub dispute_resolution_timelock_ns: u64,
+    pub lease_early_termination_window_ns: u64,
+    pub damage_claim_window_ns: u64,
+    pub version: u32,
 }
 
 trait HasNew {
@@ -416,7 +455,9 @@ impl ShedaContract {
             dispute_resolution_timelock_ns: DEFAULT_DISPUTE_RESOLUTION_TIMELOCK_NS,
             lease_early_termination_window_ns: DEFAULT_LEASE_EARLY_TERMINATION_WINDOW_NS,
             damage_claim_window_ns: DEFAULT_DAMAGE_CLAIM_WINDOW_NS,
-            version: 4,
+            version: 5,
+            platform_fee_bps: 0,
+            fee_wallet: None,
         };
         this.admins.insert(owner_id);
         for stablecoin in supported_stablecoins {
@@ -424,6 +465,59 @@ impl ShedaContract {
         }
 
         this
+    }
+
+    /// Carry v4 state forward to v5. The fee starts switched off; the owner
+    /// turns it on with `set_platform_fee`.
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate() -> Self {
+        let old: ShedaContractV4 =
+            env::state_read().unwrap_or_else(|| env::panic_str("No v4 state to migrate"));
+        Self {
+            tokens: old.tokens,
+            metadata: old.metadata,
+            properties: old.properties,
+            bids: old.bids,
+            leases: old.leases,
+            property_counter: old.property_counter,
+            bid_counter: old.bid_counter,
+            lease_counter: old.lease_counter,
+            property_per_owner: old.property_per_owner,
+            lease_per_tenant: old.lease_per_tenant,
+            admins: old.admins,
+            owner_id: old.owner_id,
+            accepted_stablecoin: old.accepted_stablecoin,
+            stable_coin_balances: old.stable_coin_balances,
+            reentrancy_locks: old.reentrancy_locks,
+            bid_expiry_ns: old.bid_expiry_ns,
+            escrow_release_delay_ns: old.escrow_release_delay_ns,
+            lost_bid_claim_delay_ns: old.lost_bid_claim_delay_ns,
+            path_a_cancellation_window_ns: old.path_a_cancellation_window_ns,
+            path_b_stage1_window_ns: old.path_b_stage1_window_ns,
+            path_b_stage2_window_ns: old.path_b_stage2_window_ns,
+            stalled_deal_timeout_ns: old.stalled_deal_timeout_ns,
+            dispute_resolution_timelock_ns: old.dispute_resolution_timelock_ns,
+            lease_early_termination_window_ns: old.lease_early_termination_window_ns,
+            damage_claim_window_ns: old.damage_claim_window_ns,
+            version: 5,
+            platform_fee_bps: 0,
+            fee_wallet: None,
+        }
+    }
+
+    /// Set Sheda's fee on completed owner payments and where it goes.
+    /// Owner only (the council). At most 5%; a wallet of None switches the
+    /// fee off.
+    pub fn set_platform_fee(&mut self, fee_bps: u32, wallet: Option<AccountId>) {
+        self.assert_owner();
+        require!(fee_bps <= 500, "The platform fee may not exceed 5%");
+        self.platform_fee_bps = fee_bps;
+        self.fee_wallet = wallet;
+    }
+
+    pub fn get_platform_fee(&self) -> (u32, Option<AccountId>) {
+        (self.platform_fee_bps, self.fee_wallet.clone())
     }
 
     /// Update bid expiry and escrow timelock settings (nanoseconds).
@@ -1187,5 +1281,43 @@ impl ShedaContract {
                 near_sdk::log!("Bid claim failed, balance reverted");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod fee_tests {
+    use super::*;
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::testing_env;
+
+    fn contract() -> ShedaContract {
+        let mut b = VMContextBuilder::new();
+        b.predecessor_account_id("council.testnet".parse().unwrap());
+        testing_env!(b.build());
+        ShedaContract::new(
+            "https://sheda.solutions/icon.png".into(),
+            vec!["usdc.fakes.testnet".parse().unwrap()],
+        )
+    }
+
+    #[test]
+    fn no_fee_is_taken_until_a_wallet_is_set() {
+        let c = contract();
+        assert_eq!(internal::platform_fee(&c, 1_000_000), 0);
+    }
+
+    #[test]
+    fn two_percent_of_a_completed_payment_goes_to_the_wallet() {
+        let mut c = contract();
+        c.set_platform_fee(200, Some("shedauser.testnet".parse().unwrap()));
+        assert_eq!(internal::platform_fee(&c, 1_000_000), 20_000);
+        assert_eq!(c.get_platform_fee().0, 200);
+    }
+
+    #[test]
+    #[should_panic(expected = "may not exceed 5%")]
+    fn the_fee_has_a_ceiling() {
+        let mut c = contract();
+        c.set_platform_fee(900, Some("shedauser.testnet".parse().unwrap()));
     }
 }

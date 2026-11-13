@@ -21,6 +21,8 @@ DEFAULTS: dict[str, bool] = {
     "push_notifications": True,
     "email_notifications": True,
     "sms_notifications": False,
+    # News about buildings you invest in or follow (Invest).
+    "invest_updates": True,
 }
 
 

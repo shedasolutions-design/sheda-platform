@@ -208,23 +208,46 @@ export default function PropertyDetailsPage() {
   }, [raw?.agent_id, getUserRatings]);
 
   // Contact is unlocked once the viewer has a bid or payment on this property.
+  //
+  // Read from the contract first: after a refresh the only record that is
+  // sure to know about the bid is the chain. The backend's deal list stores
+  // the chain's property id (not this listing's id) and sometimes a user id
+  // rather than a wallet, so matching on it alone locked contact again until
+  // the buyer placed a second bid.
   useEffect(() => {
     const me = walletState.account?.accountId;
     if (!me || !propertyId) return;
-    getTransactions()
-      .then((res: any) => {
-        const list = res?.data || res || [];
+    let alive = true;
+    const chainId = raw?.blockchain_property_id;
+    const DEAD = new Set(["Rejected", "Cancelled", "Refunded", "Expired"]);
+    (async () => {
+      if (chainId != null && chainId !== "") {
+        const res = await nearContractService.getBidsForProperty(Number(chainId)).catch(() => null);
+        const mine = (res?.success ? res.data ?? [] : []).some(
+          (b: any) => (b.bidder_id === me || b.bidder === me) && !DEAD.has(String(b.status))
+        );
+        if (mine) {
+          if (alive) setHasBidOrPayment(true);
+          return;
+        }
+      }
+      const txs: any = await getTransactions().catch(() => null);
+      const list = txs?.data || txs || [];
+      const ids = new Set([propertyId, chainId != null ? String(chainId) : ""].filter(Boolean));
+      if (alive)
         setHasBidOrPayment(
           Array.isArray(list) &&
             list.some(
               (tx: any) =>
-                String(tx.property_id) === propertyId &&
-                (tx.counterparty?.wallet_id === me || tx.bidder_id === me)
+                ids.has(String(tx.property_id)) &&
+                (tx.counterparty?.wallet_id === me || tx.bidder_id === me || tx.buyer_wallet === me)
             )
         );
-      })
-      .catch(() => setHasBidOrPayment(false));
-  }, [propertyId, walletState.account?.accountId, getTransactions]);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [propertyId, raw?.blockchain_property_id, walletState.account?.accountId, getTransactions]);
 
   const similar = useMemo(() => {
     if (!raw) return [];

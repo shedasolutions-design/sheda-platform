@@ -82,6 +82,10 @@ impl Vault {
             self.total_supply
         };
         require!(held == whole, "Redeeming takes every share of this unit");
+        require!(
+            self.locked_of(&who) == 0,
+            "Cancel your share listings before redeeming"
+        );
 
         self.busy = true;
         ext_market::ext(self.marketplace.clone())

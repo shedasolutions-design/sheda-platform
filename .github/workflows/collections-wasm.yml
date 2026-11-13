@@ -1,0 +1,50 @@
+name: Build Collections wasm
+
+# Builds the raise, vault and stake registry for deployment. Run by hand;
+# the artifacts are what the testnet deploy scripts install. The raise is
+# built twice: with `testnet` (short objection and withdrawal windows) for
+# testnet, and without it for mainnet.
+on:
+  workflow_dispatch:
+  push:
+    branches: [TT]
+    paths:
+      - 'contracts/raise/**'
+      - 'contracts/vault/**'
+      - '.github/workflows/collections-wasm.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Collections wasm
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: rustup toolchain install 1.86.0 --profile minimal --target wasm32-unknown-unknown
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          mkdir -p ../wasm-out
+          cargo build -p sheda-collection-raise --target wasm32-unknown-unknown --release --features testnet
+          cp target/wasm32-unknown-unknown/release/sheda_collection_raise.wasm ../wasm-out/raise-testnet.wasm
+          cargo build -p sheda-collection-raise --target wasm32-unknown-unknown --release
+          cp target/wasm32-unknown-unknown/release/sheda_collection_raise.wasm ../wasm-out/raise-mainnet.wasm
+          cargo build -p sheda-collection-vault --target wasm32-unknown-unknown --release
+          cp target/wasm32-unknown-unknown/release/sheda_collection_vault.wasm ../wasm-out/vault.wasm
+          ls -la ../wasm-out
+          sha256sum ../wasm-out/*.wasm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: collections-wasm
+          path: wasm-out/*.wasm
+          if-no-files-found: error
+          retention-days: 30

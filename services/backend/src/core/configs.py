@@ -115,6 +115,8 @@ class Settings(BaseSettings):
     # Brevo's HTTP API. Used instead of SMTP when set, and required on Workers,
     # which cannot open the raw TCP connection SMTP needs.
     BREVO_API_KEY: Optional[str] = Field(default=None, description="Brevo transactional email API key")
+    # A scheduled job calls the Invest lifecycle sweep with this in X-Cron-Key.
+    CRON_SECRET: Optional[str] = Field(default=None, description="Shared secret for scheduled jobs")
     SMTP_HOST: str = Field(..., description="Email host")
     SMTP_PORT: int = Field(default=2525, description="Email port")
     SMTP_SEND_FROM_MAIL: str = Field(

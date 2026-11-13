@@ -1,5 +1,6 @@
 
 import AsyncStorage from "@/lib/storage";
+import { rememberRaise } from "@/services/collections/raiseRegistry";
 
 import {
   activeBase,
@@ -581,6 +582,7 @@ export interface ServerNotificationPreferences {
   push_notifications: boolean;
   email_notifications: boolean;
   sms_notifications: boolean;
+  invest_updates?: boolean;
   /** Whether the server can send email at all (a mail provider is set up). */
   email_available?: boolean;
   sms_available?: boolean;
@@ -716,7 +718,52 @@ export interface CollectionProfile {
     suspended: boolean;
     kyc_verified: boolean;
     avatar_url?: string | null;
+    /** Company logo; avatar_url already falls back to it. */
+    logo_url?: string | null;
+    /** Managers: share of rent taken, in basis points. */
+    fee_bps?: number | null;
+    /** Managers: the terms they work to, including inspecting phases. */
+    pledge?: string | null;
+    pledge_updated_at?: string | null;
     chain_record?: CollectionChainRecord | null;
+    created_at: string;
+}
+
+export interface CollectionNomination {
+    id: number;
+    status: "invited" | "accepted" | "declined";
+    self_managed: boolean;
+    fee_bps?: number | null;
+    pledge?: string | null;
+    responded_at?: string | null;
+    profile?: CollectionProfile | null;
+}
+
+export interface CollectionNominationInvite extends CollectionNomination {
+    project_slug: string;
+    project_name: string;
+    project_location: string;
+    builder_name?: string | null;
+}
+
+export type CollectionProjectType = "off_plan" | "under_construction" | "completed";
+
+export interface InvestNotification {
+    id: number;
+    kind: string;
+    title: string;
+    body: string;
+    link?: string | null;
+    is_read: boolean;
+    created_at: string;
+}
+
+export interface CollectionProjectUpdate {
+    id: number;
+    kind: "progress" | "rental" | "maintenance" | "announcement";
+    body: string;
+    image_url?: string | null;
+    author_name: string;
     created_at: string;
 }
 
@@ -747,6 +794,10 @@ export interface CollectionDocument {
     status: CollectionDocumentStatus;
     file_url?: string | null;
     verified_at?: string | null;
+    /** The project pack: every agreement and term for the raise. */
+    is_pack?: boolean;
+    /** SHA-256 of the file as uploaded. */
+    sha256?: string | null;
 }
 
 export interface CollectionPhaseUpdate {
@@ -778,6 +829,9 @@ export interface CollectionUnit {
     price_atomic: string;
     total_shares: string;
     shares_sold: string;
+    /** Builder's expected yearly rent for the whole flat, low and high (atomic). */
+    rent_min_atomic?: string | null;
+    rent_max_atomic?: string | null;
     vault_account_id?: string | null;
 }
 
@@ -793,6 +847,13 @@ export interface CollectionProjectSummary {
     escrow_account_id?: string | null;
     closes_at?: string | null;
     cover_image_url?: string | null;
+    project_type?: CollectionProjectType;
+    address?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    min_investment_atomic?: string | null;
+    /** The builder's own company manages (and so inspects) this raise. */
+    self_managed?: boolean;
     builder?: CollectionProfile | null;
     manager?: CollectionProfile | null;
     /**
@@ -811,6 +872,8 @@ export interface CollectionProjectDetail extends CollectionProjectSummary {
     phases: CollectionPhase[];
     /** The flats. Named apart from `units`, which is how many there are. */
     unit_list: CollectionUnit[];
+    nominations?: CollectionNomination[];
+    updates?: CollectionProjectUpdate[];
 }
 
 export interface CollectionProjectCreate {
@@ -822,6 +885,12 @@ export interface CollectionProjectCreate {
     estimated_return_pct?: number;
     manager_profile_id?: number;
     closes_at?: string;
+    project_type?: CollectionProjectType;
+    address?: string;
+    latitude?: number;
+    longitude?: number;
+    min_investment_atomic?: string;
+    nominee_profile_ids?: number[];
     phases: { name: string; tranche_bps: number }[];
     unit_list: {
         code: string;
@@ -829,6 +898,8 @@ export interface CollectionProjectCreate {
         bedrooms: number;
         price_atomic: string;
         total_shares: string;
+        rent_min_atomic?: string;
+        rent_max_atomic?: string;
     }[];
 }
 
@@ -1830,20 +1901,24 @@ class ApiService {
       query.set("builder_profile_id", String(params.builderProfileId));
     }
     const suffix = query.toString() ? `?${query}` : "";
-    return this.request<CollectionProjectSummary[]>(
+    const r = await this.request<CollectionProjectSummary[]>(
       `/api/v1/collections/projects${suffix}`,
       options
     );
+    if (r.ok) r.data.forEach((p) => rememberRaise(p.slug, p.escrow_account_id));
+    return r;
   }
 
   async getCollectionProject(
     slug: string,
     options?: RequestInit & { timeout?: number; silent?: boolean }
   ): Promise<ApiResponse<CollectionProjectDetail>> {
-    return this.request<CollectionProjectDetail>(
+    const r = await this.request<CollectionProjectDetail>(
       `/api/v1/collections/projects/${encodeURIComponent(slug)}`,
       options
     );
+    if (r.ok) rememberRaise(r.data.slug, r.data.escrow_account_id);
+    return r;
   }
 
   async getMyCollectionProjects(): Promise<ApiResponse<CollectionProjectSummary[]>> {
@@ -1909,7 +1984,11 @@ class ApiService {
 
   async updateCollectionProfile(
     profileId: number,
-    payload: Partial<CollectionProfileCreate>
+    payload: Partial<CollectionProfileCreate> & {
+      logo_url?: string | null;
+      fee_bps?: number | null;
+      pledge?: string | null;
+    }
   ): Promise<ApiResponse<CollectionProfile>> {
     return this.request<CollectionProfile>(`/api/v1/collections/profiles/${profileId}`, {
       method: "PATCH",
@@ -1933,9 +2012,76 @@ class ApiService {
     });
   }
 
+  /** The signed-in builder's own raise, including a draft the public read hides. */
+  async getOwnCollectionDraft(slug: string): Promise<ApiResponse<CollectionProjectDetail>> {
+    return this.request<CollectionProjectDetail>(
+      `/api/v1/collections/projects/${encodeURIComponent(slug)}/draft`,
+      { method: "GET", silent: true }
+    );
+  }
+
+  /** Builder only. Free on a draft; on an open raise only if none was set. */
+  async setCollectionUnitRent(
+    slug: string,
+    unitCode: string,
+    payload: { rent_min_atomic: string | null; rent_max_atomic: string | null }
+  ): Promise<ApiResponse<CollectionUnit>> {
+    return this.request<CollectionUnit>(
+      `/api/v1/collections/projects/${encodeURIComponent(slug)}/units/${encodeURIComponent(unitCode)}/rent`,
+      { method: "PATCH", body: JSON.stringify(payload) }
+    );
+  }
+
+  /** Follow a building's progress (done for you when you invest or buy shares). */
+  async watchCollectionProject(slug: string, watch = true): Promise<ApiResponse<{ watching: boolean }>> {
+    return this.request<{ watching: boolean }>(
+      `/api/v1/collections/projects/${encodeURIComponent(slug)}/watch`,
+      { method: watch ? "POST" : "DELETE", silent: true }
+    );
+  }
+
+  async isWatchingCollectionProject(slug: string): Promise<ApiResponse<{ watching: boolean }>> {
+    return this.request<{ watching: boolean }>(
+      `/api/v1/collections/projects/${encodeURIComponent(slug)}/watch`,
+      { method: "GET", silent: true }
+    );
+  }
+
+  async getInvestNotifications(): Promise<ApiResponse<InvestNotification[]>> {
+    return this.request<InvestNotification[]>(`/api/v1/collections/notifications`, { method: "GET", silent: true });
+  }
+
+  async readInvestNotifications(): Promise<ApiResponse<{ read: number }>> {
+    return this.request<{ read: number }>(`/api/v1/collections/notifications/read`, { method: "POST", silent: true });
+  }
+
+  async getMyNominations(): Promise<ApiResponse<CollectionNominationInvite[]>> {
+    return this.request<CollectionNominationInvite[]>(`/api/v1/collections/nominations/mine`, {
+      method: "GET",
+      silent: true,
+    });
+  }
+
+  async respondToNomination(id: number, accept: boolean): Promise<ApiResponse<CollectionNomination>> {
+    return this.request<CollectionNomination>(`/api/v1/collections/nominations/${id}/respond`, {
+      method: "POST",
+      body: JSON.stringify({ accept }),
+    });
+  }
+
+  async postCollectionUpdate(
+    slug: string,
+    payload: { kind: CollectionProjectUpdate["kind"]; body: string; image_url?: string }
+  ): Promise<ApiResponse<CollectionProjectUpdate>> {
+    return this.request<CollectionProjectUpdate>(
+      `/api/v1/collections/projects/${encodeURIComponent(slug)}/updates`,
+      { method: "POST", body: JSON.stringify(payload) }
+    );
+  }
+
   async addCollectionDocument(
     slug: string,
-    payload: { label: string; file_url?: string }
+    payload: { label: string; file_url?: string; is_pack?: boolean }
   ): Promise<ApiResponse<CollectionDocument>> {
     return this.request<CollectionDocument>(
       `/api/v1/collections/projects/${encodeURIComponent(slug)}/documents`,

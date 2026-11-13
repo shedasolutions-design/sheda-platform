@@ -25,6 +25,10 @@ use near_sdk::{env, near, require, AccountId, Promise, PromiseError, PromiseOrVa
 pub struct CommitMsg {
     pub project: String,
     pub unit: String,
+    /// The manager this investor votes for. Optional: with one candidate
+    /// the vote is implied, and a vote can be cast or changed later.
+    #[serde(default)]
+    pub vote: Option<AccountId>,
 }
 
 #[near]
@@ -88,6 +92,33 @@ impl Raise {
         if let Some(unit) = project.unit_mut(&parsed.unit) {
             unit.raised += accepted;
         }
+
+        // The vote follows the money: new money adds to the investor's
+        // existing vote, a named candidate moves all of it there, and with
+        // a single candidate the vote is implied.
+        let chosen = parsed
+            .vote
+            .as_ref()
+            .and_then(|v| project.candidates.iter().position(|c| &c.account == v));
+        let current = self.vote_of(&parsed.project, &sender_id);
+        let target = chosen.or(current).or(if project.candidates.len() == 1 {
+            Some(0)
+        } else {
+            None
+        });
+        if let Some(i) = target {
+            let previous = self.committed_by(&parsed.project, &sender_id);
+            if current.is_some() && current != Some(i) {
+                // Move what they had already committed, then add the new.
+                self.move_vote(&parsed.project, &mut project, &sender_id, Some(i), previous);
+            } else if current.is_none() {
+                self.move_vote(&parsed.project, &mut project, &sender_id, Some(i), previous);
+            }
+            if let Some(c) = project.candidates.get_mut(i) {
+                c.votes += accepted;
+            }
+        }
+
         self.save(&parsed.project, &project);
         self.credit(&parsed.project, &sender_id, &parsed.unit, accepted);
 
@@ -119,6 +150,18 @@ impl Raise {
 
         if full {
             project.status = RaiseStatus::Funded;
+            Self::choose_manager(&mut project);
+            env::log_str(&format!(
+                "manager_chosen {} {} fee {}{}",
+                project_id,
+                project.manager,
+                project.manager_fee_bps,
+                if project.self_managed {
+                    " self-managed"
+                } else {
+                    ""
+                }
+            ));
             self.save(&project_id, &project);
             env::log_str(&format!(
                 "raise_funded {} at {}",

@@ -1,6 +1,7 @@
 "use client";
 
 import { leaseSuffix } from "@/utilities/leaseTerm";
+import { feeSentence, usePlatformFee } from "@/hooks/usePlatformFee";
 import Alert from "@/utilities/alertPolyfill";
 import DealProgress from "@/components/history/DealProgress";
 import { useDealTimeline } from "@/hooks/useDealTimeline";
@@ -75,6 +76,7 @@ function formatEscrowCountdown(releaseAtMs?: number): { label: string; ready: bo
 }
 
 const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
+  const platformFeeBps = usePlatformFee();
   const { bid, property, propertyDetails, phase, role } = transaction;
   // Joins the on-chain bid status with the backend's appointment stage. The
   // chain can't see appointments, so on its own it can't tell whether a deal
@@ -247,7 +249,7 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
   const handleAcceptBid = async () => {
     Alert.alert(
       "Accept Bid",
-      `Accept this bid of ${displayPrice} for "${title}"? Funds will remain in escrow until the transaction is completed.`,
+      `Accept this bid of ${displayPrice} for "${title}"? Funds will remain in escrow until the transaction is completed.${feeSentence(platformFeeBps)}`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -344,7 +346,7 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
   const handleAcceptRenewal = async () => {
     Alert.alert(
       "Accept Renewal",
-      `Accept ${displayPrice} to renew this tenant's lease on "${title}"? Payment releases immediately and a new lease document is issued.`,
+      `Accept ${displayPrice} to renew this tenant's lease on "${title}"? Payment releases immediately and a new lease document is issued.${feeSentence(platformFeeBps)}`,
       [
         { text: "Cancel", style: "cancel" },
         {
