@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import InfoTip from "@/components/ui/InfoTip";
+import RoundsYouAreIn from "@/components/collections/RoundsYouAreIn";
 import { perPeriod, rentRangeOf, yearlyRentFor } from "@/services/collections/rent";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, RefreshControl, View } from "@/components/collections/rn";
@@ -135,6 +136,8 @@ export default function Holdings() {
               : `${formatWithSymbol(total.toString(), token)} rent ready to claim · ${earning} of ${holdings.length} earning`}
           </p>
         </div>
+
+        <RoundsYouAreIn accountId={accountId ?? null} />
 
         {!connected ? (
           <Empty

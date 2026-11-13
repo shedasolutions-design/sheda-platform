@@ -698,3 +698,67 @@ export async function refundFailedRaise(
     dedupeKey: `refund:${accountId}:${projectSlug}`,
   });
 }
+
+/** One account's place in one round, as the raise contract has it. */
+export interface RoundPosition {
+  status: string;
+  raised: bigint;
+  target: bigint;
+  deadlineMs: number;
+  committed: bigint;
+  refunded: boolean;
+  sharesOwed: bigint;
+}
+
+/**
+ * Where someone stands in a round: what they put in, whether it filled,
+ * how long is left, and whether they have already been refunded. Null when
+ * they never committed, so Portfolio lists only rounds they are in.
+ */
+export async function getRoundPosition(projectSlug: string, accountId: string): Promise<RoundPosition | null> {
+  if (!hasRaiseContract()) return null;
+  const committed = BigInt(
+    String(
+      (await nearContractService.viewOn<string>(RAISE_CONTRACT_ID, "get_total_commitment", {
+        project_id: projectSlug,
+        account_id: accountId,
+      })) ?? "0"
+    )
+  );
+  if (committed <= BigInt(0)) return null;
+  const [project, refunded] = await Promise.all([
+    nearContractService.viewOn<{
+      status: string;
+      raised: string | number;
+      target: string | number;
+      deadline_ns: string | number;
+      units: { code: string }[];
+    } | null>(RAISE_CONTRACT_ID, "get_project", { project_id: projectSlug }),
+    nearContractService.viewOn<boolean>(RAISE_CONTRACT_ID, "has_opted_out_view", {
+      project_id: projectSlug,
+      account_id: accountId,
+    }),
+  ]);
+  if (!project) return null;
+  const owed = await Promise.all(
+    (project.units ?? []).map((u) =>
+      nearContractService
+        .viewOn<string>(RAISE_CONTRACT_ID, "shares_owed", {
+          project_id: projectSlug,
+          unit: u.code,
+          account_id: accountId,
+        })
+        .then((v) => BigInt(String(v ?? "0")))
+        .catch(() => BigInt(0))
+    )
+  );
+  return {
+    status: project.status,
+    raised: BigInt(String(project.raised)),
+    target: BigInt(String(project.target)),
+    deadlineMs: Number(BigInt(String(project.deadline_ns)) / BigInt(1_000_000)),
+    committed,
+    refunded: Boolean(refunded),
+    sharesOwed: owed.reduce((a, b) => a + b, BigInt(0)),
+  };
+}
