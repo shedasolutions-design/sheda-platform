@@ -5,11 +5,11 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.collection import CollectionProfile, CollectionProject, CollectionUnit
+from app.models.collection import CollectionProfile, CollectionProject, CollectionUnit, RaiseStatusEnum
 from app.models.user import Agent
 from app.routers.collections import set_unit_rent
 from app.schemas.collection_schema import UnitRent
-from app.utils.enums import AccountTypeEnum, RaiseStatusEnum
+from app.utils.enums import AccountTypeEnum
 from app.utils.utils import hash_password
 
 
