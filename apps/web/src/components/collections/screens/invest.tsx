@@ -140,9 +140,14 @@ function BuyerSide() {
     <div className="mx-auto max-w-3xl px-5 pb-10 pt-5">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-xl font-semibold text-primaryText">Invest</h1>
-        <Link href="/collections/holdings" className="text-sm font-medium text-primary">
-          Portfolio
-        </Link>
+        <div className="flex gap-4">
+          <Link href="/collections/shares" className="text-sm font-medium text-primary">
+            Shares
+          </Link>
+          <Link href="/collections/holdings" className="text-sm font-medium text-primary">
+            Portfolio
+          </Link>
+        </div>
       </div>
 
       <div className="mb-4 flex gap-2 overflow-x-auto pb-1" role="tablist">

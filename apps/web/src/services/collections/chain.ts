@@ -42,6 +42,8 @@ export interface VaultInfo {
   stablecoin: string;
   manager: string;
   total_supply: string;
+  /** Every share the flat divides into, minted or not ("0" if unset). */
+  share_cap?: string;
   supply_frozen: boolean;
   manager_bps: number;
   reserve_bps: number;

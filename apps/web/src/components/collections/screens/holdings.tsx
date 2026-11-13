@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import InfoTip from "@/components/ui/InfoTip";
 import RoundsYouAreIn from "@/components/collections/RoundsYouAreIn";
+import HoldingActions from "@/components/collections/HoldingActions";
 import { perPeriod, rentRangeOf, yearlyRentFor } from "@/services/collections/rent";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, RefreshControl, View } from "@/components/collections/rn";
@@ -170,6 +171,8 @@ export default function Holdings() {
               <HoldingCard
                 key={h.vaultId}
                 holding={h}
+                accountId={accountId ?? null}
+                onChanged={load}
                 meta={meta[h.vaultId]}
                 busy={claiming === h.vaultId}
                 onClaim={() => onClaim(h.vaultId)}
@@ -219,12 +222,16 @@ function costOf(h: Holding, m?: VaultMeta): bigint {
 
 function HoldingCard({
   holding,
+  accountId,
+  onChanged,
   meta,
   busy,
   onClaim,
   onSync,
 }: {
   holding: Holding;
+  accountId: string | null;
+  onChanged: () => void;
   meta?: VaultMeta;
   busy: boolean;
   onClaim: () => void;
@@ -333,6 +340,16 @@ function HoldingCard({
             </Link>
           ) : null}
         </div>
+        {accountId && state !== "redeemed" ? (
+          <HoldingActions
+            vaultId={holding.vaultId}
+            accountId={accountId}
+            balance={balance}
+            supply={info.share_cap && info.share_cap !== "0" ? info.share_cap : info.total_supply}
+            manager={info.manager}
+            onChanged={onChanged}
+          />
+        ) : null}
       </div>
     </article>
   );

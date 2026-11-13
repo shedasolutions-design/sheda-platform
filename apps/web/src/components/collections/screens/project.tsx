@@ -226,6 +226,11 @@ export default function ProjectDetail() {
             >
               {project.status === "open" ? "Invest now" : "See the flats"}
             </button>
+            {project.status !== "open" && !["stalled", "failed", "cancelled"].includes(project.status) ? (
+              <a href="/collections/shares" className="mt-2 block text-center text-sm font-medium text-primary">
+                Round closed? Buy from investors
+              </a>
+            ) : null}
           </div>
         ) : (
           <Empty
@@ -825,13 +830,51 @@ const PHASE_TONE = {
  */
 function PhaseList({ project, onChanged }: { project: CollectionProjectDetail; onChanged: () => void }) {
   const { positions } = useUnitPositions(project.slug, project.unit_list);
-  const { objectToRelease, loading, connected } = useCollections();
+  const { objectToRelease, approvePhase, loading, connected } = useCollections();
+  const { walletState } = useWallet();
+  const me = walletState.account?.accountId ?? null;
   const [windowMs, setWindowMs] = useState<number | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // v5: a raise managed by the builder's own company pays a phase only once
+  // more than half of the money approves it.
+  const [selfManaged, setSelfManaged] = useState(false);
+  const [approved, setApproved] = useState<Record<number, boolean>>({});
   useEffect(() => {
     chain.getObjectionWindowMs().then(setWindowMs);
-  }, []);
+    chain
+      .getRaiseTerms(project.slug)
+      .then((t) => setSelfManaged(Boolean(t?.selfManaged)))
+      .catch(() => setSelfManaged(false));
+  }, [project.slug]);
+  useEffect(() => {
+    if (!selfManaged || !me) return;
+    let alive = true;
+    Promise.all(
+      project.phases
+        .filter((ph) => ph.state === "objection_window")
+        .map(async (ph) => [ph.position, await chain.hasApprovedPhase(project.slug, ph.position, me)] as const)
+    ).then((rows) => alive && setApproved(Object.fromEntries(rows)));
+    return () => {
+      alive = false;
+    };
+  }, [selfManaged, me, project.slug, project.phases]);
+
+  const onApprove = async (phase: CollectionPhase) => {
+    setBusy(phase.position);
+    setMessage(null);
+    const result = await approvePhase(project.slug, phase.position);
+    setBusy(null);
+    setMessage(
+      result.success
+        ? "Your approval is recorded. The payment goes to the builder once more than half of investors approve."
+        : result.error ?? "Your approval did not go through."
+    );
+    if (result.success) {
+      setApproved({ ...approved, [phase.position]: true });
+      onChanged();
+    }
+  };
 
   const holder = Object.values(positions).some((p) => BigInt(p?.committedAtomic || "0") > BigInt(0));
   const windowOpen = (phase: CollectionPhase) =>
@@ -866,6 +909,10 @@ function PhaseList({ project, onChanged }: { project: CollectionProjectDetail; o
               canObject={connected && holder && windowOpen(phase)}
               objecting={busy === phase.position && loading}
               onObject={() => onObject(phase)}
+              canApprove={
+                selfManaged && connected && holder && phase.state === "objection_window" && !approved[phase.position]
+              }
+              onApprove={() => onApprove(phase)}
             />
           ))}
         </View>
@@ -887,11 +934,15 @@ function PhaseRow({
   canObject = false,
   objecting = false,
   onObject,
+  canApprove = false,
+  onApprove,
 }: {
   phase: CollectionPhase;
   canObject?: boolean;
   objecting?: boolean;
   onObject?: () => void;
+  canApprove?: boolean;
+  onApprove?: () => void;
 }) {
   const done = phase.state === "released";
   const colour = PHASE_TONE[phase.state];
@@ -924,6 +975,9 @@ function PhaseRow({
             <InterRegular style={{ ...TYPE.micro, color: C.caution }}>
               Holders can object to this release until the window closes.
             </InterRegular>
+            {canApprove && onApprove ? (
+              <CollectionsButton label="Approve this payment" loading={objecting} onPress={onApprove} />
+            ) : null}
             {canObject && onObject ? (
               <CollectionsButton label="Object to this release" variant="quiet" loading={objecting} onPress={onObject} />
             ) : null}
