@@ -42,6 +42,7 @@ use near_sdk::{env, near, require, AccountId, BorshStorageKey, Gas, NearToken, P
 
 pub mod commit;
 pub mod ext;
+pub mod governance;
 pub mod phases;
 pub mod stall;
 
@@ -64,6 +65,22 @@ pub const OBJECTION_WINDOW_NS: u64 = 3 * 60 * 1_000_000_000;
 /// Share of the raise that must object to hold a payment.
 pub const OBJECTION_THRESHOLD_BPS: u32 = 2_500;
 
+/// Share of the raise that must approve a phase signed off by the builder's
+/// own company: strictly more than half.
+pub const APPROVAL_THRESHOLD_BPS: u32 = 5_000;
+
+/// A vault caps all fees at 30% of rent; its reserve (5%) and Sheda (2%)
+/// leave at most 23% for the manager.
+pub const MAX_MANAGER_FEE_BPS: u32 = 2_300;
+
+/// Withdrawals stop this long before a round's deadline, so a builder can
+/// count on money that is about to close. Seven days on mainnet; two
+/// minutes on a testnet build.
+#[cfg(not(feature = "testnet"))]
+pub const WITHDRAW_CUTOFF_NS: u64 = 7 * 24 * 60 * 60 * 1_000_000_000;
+#[cfg(feature = "testnet")]
+pub const WITHDRAW_CUTOFF_NS: u64 = 2 * 60 * 1_000_000_000;
+
 /// Ceiling on what Sheda may take of a completed raise.
 pub const MAX_PLATFORM_BPS: u32 = 500;
 
@@ -84,6 +101,8 @@ enum StorageKey {
     OptedOut,
     Claimed,
     CoverClaimed,
+    Votes,
+    Approved,
 }
 
 /// Where a raise is in its life.
@@ -146,6 +165,22 @@ pub struct Phase {
     pub attested_at_ns: u64,
     /// Money committed by the investors who have objected to this phase.
     pub objection_amount: u128,
+    /// Self-managed raises only: money committed by those who approved it.
+    pub approval_amount: u128,
+}
+
+/// A property manager investors may choose.
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, Debug)]
+#[borsh(crate = "near_sdk::borsh")]
+#[serde(crate = "near_sdk::serde")]
+pub struct Candidate {
+    pub account: AccountId,
+    /// Their share of rent, basis points.
+    pub fee_bps: u32,
+    /// The builder's own company.
+    pub self_managed: bool,
+    /// Money committed by investors voting for them.
+    pub votes: u128,
 }
 
 /// One flat inside a raise.
@@ -216,6 +251,15 @@ pub struct Project {
     /// Cover the builder advertised, as a proportion of the target. It is
     /// backed by stake allocated to this project in the registry.
     pub guarantee_bps: u32,
+    /// Managers investors may choose, with their votes.
+    pub candidates: Vec<Candidate>,
+    /// The chosen manager is the builder's own company: phases need
+    /// approval from more than half of the raise.
+    pub self_managed: bool,
+    /// The chosen manager's fee, basis points of rent.
+    pub manager_fee_bps: u32,
+    /// SHA-256 of the project pack, as published.
+    pub pack_hash: String,
 }
 
 impl Project {
@@ -295,6 +339,10 @@ pub struct Raise {
     /// builder's cover. Kept apart from `opted_out` (escrow back) so taking
     /// one never blocks or changes the other.
     cover_claimed: LookupMap<String, bool>,
+    /// "{project}|{investor}" -> index of the manager they voted for.
+    pub(crate) votes: LookupMap<String, u32>,
+    /// "{project}|{phase}|{investor}" -> has approved (self-managed only).
+    pub(crate) approved: LookupMap<String, bool>,
 }
 
 #[near]
@@ -313,6 +361,8 @@ impl Raise {
             opted_out: LookupMap::new(StorageKey::OptedOut),
             claimed: LookupMap::new(StorageKey::Claimed),
             cover_claimed: LookupMap::new(StorageKey::CoverClaimed),
+            votes: LookupMap::new(StorageKey::Votes),
+            approved: LookupMap::new(StorageKey::Approved),
         }
     }
 
@@ -431,6 +481,7 @@ impl Raise {
                 },
                 attested_at_ns: 0,
                 objection_amount: 0,
+                approval_amount: 0,
             })
             .collect();
 
@@ -451,6 +502,15 @@ impl Raise {
                 units: built_units,
                 platform_bps,
                 guarantee_bps,
+                candidates: vec![Candidate {
+                    account: manager.clone(),
+                    fee_bps: 0,
+                    self_managed: false,
+                    votes: 0,
+                }],
+                self_managed: false,
+                manager_fee_bps: 0,
+                pack_hash: String::new(),
             },
         );
         env::log_str(&format!("raise_opened {}", project_id));
@@ -475,6 +535,10 @@ impl Raise {
             guarantee_bps: p.guarantee_bps,
             phases: p.phases.clone(),
             units: p.units.clone(),
+            candidates: p.candidates.clone(),
+            self_managed: p.self_managed,
+            manager_fee_bps: p.manager_fee_bps,
+            pack_hash: p.pack_hash.clone(),
         })
     }
 
@@ -766,4 +830,8 @@ pub struct ProjectView {
     pub guarantee_bps: u32,
     pub phases: Vec<Phase>,
     pub units: Vec<Unit>,
+    pub candidates: Vec<Candidate>,
+    pub self_managed: bool,
+    pub manager_fee_bps: u32,
+    pub pack_hash: String,
 }

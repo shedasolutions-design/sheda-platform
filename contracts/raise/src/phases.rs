@@ -12,8 +12,8 @@
 
 use crate::ext::{ext_ft, ext_self};
 use crate::{
-    assert_one_yocto, Phase, PhaseState, Raise, RaiseExt, RaiseStatus, GAS_FOR_FT_TRANSFER,
-    GAS_FOR_RESOLVE, OBJECTION_THRESHOLD_BPS, OBJECTION_WINDOW_NS, ONE_YOCTO,
+    assert_one_yocto, Phase, PhaseState, Raise, RaiseExt, RaiseStatus, APPROVAL_THRESHOLD_BPS,
+    GAS_FOR_FT_TRANSFER, GAS_FOR_RESOLVE, OBJECTION_THRESHOLD_BPS, OBJECTION_WINDOW_NS, ONE_YOCTO,
 };
 use near_sdk::json_types::U128;
 use near_sdk::{env, near, require, Promise, PromiseError};
@@ -64,8 +64,10 @@ impl Raise {
             who == project.manager,
             "Only the property manager on this project may attest"
         );
+        // The builder's own company may sign off only on a self-managed
+        // raise, where every payment then needs investors' approval.
         require!(
-            who != project.builder,
+            who != project.builder || project.self_managed,
             "Nobody may sign off their own construction"
         );
         require!(
@@ -154,14 +156,22 @@ impl Raise {
             current.state == PhaseState::ObjectionWindow,
             "That phase is not waiting to be settled"
         );
-        require!(
-            env::block_timestamp() >= current.attested_at_ns + OBJECTION_WINDOW_NS,
-            "Holders still have time to object to this phase"
-        );
+
+        // A self-managed phase is paid as soon as more than half of the
+        // raise approves it. Without that it waits out the window like any
+        // other, and is then held if enough objected, or simply not paid.
+        let approved = project.self_managed
+            && Self::approval_bps(&project, current.approval_amount) > APPROVAL_THRESHOLD_BPS;
+        if !approved {
+            require!(
+                env::block_timestamp() >= current.attested_at_ns + OBJECTION_WINDOW_NS,
+                "Holders still have time to object to this phase"
+            );
+        }
 
         let objected_bps = project.objection_bps(current.objection_amount);
 
-        if objected_bps >= OBJECTION_THRESHOLD_BPS {
+        if !approved && objected_bps >= OBJECTION_THRESHOLD_BPS {
             // Holders refused this phase. Rather than leave its tranche and
             // every later one stuck in escrow with no way out, the raise
             // stops: each investor can now reclaim their share of what is
@@ -179,6 +189,11 @@ impl Raise {
             ));
             return None;
         }
+
+        require!(
+            !project.self_managed || approved,
+            "This phase was signed off by the builder's own company and needs approval from more than half of investors"
+        );
 
         let amount = project.tranche_value(current.tranche_bps);
         project.phases[index].state = PhaseState::Released;
