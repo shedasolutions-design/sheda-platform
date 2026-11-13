@@ -491,7 +491,7 @@ export async function withChainState<
   try {
     const live = await nearContractService.viewOn<{
       status: string;
-      phases?: { state: string }[];
+      phases?: { state: string; attested_at_ns?: number | string }[];
       units?: { code: string; price: number | string; total_shares: number | string; raised: number | string }[];
     } | null>(project.escrow_account_id || RAISE_CONTRACT_ID, "get_project", { project_id: project.slug });
     if (!live) return project;
@@ -504,14 +504,52 @@ export async function withChainState<
     return {
       ...project,
       status: snake(live.status),
-      phases: project.phases.map((ph) =>
-        live.phases?.[ph.position] ? { ...ph, state: snake(live.phases[ph.position].state) } : ph
-      ),
+      phases: project.phases.map((ph) => {
+        const c = live.phases?.[ph.position];
+        if (!c) return ph;
+        const attested = Number(c.attested_at_ns ?? 0);
+        return { ...ph, state: snake(c.state), ...(attested > 0 ? { attested_at_ms: attested / 1e6 } : {}) };
+      }),
       unit_list: project.unit_list.map((u) => (sold[u.code] != null ? { ...u, shares_sold: sold[u.code] } : u)),
     };
   } catch {
     return project;
   }
+}
+
+/** How long holders have to object after a sign-off, from the contract. */
+export async function getObjectionWindowMs(): Promise<number | null> {
+  if (!hasRaiseContract()) return null;
+  try {
+    const ns = await nearContractService.viewOn<string | number>(RAISE_CONTRACT_ID, "objection_window_ns", {});
+    return Number(ns) / 1e6;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Settle a phase once its objection window has closed: pays the builder, or
+ * holds the phase if enough holders objected. Anyone may.
+ *
+ * Nothing in the app called release_phase, so every signed-off phase would
+ * have sat in its objection window for good and no builder was ever paid.
+ */
+export async function releasePhase(
+  accountId: string,
+  privateKey: string,
+  projectSlug: string,
+  phaseIndex: number
+): Promise<ContractCallResult<void>> {
+  if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
+  return nearContractService.callOn(accountId, privateKey, {
+    contractId: RAISE_CONTRACT_ID,
+    methodName: "release_phase",
+    args: { project_id: projectSlug, phase: phaseIndex },
+    gas: tgas(COLLECTIONS_GAS.CLAIM),
+    attachedDeposit: BigInt(0),
+    dedupeKey: `release-phase:${projectSlug}:${phaseIndex}`,
+  });
 }
 
 /** The raise as the contract has it: status, raised and target (atomic). */

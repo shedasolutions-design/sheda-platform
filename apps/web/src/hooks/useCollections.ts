@@ -228,6 +228,11 @@ export function useCollections() {
       [signed]
     ),
 
+    releasePhase: useCallback(
+      (slug: string, phaseIndex: number) => signed((id, key) => chain.releasePhase(id, key, slug, phaseIndex)),
+      [signed]
+    ),
+
     closeRaise: useCallback(
       (slug: string) => signed((id, key) => chain.closeRaise(id, key, slug)),
       [signed]
