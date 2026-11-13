@@ -286,6 +286,12 @@ async def sweep(db: AsyncSession, force: bool = False) -> int:
                             user = await db.get(BaseUser, w.user_id)
                             if user is not None:
                                 await _email(user, event, link)
+                # The vote picks the manager on chain; mirror it so the app
+                # shows who won.
+                if live.get("status") in ("Funded", "Delivered") and live.get("manager"):
+                    for n in project.nominations:
+                        if n.profile and n.profile.near_account_id == live["manager"]:
+                            project.manager_id = n.profile_id
                 project.chain_snapshot = live
                 project.last_swept_at = now
                 await db.commit()
