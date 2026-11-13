@@ -1,85 +1,98 @@
-# Three-minute demo
+# Demo: try Sheda in five minutes
 
-This is the shortest path that shows the product doing the thing the pitch
-claims. It assumes the testnet app and the v2 Collections deployment from
-`docs/DEPLOY_COLLECTIONS.md`. If the live raise is still v1, stop after step
-4 and use the "v1 fallback" below; do not show a claim button that the
-contract cannot serve.
+Everything below runs on NEAR testnet at https://testing.sheda.app with test
+money. No install, no wallet extension, no seed phrase. Each step says what to
+do and what you should see.
 
-## Before recording
+## 1. Sign in
 
-- Signed out of https://testing.sheda.app in a clean browser profile.
-- A Google account that has never used the app, so wallet provisioning is
-  visible.
-- An investor account that holds the raise's USDC, if you are recording the
-  claim.
-- The manager account signed in in a second window for the sign-off clip, or
-  record that part separately and cut it in.
+**Do:** open https://testing.sheda.app → **Continue with Google**.
+**See:** the app creates a NEAR testnet wallet for you and lands on Home.
 
-## Click path
+## 2. Get test money
 
-1. **testing.sheda.app** → Continue with Google.
-   The app lands on `/wallet-setup/provision`, creates a wallet, and reaches
-   Home with a funded account. Say: "There is no wallet setup. The account
-   exists before the first screen."
-2. **Collections** → open a project.
-   Point at: the phase schedule, the builder and manager records, the
-   documents (verified vs uploaded vs missing), and the line that the return
-   is the builder's estimate.
-3. **Choose a unit** → pick a flat → enter an amount → **Commit**.
-   Say: "The money goes to escrow by `ft_transfer_call`, so the transfer and
-   the record of whose it is happen in one transaction."
-4. **Project page → Your position**.
-   Before funding: the commitment and the shares set aside. After funding:
-   **Claim shares**. Claiming mints NEP-141 shares against that flat's vault.
-5. **Holdings**.
-   The share balance is read from the vault. Rent owed is `claimable`, and
-   **Claim** pays from the vault's own balance.
-6. **Sign-offs** (manager account).
-   The phase waiting on inspection is listed. Click **I have inspected this
-   — sign it off**. In the builder window the same phase moves to "Holders
-   may object" for seven days.
-7. **Directory → a builder profile**.
-   The rank shows its working: delivery, cover posted, integrity, and the
-   facts each was computed from. If the indexer has not run, it says what is
-   missing instead of showing a score.
+**Do:** bottom bar **Portfolio** (the wallet) → **Get test dollars**.
+**See:** test USDC in the Tokens tab within a few seconds.
 
-## 60-second voiceover
+## 3. Browse a building to invest in
 
-> Property is the asset most people want and the one most are priced out of.
-> A fund gives you a slice of a pool you cannot see. Sheda gives you shares in
-> one specific flat.
+**Do:** bottom bar **Invest** → **Yaba Test Terraces**.
+**See:**
+- the funding bar and "Open to invest";
+- the builder card, and **Follow updates**;
+- "Where this building is": funding → building → with manager → listed → rented;
+- **Rent you could earn**: type an amount, switch Day / Month / Year;
+- the location on OpenStreetMap;
+- **Property manager**: Eze Property Management at 8% of rent, with their pledge;
+- **Read the project pack** with its SHA-256 fingerprint (also recorded on chain);
+- "How the money is released": four phases, each paid only after inspection;
+- **More information** sections and **Know the risks**. Every "i" opens a short explanation.
+
+## 4. Invest
+
+**Do:** **Invest now** → choose the flat → enter an amount (e.g. 10) → **Continue**.
+**See:** the shares you get, your share of the flat, the price per share and the possible rent.
+Enter less than one share to see the "below minimum" message.
+
+**Do:** read the terms, tick both boxes → **Agree and continue** → **Confirm and pay**.
+**See:** "You're in". The money is now held by `sheda-raise-v5.testnet`, not by the builder.
+
+## 5. Your position
+
+**Do:** **Invest** → **Portfolio** (top right of the Invest page; the bottom-bar Portfolio is your wallet).
+**See:** **Rounds you're in** with time left and % filled.
+While the round is filling you can **Take out** your money (v5 raise, until 2 minutes
+before the deadline on testnet; 7 days on mainnet). If a round misses its deadline,
+**Get my money back** refunds everything.
+
+## 6. Shares, rent and the manager
+
+**Do:** Invest → **Shares**.
+**See:** shares other investors are selling and offers to buy, with the price against
+the original price per share. Buying moves the shares and pays the seller (less 2%) in
+one transaction.
+
+**Do:** Invest → Portfolio → a holding → **Sell shares** or **Change manager**.
+**See:** listing at your price (your shares keep earning rent until sold), or a vote for
+a new manager that applies once holders of more than half of the flat's shares agree.
+
+## 7. Notifications
+
+**Do:** bell → **Notifications**, and **Settings → Notification settings**.
+**See:** "Invest updates" for buildings you follow (round closing, filled, phase signed
+off or paid, flat listed or let), and the switch to turn them off.
+
+## The marketplace (homes to buy or rent)
+
+**Do:** Home → open a listing → **Make offer** → choose a test stablecoin → **Place Bid**.
+**See:** contact with the owner unlocks; the deal appears under **History**; the seller
+accepts, books a viewing, sends the agreement, and the money is released from escrow
+only when the buyer confirms. Sellers see Sheda's 2% before accepting.
+
+## What to check on chain
+
+- Raise: `sheda-raise-v5.testnet`, method `get_project` with `{"project_id": "yaba-test-terraces"}`:
+  status, candidates and votes, the manager's fee, the pack hash.
+- Flat vaults: `get_info`, `get_listings`, `get_offers`, `claimable`.
+- Marketplace: `market-v2.shedauser.testnet`, `get_version` (5) and `get_platform_fee`.
+
+## Script for a 60–90 second video
+
+> Most people can't buy a flat. Sheda lets you own part of one, on NEAR.
 >
-> The flat is an NFT. The NFT is owned by a vault account, so the marketplace
-> treats three hundred owners exactly like one landlord. The claims on the
-> flat are a fungible token, so they divide, add up and sell in part.
+> Each flat is an NFT, and the NFT is owned by a vault account. The vault is the
+> landlord: it rents the flat out, collects the rent in USDC, and pays it to
+> whoever holds the flat's shares.
 >
-> Money is released a phase at a time: the builder asks for an inspection, an
-> independent manager signs it off, and holders have seven days to object.
-> Rent lands in the vault and is divided by the share ledger, not by a
-> spreadsheet someone can edit.
+> Investing takes four steps. You see exactly how many shares your money buys,
+> your share of the flat and the rent it could earn. Your money waits in the
+> raise contract, not with the builder.
 >
-> The wallet is created at sign-up. No extension, no seed phrase, no connect
-> button. The chain is doing the work; the user is buying a flat.
-
-## v1 fallback
-
-The live `sheda-raise-v1.testnet` predates `set_unit_vault` and
-`shares_owed`. Against it:
-
-- Steps 1–3 still work: provisioning, browsing, committing.
-- Step 4 will not show a claim action. Say: "Commitments are held in escrow;
-  the current testnet contract predates the vault registration call, so the
-  claim step is shown in the runbook and the code rather than on this
-  deployment."
-- Steps 6–7 still work if the project is funded and the manager account is
-  independent: `attest` and the phase schedule exist on v1.
-- Do not claim the shares loop works on v1. The honest fallback is stronger
-  than a failed transaction on camera.
-
-## Links to show in the post
-
-- App: https://testing.sheda.app
-- Repo: https://github.com/shedasolutions-design/sheda-platform
-- Contracts: https://github.com/shedasolutions-design/sheda-platform/tree/TT/contracts
-- Runbook: https://github.com/shedasolutions-design/sheda-platform/blob/TT/docs/DEPLOY_COLLECTIONS.md
+> Investors vote for the property manager. The manager inspects every building
+> phase before it is paid, and holders can object. If the builder manages it
+> themselves, more than half of investors must approve every payment.
+>
+> When you want out, sell your shares to another investor. The shares and the
+> money move in one transaction, and the rent you earned stays yours.
+>
+> Built at NEAR HACKATHON.

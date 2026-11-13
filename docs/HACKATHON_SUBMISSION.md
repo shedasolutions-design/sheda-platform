@@ -1,151 +1,121 @@
 # NEAR Hackathon 2026 submission
 
-**Project:** Sheda  
-**Tracks:** `nfts` (primary), `realworld` (secondary)  
-**Repository:** https://github.com/shedasolutions-design/sheda-platform  
-**Testnet app:** https://testing.sheda.app  
-**Production-style app:** https://market.sheda.app  
-**Demo video:** _add the X post or video URL before submitting_  
-**Licence:** Apache-2.0
+**Project:** Sheda
+**Tracks:** `nfts` (primary), `realworld` (secondary)
+**Repository:** https://github.com/shedasolutions-design/sheda-platform
+**Live app (testnet):** https://testing.sheda.app (also served at https://market.sheda.app until mainnet launches)
+**Demo post:** see the X post linked from the submission
+**Licence:** Apache-2.0 (`LICENSE`)
+**Tags:** `pre-hackathon` (= `monorepo-baseline`) and `hackathon-submission`
+**Hackathon diff:** https://github.com/shedasolutions-design/sheda-platform/compare/pre-hackathon...hackathon-submission
 
 ## One sentence
 
-Sheda turns a property NFT into a landlord: the NFT is held by a vault
-account, the vault's shares are an NEP-141 token, and rent paid to the vault
-is divided among the people who own those shares, on chain.
+Sheda is a property marketplace on NEAR where a flat is an NFT owned by a
+vault account: the vault holds the flat, collects its rent in USDC and pays it
+to whoever holds the flat's NEP-141 shares, and the shares can be resold
+between people on chain.
 
 ## Why this is the `nfts` entry
 
-The property NFT is not a picture with metadata. It is the account that owns
-the flat, signs the lease and receives rent. Each flat has its own vault
-account, each vault mints shares when the raise funds, and each share earns a
-pro-rata claim on that specific flat's rent. The NFT does something: it owns
-an income-producing asset on behalf of hundreds of people.
+The track asks for NFTs that hold money and earn. Here the property NFT is held
+by a vault account that *is* the landlord: it is listed on the marketplace,
+accepts tenants, receives rent, keeps a repair reserve and pays holders. Each
+flat has its own vault and its own share token, so owning 1% of a flat means
+receiving 1% of that flat's rent, with no one reporting the figure by hand.
 
 ## Why this is also the `realworld` entry
 
-The rest of the platform is the ordinary property business that makes the NFT
-worth owning: listings, inspections, offers, escrow, deposits, leases,
-documents and disputes, settled in Circle USDC. The fractional flow is one
-part of a product a person can use without knowing what a vault is.
+Around the NFT is the ordinary property business that makes it worth owning,
+settled in USDC: listings, viewings, offers, escrow, agreements, security
+deposits, leases, disputes and cancellations, plus raising money for a
+building with payments released phase by phase after inspection.
 
 ## What was built during the hackathon window
 
-The marketplace and Collections contracts and apps existed before the
-hackathon in five public repositories under the same organisation. They were
-consolidated into this monorepo on **2026-11-08**; everything after the
-`monorepo-baseline` tag is work done in this repository during the event.
+The marketplace and the first Collections contracts existed before the event
+in five public repositories under the same organisation. They were combined
+into this repository on **2026-11-08**; the `pre-hackathon` tag marks that
+first commit. Everything in the diff above was built during the event,
+including:
 
-That window includes:
+- **Invest v5 (fractional ownership), end to end**
+  - Raise contract v5: investors **vote for the property manager** with their
+    money; the most-voted candidate is fixed when the round fills.
+  - **Withdraw from a filling round** (not when full, not in its last 7 days).
+  - A builder's own company may manage only when flagged; each phase payment
+    then needs **approval from more than half** of investors.
+  - The **project pack** (every agreement and term) is required, and its
+    SHA-256 is recorded on chain.
+  - Vault v5: an **in-vault share market** (listings and buy offers settle
+    shares and money in one transaction; rent earned before a sale stays with
+    the seller) and a **holder vote to replace the manager** (more than half of
+    the shares). Existing vaults were upgraded with `migrate()`.
+- **Marketplace v5:** a 2% platform fee on completed sales and rent, sent to a
+  council-set wallet; a contract migration verified field by field.
+- **A rebuilt Invest experience:** photo cards, a four-step invest flow (flat,
+  amount with live shares and rent estimate, terms, confirm), a building
+  timeline (funding, building, with manager, listed, rented), map, manager
+  pledges and fees, About and Updates tabs, "Know the risks".
+- **Investor notifications:** followers get in-app and email updates when a
+  round closes or misses its deadline, a phase is signed off or paid, or a
+  flat is listed or let.
+- **Marketplace work:** a new council-owned market contract, a 2-of-3 council,
+  booking rules for viewings, security deposits refunded in every path,
+  unified buyer and seller profiles, notification settings, and email through
+  Brevo.
 
-- **Automatic wallet provisioning for every new sign-up**, on web and mobile.
-  A new account gets a wallet before it reaches the app, with a buyer/seller
-  chooser retained. A returning Google user is never handed a second wallet.
-- **Wallet recovery and funding fixes**: lost wallets during setup, a runaway
-  RPC loop, balance history, and the "account does not exist" case while
-  funding a new wallet.
-- **Marketplace fixes**: signed-out visitors can browse listings, listing
-  type labels no longer show raw enum names, land listings are accepted with
-  zero bedrooms, and the featured board is richer.
-- **Collections completion**: claim-shares and manager-attest flows in the
-  web service, hooks and screens; a manager sign-off inbox; a per-flat vault
-  deployment runbook; and an admin endpoint registering a deployed vault.
-- **A real chain indexer** (`services/backend/scripts/sync_collections_chain.py`)
-  that rebuilds builder and manager chain records from the raise and stake
-  contracts instead of leaving every profile "Not rated yet".
-- **Hackathon packaging**: Apache-2.0 licence, this document, a demo script,
-  a web CI job, and a status table that says what is and is not built.
+## Try it
 
-The honest baseline is the `monorepo-baseline` tag plus the five upstream
-repositories listed in the README. The diff from that tag is the
-hackathon-window change set.
+No install is needed:
 
-## Reproduce it
+1. Open https://testing.sheda.app and **Continue with Google**. A NEAR testnet
+   wallet is created for you; there is no extension or seed phrase.
+2. Go to **Portfolio (wallet) → Get test dollars** for free test USDC.
+3. Go to **Invest → Yaba Test Terraces → Invest now** and follow the four
+   steps. `docs/DEMO.md` has the full click path and what each step shows.
 
-The contracts and the backend need no third-party services to run the tests.
+To build and test locally:
 
 ```bash
-# Contracts: unit tests and wasm build
+# Contracts: 105 unit tests + 37 marketplace integration tests
 cd contracts
 cargo test --workspace --lib
-cargo build --workspace --target wasm32-unknown-unknown --release
+cargo test -p sheda-contract   # needs cargo-near; drives a near-workspaces node
 
-# Backend: tests and API
+# Backend: 155 tests
 cd services/backend
-cp .env.example .env.local
-pip install -r requirements-server.txt
+cp .env.example .env.local && pip install -r requirements-server.txt
 pytest -q
 
-# Web: typecheck and production build
+# Web app
 cd apps/web
-cp .env.example .env.local
-npm ci
-npx next typegen
-npx tsc --noEmit
-npx next build
+cp .env.example .env.local && npm ci
+npx tsc --noEmit && npx next build
 ```
 
-The live demo needs no local setup: open https://testing.sheda.app, sign in
-with Google, and the wallet is created for you.
+## Contracts on testnet
 
-## What to look at in the demo
-
-1. Sign in on the testnet app. The wallet is provisioned automatically.
-2. Browse a property and a Collection. The project page shows the terms, the
-   phase schedule, the builder and manager records, and every unverified
-   document is labelled as unverified.
-3. On a funded raise, the investor's position shows the commitment, the
-   shares owed and a **Claim shares** action. The claim mints NEP-141 shares
-   against the flat's vault.
-4. The manager's **Sign-offs** screen lists phases waiting on an inspection
-   and signs one off. The builder sees the same phase move to the seven-day
-   objection window.
-5. Holdings reads the vault directly: share balance, rent owed, and a claim
-   that pays from the vault's own balance.
-
-`docs/DEMO.md` has the exact click path and a three-minute video script.
-
-## What the AI screeners can check without a wallet
-
-- `README.md` states the architecture, the run commands and the limits.
-- `docs/DEPLOY_COLLECTIONS.md` is the operator runbook for the contracts.
-- `contracts/README.md` lists the contract interface and why shares are
-  fungible while the flat is an NFT.
-- `docs/ARCHITECTURE.md` explains the backend/chain split.
-- The status table in `README.md` names the incomplete parts: external audit,
-  cross-contract tests for vault and raise, per-unit vault factory, manager
-  lease/rent indexer, and email.
+| Contract | Account |
+| --- | --- |
+| Marketplace (v5) | `market-v2.shedauser.testnet` |
+| Raise v5 | `sheda-raise-v5.testnet` |
+| Raise v4 (raises opened before v5) | `sheda-raise-v4.testnet` |
+| Stake registry | `sheda-stake-v5.testnet`, `sheda-stake-v4.testnet` |
+| Owner of all of them | 2-of-3 council `sheda-council.testnet` |
 
 ## Known limits, stated rather than hidden
 
-- **No external contract audit.** Testnet only; mainnet ids are deliberately
-  empty.
-- **The live `sheda-raise-v1.testnet` predates `set_unit_vault` and
-  `shares_owed`.** The code and runbook are current; the deployment needs the
-  v2 runbook before the claim-shares loop can be demonstrated against it.
-- **Vault deployment is an operator step, not a factory.** The runbook makes
-  it reproducible; a factory is future work.
-- **Manager occupancy and rent are not indexed yet.** The indexer records the
-  facts the raise and stake contracts publish and leaves the lease/rent
-  fields at zero, which keeps a manager unrated rather than scoring missing
-  data as bad performance.
-- **Cross-contract failure paths are only partly tested.** The marketplace
-  has integration tests; the vault/raise paths that call it still need a
-  sandbox suite.
+- **No external contract audit.** Testnet only; nothing is on mainnet.
+- **Opening a raise is an operator step.** The council creates it on chain
+  and the builder publishes it; vaults are deployed per flat by a runbook,
+  not a factory.
+- **Raise-to-vault cross-contract paths** are covered by live testnet smoke
+  tests, not yet by a sandbox suite. The marketplace has sandbox tests,
+  including rent reaching a vault and the 2% fee.
+- **Manager occupancy and rent records** are not indexed yet, so new managers
+  show as unrated rather than scored on missing data.
 
-## Submission checklist
+## Tools and code used
 
-- [ ] Repository is public and the default branch is `main` or `TT` as the
-      hackathon expects (both are public).
-- [ ] `LICENSE` is present (Apache-2.0).
-- [ ] README has the track ids, the demo script link and the baseline
-      disclosure.
-- [ ] The X demo post tags `@NEARProtocol` and `#NEARHackathon`.
-- [ ] The demo video URL is added to this file.
-- [ ] The human has reviewed the exact submission payload before
-      `POST https://nearhackathon.com/api/applications`.
-- [ ] No second submission is sent for the same project.
-
-The submission API call is intentionally not automated here. The hackathon
-requires a human to confirm the payload, and a duplicate submission cannot be
-undone.
+See the "AI tools and libraries" section of `README.md`.
