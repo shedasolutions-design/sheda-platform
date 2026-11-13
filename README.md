@@ -25,16 +25,24 @@ thing. The listings, inspections, escrow, leases and USDC settlement around
 it are the `realworld` claim: the NFT is part of a product people can use
 without knowing what a vault is.
 
+**Try it (no install):** open https://testing.sheda.app → Continue with
+Google (a NEAR testnet wallet is created for you) → Portfolio → **Get test
+dollars** → Invest → **Yaba Test Terraces** → **Invest now**. The full
+"do this, see that" path is in [docs/DEMO.md](docs/DEMO.md).
+
 - [Submission notes and baseline disclosure](docs/HACKATHON_SUBMISSION.md)
-- [Three-minute demo script](docs/DEMO.md)
+- [Five-minute demo: do this, see that](docs/DEMO.md)
 - [Contract deployment runbook](docs/DEPLOY_COLLECTIONS.md)
 
 **Baseline.** The marketplace and Collections code existed before the event
 in five separate public repositories under the same organisation. They were
-consolidated into this monorepo on 2026-11-08. The `monorepo-baseline` tag
-points at that first monorepo commit; the diff from it is the
-hackathon-window change set. The status table below separates what is
-working from what is deliberately still missing.
+consolidated into this monorepo on 2026-11-08. The `pre-hackathon` tag (also
+`monorepo-baseline`) points at that first monorepo commit, and
+`hackathon-submission` at the submitted state. The diff between them is the
+work done during the event:
+[pre-hackathon...hackathon-submission](https://github.com/shedasolutions-design/sheda-platform/compare/pre-hackathon...hackathon-submission).
+The status table below separates what is working from what is deliberately
+still missing.
 
 ---
 
@@ -351,6 +359,31 @@ It consolidates the code that was previously developed separately in:
 
 Those repositories are inputs now, not parallel branches of work. New changes
 land here.
+
+---
+
+## AI tools and libraries
+
+**AI tools.** Much of this code was written with **Claude Code** (Anthropic),
+working in this repository under the team's direction: contracts, backend,
+web app, tests and documentation. Every change went through CI (formatting,
+lint, unit and integration tests) before it was merged, and contract changes
+were also smoke-tested live on testnet.
+
+**Libraries and services.**
+
+- Contracts: `near-sdk` (Rust), `near-contract-standards` (NEP-141, NEP-171),
+  `near-workspaces` and `cargo-near` for tests and builds.
+- Web app: Next.js, React, Tailwind CSS, `near-api-js` and `@near-js/*`,
+  TanStack Query, Redux Toolkit, react-hook-form, zod, lucide-react,
+  `@noble/*` and `bip39` for the built-in wallet.
+- Mobile and Collections apps: Expo and React Native.
+- Backend: FastAPI, SQLAlchemy, Alembic, Pydantic, httpx, starlette-admin,
+  pytest.
+- Services: Neon (Postgres), Railway (backends), Vercel (web), Cloudinary
+  (uploads), Brevo (email), Firebase (encrypted wallet backup),
+  OpenStreetMap and Nominatim (maps), FastNEAR (RPC), test stablecoins
+  `usdc.fakes.testnet` and `usdt.fakes.testnet`.
 
 ---
 
