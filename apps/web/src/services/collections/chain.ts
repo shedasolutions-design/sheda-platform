@@ -792,3 +792,9 @@ export async function getFlatStage(vaultId: string): Promise<FlatStage> {
   if (property && property.lease_duration_days && BigInt(property.price || "0") > BigInt(0)) return { stage: "listed" };
   return { stage: "with_manager" };
 }
+
+/** How much of a stablecoin an account holds, in atomic units. */
+export async function getStablecoinBalance(token: string, accountId: string): Promise<bigint> {
+  const v = await nearContractService.viewOn<string>(token, "ft_balance_of", { account_id: accountId });
+  return BigInt(String(v ?? "0"));
+}
