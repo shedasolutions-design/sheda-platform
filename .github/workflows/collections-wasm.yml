@@ -6,6 +6,12 @@ name: Build Collections wasm
 # testnet, and without it for mainnet.
 on:
   workflow_dispatch:
+  push:
+    branches: [TT]
+    paths:
+      - 'contracts/raise/**'
+      - 'contracts/vault/**'
+      - '.github/workflows/collections-wasm.yml'
 
 permissions:
   contents: read
