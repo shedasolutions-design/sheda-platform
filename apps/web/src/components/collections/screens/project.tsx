@@ -225,6 +225,7 @@ function fundingOf(project: CollectionProjectDetail) {
 }
 
 const STATUS_TEXT: Record<string, string> = {
+  draft: "Draft, not open yet",
   open: "Open to invest",
   funded: "Fully funded",
   building: "Being built",
