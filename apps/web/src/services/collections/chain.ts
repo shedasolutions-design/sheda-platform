@@ -470,6 +470,50 @@ export async function objectToRelease(
   });
 }
 
+/**
+ * A project as the contract has it, laid over the backend's copy.
+ *
+ * The backend mirrors phase states, unit funding and the raise status, but
+ * nothing updates that mirror when someone acts on chain: a builder who had
+ * just requested an inspection still saw "Building", a funded raise read
+ * "open", a full flat read "0% funded". The contract is the record; the
+ * backend copy is used only if the chain can't be read.
+ */
+export async function withChainState<
+  T extends {
+    slug: string;
+    escrow_account_id?: string | null;
+    status: string;
+    phases: { position: number; state: string }[];
+    unit_list: { code: string; shares_sold: string }[];
+  }
+>(project: T): Promise<T> {
+  try {
+    const live = await nearContractService.viewOn<{
+      status: string;
+      phases?: { state: string }[];
+      units?: { code: string; price: number | string; total_shares: number | string; raised: number | string }[];
+    } | null>(project.escrow_account_id || RAISE_CONTRACT_ID, "get_project", { project_id: project.slug });
+    if (!live) return project;
+    const snake = (s: string) => s.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+    const sold: Record<string, string> = {};
+    for (const u of live.units ?? []) {
+      const price = BigInt(String(u.price));
+      if (price > BigInt(0)) sold[u.code] = ((BigInt(String(u.raised)) * BigInt(String(u.total_shares))) / price).toString();
+    }
+    return {
+      ...project,
+      status: snake(live.status),
+      phases: project.phases.map((ph) =>
+        live.phases?.[ph.position] ? { ...ph, state: snake(live.phases[ph.position].state) } : ph
+      ),
+      unit_list: project.unit_list.map((u) => (sold[u.code] != null ? { ...u, shares_sold: sold[u.code] } : u)),
+    };
+  } catch {
+    return project;
+  }
+}
+
 /** The raise as the contract has it: status, raised and target (atomic). */
 export async function getRaiseChainState(
   projectSlug: string
