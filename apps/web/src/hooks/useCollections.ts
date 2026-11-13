@@ -134,7 +134,8 @@ export function useCollections() {
         run(async () => {
           const response = await apiService.getCollectionProject(slug);
           if (!response.ok) throw new Error(describeApiError(response.error, "Could not load that raise."));
-          return response.data as CollectionProjectDetail;
+          // Phases, funding and status as the contract has them.
+          return await chain.withChainState(response.data as CollectionProjectDetail);
         }),
       [run]
     ),

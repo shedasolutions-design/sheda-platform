@@ -1,5 +1,6 @@
 "use client";
 
+import { withChainState } from "@/services/collections/chain";
 import { InterRegular, InterSemiBold } from "@/components/collections/rn";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, View } from "@/components/collections/rn";
@@ -96,9 +97,12 @@ export default function Approvals() {
       )
     );
     const collected: Row[] = [];
-    details.forEach((d) => {
-      if (!d.ok) return;
-      const project = d.data as CollectionProjectDetail;
+    // Phase states as the contract has them: the backend's copy still said
+    // "Building" after the builder had requested an inspection on chain.
+    const live = await Promise.all(
+      details.filter((d) => d.ok).map((d) => withChainState(d.data as CollectionProjectDetail))
+    );
+    live.forEach((project) => {
       project.phases.forEach((phase) => collected.push({ project, phase }));
     });
     setRows(collected);
