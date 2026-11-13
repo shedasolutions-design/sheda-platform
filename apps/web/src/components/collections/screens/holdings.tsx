@@ -44,12 +44,20 @@ export default function Holdings() {
       setHoldings([]);
       return;
     }
+    // Vaults are per flat. This read the project-level vault, which is
+    // empty for any raise with units, so no holder ever saw their shares or
+    // their rent ("You do not hold any units yet").
     const projects = await apiService.getCollectionProjects({});
-    const vaults = projects.ok
-      ? (projects.data as CollectionProjectSummary[])
-          .map((p) => p.vault_account_id)
-          .filter((v): v is string => Boolean(v))
-      : [];
+    const summaries = projects.ok ? (projects.data as CollectionProjectSummary[]) : [];
+    const details = await Promise.all(summaries.map((p) => apiService.getCollectionProject(p.slug)));
+    const vaults = Array.from(
+      new Set(
+        [
+          ...summaries.map((p) => p.vault_account_id),
+          ...details.flatMap((d) => (d.ok ? d.data.unit_list.map((u) => u.vault_account_id) : [])),
+        ].filter((v): v is string => Boolean(v))
+      )
+    );
 
     if (vaults.length === 0) {
       setHoldings([]);
