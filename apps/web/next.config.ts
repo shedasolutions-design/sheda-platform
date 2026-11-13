@@ -42,6 +42,8 @@ const CONNECT = [
   "https://api.coingecko.com",
   "https://api.coinbase.com",
   "https://1click.chaindefuser.com",
+  // OpenStreetMap address search for a raise's location (map tiles are images)
+  "https://nominatim.openstreetmap.org",
   // Google backup (Firebase Auth + Firestore)
   "https://identitytoolkit.googleapis.com",
   "https://securetoken.googleapis.com",

@@ -21,6 +21,8 @@ import {
 } from "@/components/collections/ui";
 import { Field } from "./become-builder";
 import { useMyCollectionProfiles } from "@/hooks/useCollections";
+import { LocationPicker, ManagerPicker, ProjectTypePicker } from "@/components/collections/RaiseExtras";
+import type { CollectionProjectType } from "@/services/api";
 import apiService from "@/services/api";
 import { describeApiError } from "@/services/collections/errors";
 import { formatWithSymbol, parseAmount } from "@/services/collections/money";
@@ -79,7 +81,7 @@ const DEFAULT_PHASES: PhaseDraft[] = [
 ];
 
 export default function NewRaise() {
-  const { builder, loading } = useMyCollectionProfiles();
+  const { builder, manager: ownManager, loading } = useMyCollectionProfiles();
   const token = DEFAULT_TOKEN;
 
   const [name, setName] = useState("");
@@ -87,6 +89,14 @@ export default function NewRaise() {
   const [units, setUnits] = useState("");
   const [description, setDescription] = useState("");
   const [returnPct, setReturnPct] = useState("");
+  const [projectType, setProjectType] = useState<CollectionProjectType>("under_construction");
+  const [place, setPlace] = useState<{ address: string; lat: number | null; lon: number | null }>({
+    address: "",
+    lat: null,
+    lon: null,
+  });
+  const [minInvest, setMinInvest] = useState("");
+  const [nominees, setNominees] = useState<number[]>([]);
   const [phases, setPhases] = useState<PhaseDraft[]>(DEFAULT_PHASES);
   const [unitList, setUnitList] = useState<UnitDraft[]>([
     { code: "1a", label: "Unit 1A", bedrooms: "2", price: "", shares: "10000", rentLow: "", rentHigh: "" },
@@ -138,6 +148,12 @@ export default function NewRaise() {
       units: parseInt(units, 10) || unitList.length,
       description: description.trim() || undefined,
       estimated_return_pct: returnPct ? parseInt(returnPct, 10) : undefined,
+      project_type: projectType,
+      address: place.address.trim() || undefined,
+      latitude: place.lat ?? undefined,
+      longitude: place.lon ?? undefined,
+      min_investment_atomic: minInvest.trim() ? (parseAmount(minInvest, token) ?? undefined) : undefined,
+      nominee_profile_ids: nominees,
       // The API works in basis points; the form works in percent, because
       // nobody describes a phase as "two thousand".
       phases: phases.map((p, i) => ({
@@ -243,6 +259,58 @@ export default function NewRaise() {
             placeholder="30"
             keyboardType="number-pad"
             note="Shown to investors as your own estimate, always labelled as yours. Sheda does not verify it and does not stand behind it."
+          />
+        </Section>
+
+        <Section title="What kind of project">
+          <ProjectTypePicker
+            value={projectType}
+            onChange={(t) => {
+              setProjectType(t);
+              // A finished building has nothing left to build: one payment,
+              // released once the manager has taken it over.
+              if (t === "completed") setPhases([{ name: "Handover to the manager", tranche: "100" }]);
+              else if (phases.length === 1 && phases[0].name === "Handover to the manager") setPhases(DEFAULT_PHASES);
+            }}
+          />
+          <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
+            {projectType === "completed"
+              ? "Investors' money is paid to you once the manager confirms they have taken over the building and its papers."
+              : "Investors' money is paid phase by phase, after the manager inspects and signs off each phase."}
+          </InterRegular>
+        </Section>
+
+        <Section title="Location">
+          <LocationPicker
+            address={place.address}
+            lat={place.lat}
+            lon={place.lon}
+            onChange={setPlace}
+          />
+        </Section>
+
+        <Section title="Property manager">
+          <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
+            Suggest up to three managers near the project. The manager investors choose inspects each building phase
+            and then runs the finished flats. Your own company counts only if no one else is available, and investors
+            are told.
+          </InterRegular>
+          <ManagerPicker
+            location={place.address || location}
+            selected={nominees}
+            onChange={setNominees}
+            ownManager={ownManager}
+          />
+        </Section>
+
+        <Section title="Minimum investment">
+          <Field
+            label="Smallest amount one person can put in (optional)"
+            value={minInvest}
+            onChangeText={setMinInvest}
+            keyboardType="decimal-pad"
+            placeholder="e.g. 50"
+            note="Leave empty to allow a single share."
           />
         </Section>
 
@@ -456,9 +524,10 @@ export default function NewRaise() {
         </Section>
 
         <Note>
-          This creates a draft. Nobody can put money into it until Sheda has checked your
-          documents and published it on chain, and once it is open these terms are frozen,
-          because they are what people will have committed against.
+          This creates a draft. Next, upload your project pack: one document with every agreement and
+          term (title, approvals, costs, timeline, rent research, what investors own). Nobody can put money
+          in until Sheda has checked it and published the raise, and once it is open these terms are
+          frozen, because they are what people committed against.
         </Note>
 
         {error ? <Note tone="critical">{error}</Note> : null}
