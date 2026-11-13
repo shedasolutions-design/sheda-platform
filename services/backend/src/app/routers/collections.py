@@ -817,7 +817,16 @@ async def publish_project(
 
     # The project pack carries every agreement and term; nobody commits
     # money against a raise without one.
-    if not any(d.is_pack and d.file_url for d in project.documents):
+    pack = (
+        await db.execute(
+            select(CollectionDocument.id).where(
+                CollectionDocument.project_id == project.id,
+                CollectionDocument.is_pack.is_(True),
+                CollectionDocument.file_url.is_not(None),
+            )
+        )
+    ).first()
+    if pack is None:
         raise HTTPException(
             status_code=400,
             detail="Upload the project pack (every agreement and term for this raise) before publishing.",
