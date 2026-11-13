@@ -24,7 +24,7 @@ import {
 } from "@/services/collections/chain";
 import { DEFAULT_FEE_BPS, perPeriod, rentRangeOf, yearlyRentFor } from "@/services/collections/rent";
 import { INFO, INVEST_RISKS, PROJECT_TYPE_TEXT } from "@/services/collections/copy";
-import type { CollectionProjectDetail, CollectionUnit } from "@/services/api";
+import apiService, { type CollectionProjectDetail, type CollectionUnit } from "@/services/api";
 
 type Step = "flat" | "amount" | "terms" | "check" | "done";
 
@@ -172,6 +172,8 @@ export default function ChooseUnit() {
     if (result.success) {
       setTxHash(result.transactionHash ?? "submitted");
       setStep("done");
+      // Follow the building so its progress reaches this investor.
+      void apiService.watchCollectionProject(project.slug);
       try {
         const state = await getRaiseChainState(project.slug);
         if (state && state.status === "Open" && BigInt(state.raised) >= BigInt(state.target)) {

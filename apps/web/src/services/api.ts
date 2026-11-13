@@ -582,6 +582,7 @@ export interface ServerNotificationPreferences {
   push_notifications: boolean;
   email_notifications: boolean;
   sms_notifications: boolean;
+  invest_updates?: boolean;
   /** Whether the server can send email at all (a mail provider is set up). */
   email_available?: boolean;
   sms_available?: boolean;
@@ -746,6 +747,16 @@ export interface CollectionNominationInvite extends CollectionNomination {
 }
 
 export type CollectionProjectType = "off_plan" | "under_construction" | "completed";
+
+export interface InvestNotification {
+    id: number;
+    kind: string;
+    title: string;
+    body: string;
+    link?: string | null;
+    is_read: boolean;
+    created_at: string;
+}
 
 export interface CollectionProjectUpdate {
     id: number;
@@ -2019,6 +2030,29 @@ class ApiService {
       `/api/v1/collections/projects/${encodeURIComponent(slug)}/units/${encodeURIComponent(unitCode)}/rent`,
       { method: "PATCH", body: JSON.stringify(payload) }
     );
+  }
+
+  /** Follow a building's progress (done for you when you invest or buy shares). */
+  async watchCollectionProject(slug: string, watch = true): Promise<ApiResponse<{ watching: boolean }>> {
+    return this.request<{ watching: boolean }>(
+      `/api/v1/collections/projects/${encodeURIComponent(slug)}/watch`,
+      { method: watch ? "POST" : "DELETE", silent: true }
+    );
+  }
+
+  async isWatchingCollectionProject(slug: string): Promise<ApiResponse<{ watching: boolean }>> {
+    return this.request<{ watching: boolean }>(
+      `/api/v1/collections/projects/${encodeURIComponent(slug)}/watch`,
+      { method: "GET", silent: true }
+    );
+  }
+
+  async getInvestNotifications(): Promise<ApiResponse<InvestNotification[]>> {
+    return this.request<InvestNotification[]>(`/api/v1/collections/notifications`, { method: "GET", silent: true });
+  }
+
+  async readInvestNotifications(): Promise<ApiResponse<{ read: number }>> {
+    return this.request<{ read: number }>(`/api/v1/collections/notifications/read`, { method: "POST", silent: true });
   }
 
   async getMyNominations(): Promise<ApiResponse<CollectionNominationInvite[]>> {

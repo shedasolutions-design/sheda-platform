@@ -182,6 +182,7 @@ export default function Shares() {
                             amountAtomic: cost.toString(),
                           });
                           done(r.success, "Bought. The shares are in your Portfolio.", r.error);
+                          if (r.success) void apiService.watchCollectionProject(f.slug);
                         }}
                         className="ml-auto rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                       >

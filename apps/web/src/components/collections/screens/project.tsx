@@ -9,6 +9,7 @@ import { useCurrency } from "@/contexts/CurrencyContext";
 import InfoTip, { MoreText } from "@/components/ui/InfoTip";
 import {
   BuilderStrip,
+  FollowButton,
   ManagerSection,
   MoreInformation,
   ProjectPackCard,
@@ -132,6 +133,11 @@ export default function ProjectDetail() {
 
         <ProjectSummary project={project} />
         {project.builder ? <BuilderStrip builder={project.builder} /> : null}
+        {user ? (
+          <div className="flex justify-end">
+            <FollowButton slug={project.slug} />
+          </div>
+        ) : null}
 
         <div className="flex border-b border-borderColor" role="tablist">
           {(["about", "updates"] as const).map((t) => (

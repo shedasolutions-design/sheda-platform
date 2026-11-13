@@ -45,6 +45,8 @@ export interface NotificationPreferences {
     pushNotifications: boolean;
     emailNotifications: boolean;
     smsNotifications: boolean;
+    /** Updates about buildings you invest in or follow. */
+    investUpdates: boolean;
 }
 
 export interface AppNotification {
@@ -210,6 +212,7 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
     emailNotifications: true,
     // No SMS provider yet: off until there is one.
     smsNotifications: false,
+    investUpdates: true,
 };
 
 /** App setting -> the server's name for it. */
@@ -218,6 +221,7 @@ const SERVER_KEYS: Record<keyof NotificationPreferences, keyof ServerNotificatio
     pushNotifications: "push_notifications",
     emailNotifications: "email_notifications",
     smsNotifications: "sms_notifications",
+    investUpdates: "invest_updates",
 };
 
 function fromServerPrefs(p: ServerNotificationPreferences): NotificationPreferences {
@@ -226,6 +230,7 @@ function fromServerPrefs(p: ServerNotificationPreferences): NotificationPreferen
         pushNotifications: p.push_notifications,
         emailNotifications: p.email_notifications,
         smsNotifications: p.sms_notifications,
+        investUpdates: p.invest_updates ?? true,
     };
 }
 

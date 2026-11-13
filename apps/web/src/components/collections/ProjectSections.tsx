@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- logos and photos come from arbitrary hosts */
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { BadgeCheck, ChevronDown, FileText, Fingerprint, ShieldAlert } from "lucide-react";
+import { BadgeCheck, Bell, BellRing, ChevronDown, FileText, Fingerprint, ShieldAlert } from "lucide-react";
 import InfoTip, { MoreText } from "@/components/ui/InfoTip";
 import apiService, {
   type CollectionNomination,
@@ -16,6 +16,35 @@ import { INFO, INVEST_RISKS } from "@/services/collections/copy";
 import { RAISE_CAN_WITHDRAW } from "@/config/collections";
 
 // ---- builder ---------------------------------------------------------------
+
+/** Follow a building: updates on its round, phases and flats. */
+export function FollowButton({ slug }: { slug: string }) {
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    apiService.isWatchingCollectionProject(slug).then((r) => alive && setOn(r.ok ? r.data.watching : null));
+    return () => {
+      alive = false;
+    };
+  }, [slug]);
+  if (on === null) return null;
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        const r = await apiService.watchCollectionProject(slug, !on);
+        if (r.ok) setOn(r.data.watching);
+      }}
+      aria-pressed={on}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium ${
+        on ? "border-primary bg-primaryLight text-primary" : "border-borderColor text-primaryText"
+      }`}
+    >
+      {on ? <BellRing size={14} /> : <Bell size={14} />}
+      {on ? "Following" : "Follow updates"}
+    </button>
+  );
+}
 
 export function BuilderStrip({ builder }: { builder: CollectionProfile }) {
   return (

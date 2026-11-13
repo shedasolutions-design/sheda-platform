@@ -5,7 +5,7 @@ import AuthGuard from "@/components/auth/AuthGuard";
 import PageHeader from "@/components/ui/PageHeader";
 import { useNotifications } from "@/contexts/NotificationContext";
 
-type Key = "allowMessages" | "pushNotifications" | "emailNotifications" | "smsNotifications";
+type Key = "allowMessages" | "pushNotifications" | "emailNotifications" | "smsNotifications" | "investUpdates";
 
 /**
  * Every switch here now does what it says. They used to be saved in this
@@ -54,6 +54,12 @@ function NotificationSettings() {
       title: "Email notifications",
       description: "Get an email for each step of your deals: offers, viewings, agreements and payments.",
       note: channels.email ? undefined : "Email sending is not switched on for Sheda yet. Your choice is saved and applies once it is.",
+    },
+    {
+      id: "investUpdates",
+      title: "Invest updates",
+      description:
+        "News about buildings you invest in or follow: a round closing or missing its deadline, filling, phases signed off and paid, flats let. Shown in the app, and by email if email is on.",
     },
     {
       id: "smsNotifications",
