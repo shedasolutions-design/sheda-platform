@@ -120,3 +120,25 @@ async def test_only_builder_or_manager_posts_updates(db: AsyncSession):
     with pytest.raises(HTTPException) as e:
         await post_project_update("s1-flats", ProjectUpdateCreate(body="Hello"), stranger, _ident(stranger), db)
     assert e.value.status_code == 403
+
+
+async def test_admin_publish_opens_a_checked_draft(db: AsyncSession):
+    from app.routers.collections import AdminPublish, admin_publish
+
+    builder_user = await _user(db, "s1adm")
+    manager_user = await _user(db, "s1admmgr")
+    await _profile(db, builder_user, "builder", "Adm Homes")
+    manager = await _profile(db, manager_user, "manager", "Adm PM", fee_bps=600, pledge="Reports monthly.")
+    out = await create_project(_payload([manager.id]), builder_user, db)
+    await respond_to_nomination(out.nominations[0].id, NominationRespond(accept=True), manager_user, _ident(manager_user), db)
+
+    with pytest.raises(HTTPException):
+        await admin_publish("s1-flats", AdminPublish(escrow_account_id="sheda-raise-v5.testnet"), builder_user, db)
+
+    db.add(CollectionDocument(project_id=out.id, label="Project pack", file_url="https://example.com/pack.pdf",
+                              is_pack=True, status=DocumentStatusEnum.uploaded))
+    await db.commit()
+    opened = await admin_publish("s1-flats", AdminPublish(escrow_account_id="sheda-raise-v5.testnet"), builder_user, db)
+    assert opened.status == "open"
+    assert opened.escrow_account_id == "sheda-raise-v5.testnet"
+    assert opened.manager is not None and opened.manager.id == manager.id

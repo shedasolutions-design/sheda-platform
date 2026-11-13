@@ -459,7 +459,10 @@ function RentEstimator({
   const range = rentRangeOf(unit)!;
   const total = BigInt(unit.total_shares);
   const shares = sharesFor(toAtomic(amountText), unit);
-  const feeBps = fees[unit.code] ?? DEFAULT_FEE_BPS;
+  // The vault's real fees once it exists; before that, the chosen manager's fee
+  // plus the 5% reserve and Sheda's 2%.
+  const feeBps =
+    fees[unit.code] ?? (project.manager?.fee_bps != null ? project.manager.fee_bps + 700 : DEFAULT_FEE_BPS);
   const shown = perPeriod(yearlyRentFor(shares > total ? total : shares, total, range, feeBps), period);
   const suffix = PERIODS.find((p) => p.id === period)!.suffix;
   const pct = total > 0n ? (Number((shares > total ? total : shares) * 10_000n / total) / 100).toString() : "0";

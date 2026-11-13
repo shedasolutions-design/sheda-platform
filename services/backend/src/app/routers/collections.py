@@ -19,6 +19,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, status
 from sqlalchemy import func, select
+from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1415,6 +1416,50 @@ async def chain_terms(slug: str, current_user: AdminUser, db: AsyncSession = Dep
         "phases": [{"name": p.name, "tranche_bps": p.tranche_bps} for p in project.phases],
         "closes_at": project.closes_at.isoformat() if project.closes_at else None,
     }
+
+
+class AdminPublish(BaseModel):
+    escrow_account_id: str = Field(min_length=2, max_length=64)
+
+
+@router.post("/admin/projects/{slug}/publish", response_model=ProjectSummaryOut)
+async def admin_publish(
+    slug: str, payload: AdminPublish, current_user: AdminUser, db: AsyncSession = Depends(get_db)
+):
+    """Open a checked draft in the app once Sheda has created it on chain.
+
+    Admin only: Sheda checks the documents and opens the raise, never the
+    builder. Needs the project pack and at least one accepted manager. With
+    one accepted manager they are the manager; with several, investors vote
+    and the sweep records the winner when the round fills.
+    """
+    project = (
+        await db.execute(select(CollectionProject).where(CollectionProject.slug == slug))
+    ).scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.status != RaiseStatusEnum.draft:
+        raise HTTPException(status_code=409, detail="This raise is already published.")
+    pack = (
+        await db.execute(
+            select(CollectionDocument.id).where(
+                CollectionDocument.project_id == project.id,
+                CollectionDocument.is_pack.is_(True),
+                CollectionDocument.file_url.is_not(None),
+            )
+        )
+    ).first()
+    if pack is None:
+        raise HTTPException(status_code=400, detail="The project pack has not been uploaded.")
+    accepted = [n for n in project.nominations if n.status == "accepted"]
+    if not accepted:
+        raise HTTPException(status_code=400, detail="No suggested manager has accepted yet.")
+    project.escrow_account_id = payload.escrow_account_id
+    project.manager_id = accepted[0].profile_id if len(accepted) == 1 else None
+    project.status = RaiseStatusEnum.open
+    await db.commit()
+    await db.refresh(project)
+    return _summary_out(project)
 
 
 # ---- manager nominations ---------------------------------------------------
