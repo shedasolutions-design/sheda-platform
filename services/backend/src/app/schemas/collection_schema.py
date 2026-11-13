@@ -84,6 +84,12 @@ class CollectionProfileCreate(BaseModel):
     about: Optional[str] = None
     since_year: Optional[int] = Field(default=None, ge=2000, le=2100)
     part_of_group: Optional[str] = Field(default=None, max_length=120)
+    logo_url: Optional[str] = Field(default=None, max_length=500)
+
+
+#: A vault caps all fees at 30% of rent; reserve (5%) and Sheda (2%) leave
+#: at most 23% for the manager.
+MAX_MANAGER_FEE_BPS = 2300
 
 
 class CollectionProfileUpdate(BaseModel):
@@ -93,6 +99,10 @@ class CollectionProfileUpdate(BaseModel):
     about: Optional[str] = None
     since_year: Optional[int] = Field(default=None, ge=2000, le=2100)
     part_of_group: Optional[str] = Field(default=None, max_length=120)
+    logo_url: Optional[str] = Field(default=None, max_length=500)
+    #: Managers: share of rent taken, in basis points, and their pledge.
+    fee_bps: Optional[int] = Field(default=None, ge=0, le=MAX_MANAGER_FEE_BPS)
+    pledge: Optional[str] = Field(default=None, max_length=20_000)
 
 
 class CollectionProfileOut(_Base):
@@ -106,6 +116,10 @@ class CollectionProfileOut(_Base):
     since_year: Optional[int] = None
     part_of_group: Optional[str] = None
     suspended: bool = False
+    logo_url: Optional[str] = None
+    fee_bps: Optional[int] = None
+    pledge: Optional[str] = None
+    pledge_updated_at: Optional[datetime] = None
 
     #: Carried over from the Sheda account so a profile can show that the
     #: person behind it was identity checked. The ranking ignores it: KYC
@@ -153,11 +167,57 @@ class DocumentOut(_Base):
     status: DocumentStatusEnum
     file_url: Optional[str] = None
     verified_at: Optional[datetime] = None
+    is_pack: bool = False
+    sha256: Optional[str] = None
 
 
 class DocumentCreate(BaseModel):
     label: str = Field(min_length=2, max_length=120)
     file_url: Optional[str] = Field(default=None, max_length=500)
+    #: True for the project pack, the document holding every agreement and
+    #: term. A raise needs one before it can be published.
+    is_pack: bool = False
+
+
+class NominationOut(_Base):
+    id: int
+    status: str
+    self_managed: bool = False
+    fee_bps: Optional[int] = None
+    pledge: Optional[str] = None
+    responded_at: Optional[datetime] = None
+    profile: Optional["CollectionProfileOut"] = None
+
+
+class NominationInviteOut(NominationOut):
+    """A nomination as the invited manager sees it, with the raise."""
+
+    project_slug: str
+    project_name: str
+    project_location: str
+    builder_name: Optional[str] = None
+
+
+class NominationRespond(BaseModel):
+    accept: bool
+
+
+PROJECT_UPDATE_KINDS = ("progress", "rental", "maintenance", "announcement")
+
+
+class ProjectUpdateOut(_Base):
+    id: int
+    kind: str
+    body: str
+    image_url: Optional[str] = None
+    author_name: str
+    created_at: datetime
+
+
+class ProjectUpdateCreate(BaseModel):
+    kind: str = Field(default="progress", pattern=r"^(progress|rental|maintenance|announcement)$")
+    body: str = Field(min_length=1, max_length=4000)
+    image_url: Optional[str] = Field(default=None, max_length=500)
 
 
 class PhaseUpdateOut(_Base):
@@ -254,6 +314,13 @@ class ProjectSummaryOut(_Base):
     escrow_account_id: Optional[str] = None
     closes_at: Optional[datetime] = None
     cover_image_url: Optional[str] = None
+    project_type: str = "under_construction"
+    address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    min_investment_atomic: Optional[str] = None
+    #: True when the builder's own company is the (only or chosen) manager.
+    self_managed: bool = False
 
     builder: Optional[CollectionProfileOut] = None
     manager: Optional[CollectionProfileOut] = None
@@ -274,6 +341,12 @@ class ProjectDetailOut(ProjectSummaryOut):
     #: The flats themselves. Named apart from `units` on the summary, which
     #: is how many there are: one field cannot be both a count and a list.
     unit_list: List[UnitOut] = []
+    #: Managers the builder suggested, and whether each accepted.
+    nominations: List[NominationOut] = []
+    updates: List[ProjectUpdateOut] = []
+
+
+_PROJECT_TYPE = r"^(off_plan|under_construction|completed)$"
 
 
 class ProjectCreate(BaseModel):
@@ -285,6 +358,13 @@ class ProjectCreate(BaseModel):
     estimated_return_pct: Optional[int] = Field(default=None, ge=0, le=1000)
     manager_profile_id: Optional[int] = None
     closes_at: Optional[datetime] = None
+    project_type: str = Field(default="under_construction", pattern=_PROJECT_TYPE)
+    address: Optional[str] = Field(default=None, max_length=255)
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    min_investment_atomic: Optional[str] = Field(default=None, pattern=r"^\d{1,39}$")
+    #: Up to three property managers the builder suggests to investors.
+    nominee_profile_ids: List[int] = Field(default_factory=list, max_length=3)
 
     phases: List[PhaseCreate] = []
     unit_list: List[UnitCreate] = []
@@ -319,6 +399,12 @@ class ProjectUpdate(BaseModel):
     estimated_return_pct: Optional[int] = Field(default=None, ge=0, le=1000)
     manager_profile_id: Optional[int] = None
     closes_at: Optional[datetime] = None
+    project_type: Optional[str] = Field(default=None, pattern=_PROJECT_TYPE)
+    address: Optional[str] = Field(default=None, max_length=255)
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
+    min_investment_atomic: Optional[str] = Field(default=None, pattern=r"^\d{1,39}$")
+    nominee_profile_ids: Optional[List[int]] = Field(default=None, max_length=3)
 
 
 class ProjectPublish(BaseModel):
@@ -336,3 +422,7 @@ class ProjectPublish(BaseModel):
 
 class DocumentVerify(BaseModel):
     status: DocumentStatusEnum
+
+
+NominationOut.model_rebuild()
+NominationInviteOut.model_rebuild()

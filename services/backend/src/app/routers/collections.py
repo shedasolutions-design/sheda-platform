@@ -24,12 +24,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.collection import (
     CollectionChainRecord,
     CollectionDocument,
+    CollectionManagerNomination,
     CollectionPhase,
     CollectionPhaseUpdate,
     CollectionProfile,
     CollectionProfileDocument,
     CollectionProject,
     CollectionProjectImage,
+    CollectionProjectUpdate,
     CollectionRoleEnum,
     CollectionUnit,
     DocumentStatusEnum,
@@ -50,6 +52,9 @@ from app.schemas.collection_schema import (
     DocumentVerify,
     ImageCreate,
     ImageOut,
+    NominationInviteOut,
+    NominationOut,
+    NominationRespond,
     PhaseUpdateCreate,
     PhaseUpdateOut,
     ProjectCreate,
@@ -57,6 +62,8 @@ from app.schemas.collection_schema import (
     ProjectPublish,
     ProjectSummaryOut,
     ProjectUpdate,
+    ProjectUpdateCreate,
+    ProjectUpdateOut,
     UnitOut,
     UnitRent,
     UnitVaultUpdate,
@@ -78,6 +85,35 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+async def _fingerprint(url: Optional[str]) -> Optional[str]:
+    """SHA-256 of an uploaded file, or None if it cannot be fetched.
+
+    Lets anyone confirm the document they are reading is the one recorded
+    when the raise opened. A fetch failure must not block the upload.
+    """
+    if not url:
+        return None
+    try:
+        import hashlib
+
+        import httpx
+
+        digest = hashlib.sha256()
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            async with client.stream("GET", url) as r:
+                if r.status_code != 200:
+                    return None
+                size = 0
+                async for chunk in r.aiter_bytes():
+                    size += len(chunk)
+                    if size > 50 * 1024 * 1024:
+                        return None
+                    digest.update(chunk)
+        return digest.hexdigest()
+    except Exception:
+        return None
+
+
 def _kyc_verified(user: Optional[BaseUser]) -> bool:
     """Whether the Sheda account behind a profile passed identity checks.
 
@@ -92,7 +128,8 @@ def _kyc_verified(user: Optional[BaseUser]) -> bool:
 def _profile_out(profile: CollectionProfile) -> CollectionProfileOut:
     out = CollectionProfileOut.model_validate(profile)
     out.kyc_verified = _kyc_verified(profile.user)
-    out.avatar_url = getattr(profile.user, "avatar_url", None)
+    # The company logo when set, otherwise the account's own photo.
+    out.avatar_url = profile.logo_url or getattr(profile.user, "avatar_url", None)
     if profile.chain_record is not None:
         out.chain_record = ChainRecordOut.model_validate(profile.chain_record)
     return out
@@ -107,12 +144,31 @@ def _released_bps(project: CollectionProject) -> int:
     return sum(p.tranche_bps for p in project.phases if p.state == PhaseStateEnum.released)
 
 
+def _self_managed(project: CollectionProject) -> bool:
+    """Is the builder's own company managing (and so inspecting) this raise?
+
+    True when the chosen manager is self-managed, or, before one is chosen,
+    when every accepted nominee is.
+    """
+    noms = [n for n in project.nominations if n.status == "accepted"]
+    if project.manager_id is not None:
+        return any(n.self_managed and n.profile_id == project.manager_id for n in project.nominations)
+    return bool(noms) and all(n.self_managed for n in noms)
+
+
+def _nomination_out(n: CollectionManagerNomination) -> NominationOut:
+    out = NominationOut.model_validate(n)
+    out.profile = _profile_out(n.profile) if n.profile else None
+    return out
+
+
 def _summary_out(project: CollectionProject) -> ProjectSummaryOut:
     out = ProjectSummaryOut.model_validate(project)
     out.cover_image_url = _cover(project)
     out.builder = _profile_out(project.builder) if project.builder else None
     out.manager = _profile_out(project.manager) if project.manager else None
     out.phases_released_bps = _released_bps(project)
+    out.self_managed = _self_managed(project)
     return out
 
 
@@ -125,7 +181,51 @@ def _detail_out(project: CollectionProject, units: List[CollectionUnit]) -> Proj
     out.documents = [DocumentOut.model_validate(d) for d in project.documents]
     out.unit_list = [UnitOut.model_validate(u) for u in units]
     out.phases_released_bps = _released_bps(project)
+    out.self_managed = _self_managed(project)
+    out.nominations = [_nomination_out(n) for n in project.nominations if n.status != "declined"]
+    out.updates = [ProjectUpdateOut.model_validate(u) for u in project.updates]
     return out
+
+
+def _same_company(manager: CollectionProfile, builder: CollectionProfile) -> bool:
+    """A manager profile that is the builder itself or part of its group."""
+    if manager.user_id == builder.user_id:
+        return True
+    m_email = (getattr(manager.user, "email", "") or "").lower()
+    b_email = (getattr(builder.user, "email", "") or "").lower()
+    if m_email and m_email == b_email:
+        return True
+    return bool(
+        manager.part_of_group
+        and manager.part_of_group.strip().lower() == builder.display_name.strip().lower()
+    )
+
+
+async def _set_nominees(
+    db: AsyncSession, project: CollectionProject, builder: CollectionProfile, ids: List[int]
+) -> None:
+    """Replace the suggested managers, keeping answers already given."""
+    ids = list(dict.fromkeys(ids))[:3]
+    existing = {n.profile_id: n for n in project.nominations}
+    for pid, n in list(existing.items()):
+        if pid not in ids:
+            await db.delete(n)
+    for pid in ids:
+        if pid in existing:
+            continue
+        manager = await _assert_usable_manager(db, pid)
+        own = _same_company(manager, builder)
+        nom = CollectionManagerNomination(
+            project_id=project.id, profile_id=pid, status="invited", self_managed=own
+        )
+        # The builder's own company answering its own invitation is a
+        # formality, provided its fee and pledge are on file.
+        if own and manager.fee_bps is not None and (manager.pledge or "").strip():
+            nom.status = "accepted"
+            nom.fee_bps = manager.fee_bps
+            nom.pledge = manager.pledge
+            nom.responded_at = _utc_now()
+        db.add(nom)
 
 
 async def _my_profile(
@@ -258,6 +358,8 @@ async def update_profile(
     if data.get("near_account_id"):
         await _assert_near_account_free(db, data["near_account_id"], exclude_id=profile.id)
 
+    if "pledge" in data and data["pledge"] != profile.pledge:
+        profile.pledge_updated_at = _utc_now()
     for field, value in data.items():
         setattr(profile, field, value)
     await db.commit()
@@ -593,9 +695,16 @@ async def create_project(
         estimated_return_pct=payload.estimated_return_pct,
         closes_at=payload.closes_at,
         status=RaiseStatusEnum.draft,
+        project_type=payload.project_type,
+        address=payload.address,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        min_investment_atomic=payload.min_investment_atomic,
     )
     db.add(project)
     await db.flush()
+    await db.refresh(project, ["nominations"])
+    await _set_nominees(db, project, builder, payload.nominee_profile_ids)
 
     for position, phase in enumerate(payload.phases):
         db.add(
@@ -666,7 +775,7 @@ async def update_project(
     rewritten underneath them makes the disclosure worthless. Only a draft
     is editable.
     """
-    project, _ = await _owned_project(db, slug, current_user)
+    project, builder = await _owned_project(db, slug, current_user)
     if project.status != RaiseStatusEnum.draft:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -678,9 +787,12 @@ async def update_project(
 
     data = payload.model_dump(exclude_unset=True)
     manager_id = data.pop("manager_profile_id", None)
+    nominees = data.pop("nominee_profile_ids", None)
     if manager_id is not None:
         await _assert_usable_manager(db, manager_id)
         project.manager_id = manager_id
+    if nominees is not None:
+        await _set_nominees(db, project, builder, nominees)
     for field, value in data.items():
         setattr(project, field, value)
 
@@ -702,6 +814,20 @@ async def publish_project(
         raise HTTPException(status_code=409, detail="This raise is already published.")
 
     manager = await _assert_usable_manager(db, payload.manager_profile_id)
+
+    # The project pack carries every agreement and term; nobody commits
+    # money against a raise without one.
+    if not any(d.is_pack and d.file_url for d in project.documents):
+        raise HTTPException(
+            status_code=400,
+            detail="Upload the project pack (every agreement and term for this raise) before publishing.",
+        )
+    accepted = {n.profile_id for n in project.nominations if n.status == "accepted"}
+    if accepted and manager.id not in accepted:
+        raise HTTPException(
+            status_code=400,
+            detail="The manager must be one of the suggested managers who accepted.",
+        )
 
     # R2. The party inspecting a phase decides whether the builder gets paid
     # for it, so it cannot be the builder. A group can hold both profiles,
@@ -855,10 +981,22 @@ async def add_document(
     could set it themselves would make the badge worth nothing.
     """
     project, _ = await _owned_project(db, slug, current_user)
+    if payload.is_pack:
+        # The pack is frozen once investors can rely on it: replacing it on
+        # an open raise would change the terms underneath them.
+        if project.status != RaiseStatusEnum.draft and any(d.is_pack for d in project.documents):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This raise is open; its project pack is fixed and cannot be replaced.",
+            )
+        for d in project.documents:
+            d.is_pack = False
     document = CollectionDocument(
         project_id=project.id,
         label=payload.label,
         file_url=payload.file_url,
+        is_pack=payload.is_pack,
+        sha256=await _fingerprint(payload.file_url),
         status=DocumentStatusEnum.uploaded
         if payload.file_url
         else DocumentStatusEnum.missing,
@@ -1049,6 +1187,136 @@ async def post_phase_update(
     await db.commit()
     await db.refresh(update)
     return PhaseUpdateOut.model_validate(update)
+
+
+# ---- manager nominations ---------------------------------------------------
+
+
+@router.get("/nominations/mine", response_model=List[NominationInviteOut])
+async def my_nominations(
+    current_user: ActiveUser,
+    identity: LinkedIdentityDep,
+    db: AsyncSession = Depends(get_db),
+):
+    """Raises whose builder suggested one of my manager profiles."""
+    rows = (
+        (
+            await db.execute(
+                select(CollectionManagerNomination)
+                .join(CollectionProfile, CollectionProfile.id == CollectionManagerNomination.profile_id)
+                .where(CollectionProfile.user_id.in_(identity.ids))
+                .order_by(CollectionManagerNomination.id.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    out = []
+    for n in rows:
+        base = _nomination_out(n).model_dump()
+        out.append(
+            NominationInviteOut(
+                **base,
+                project_slug=n.project.slug,
+                project_name=n.project.name,
+                project_location=n.project.location,
+                builder_name=n.project.builder.display_name if n.project.builder else None,
+            )
+        )
+    return out
+
+
+@router.post("/nominations/{nomination_id}/respond", response_model=NominationOut)
+async def respond_to_nomination(
+    nomination_id: int,
+    payload: NominationRespond,
+    current_user: ActiveUser,
+    identity: LinkedIdentityDep,
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept or decline being suggested as a raise's property manager.
+
+    Accepting fixes your fee and pledge for this raise as they are now, so
+    investors vote on terms that cannot shift afterwards. A manager also
+    inspects and signs off each building phase.
+    """
+    n = await db.get(CollectionManagerNomination, nomination_id)
+    if n is None:
+        raise HTTPException(status_code=404, detail="Nomination not found")
+    if n.profile is None or n.profile.user_id not in identity.ids:
+        raise HTTPException(status_code=403, detail="That nomination is not for you.")
+    if n.project.status != RaiseStatusEnum.draft:
+        raise HTTPException(status_code=409, detail="This raise is already open.")
+    if payload.accept:
+        if n.profile.fee_bps is None or not (n.profile.pledge or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Set your fee and your pledge in Business profile before accepting.",
+            )
+        n.status = "accepted"
+        n.fee_bps = n.profile.fee_bps
+        n.pledge = n.profile.pledge
+    else:
+        n.status = "declined"
+    n.responded_at = _utc_now()
+    await db.commit()
+    await db.refresh(n)
+    return _nomination_out(n)
+
+
+# ---- project updates -------------------------------------------------------
+
+
+@router.get("/projects/{slug}/updates", response_model=List[ProjectUpdateOut])
+async def project_updates(slug: str, db: AsyncSession = Depends(get_db)):
+    project = (
+        await db.execute(select(CollectionProject).where(CollectionProject.slug == slug))
+    ).scalar_one_or_none()
+    if project is None or project.status == RaiseStatusEnum.draft:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return [ProjectUpdateOut.model_validate(u) for u in project.updates]
+
+
+@router.post(
+    "/projects/{slug}/updates",
+    response_model=ProjectUpdateOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_project_update(
+    slug: str,
+    payload: ProjectUpdateCreate,
+    current_user: ActiveUser,
+    identity: LinkedIdentityDep,
+    db: AsyncSession = Depends(get_db),
+):
+    """News for holders from the builder or the raise's manager only."""
+    project = (
+        await db.execute(select(CollectionProject).where(CollectionProject.slug == slug))
+    ).scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    author = None
+    for profile in (project.builder, project.manager):
+        if profile is not None and profile.user_id in identity.ids:
+            author = profile
+            break
+    if author is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the builder or the property manager can post an update here.",
+        )
+    update = CollectionProjectUpdate(
+        project_id=project.id,
+        author_id=current_user.id,
+        author_name=author.display_name,
+        kind=payload.kind,
+        body=payload.body,
+        image_url=payload.image_url,
+    )
+    db.add(update)
+    await db.commit()
+    await db.refresh(update)
+    return ProjectUpdateOut.model_validate(update)
 
 
 # ---- chain sync ------------------------------------------------------------
