@@ -37,7 +37,7 @@ interface ModeProviderProps {
 
 // Shared with ApiContext, which reads the same choice at login time from
 // outside this provider — see utilities/profileStorage.ts.
-import { MODE_STORAGE_KEY, REMEMBERED_CHOICE_KEY } from "@/utilities/profileStorage"
+import { ANSWERED_THIS_SIGNIN_KEY, MODE_STORAGE_KEY, REMEMBERED_CHOICE_KEY } from "@/utilities/profileStorage"
 
 export const ModeProvider: React.FC<ModeProviderProps> = ({ children, switchAccount, isAuthenticated = false }) => {
   const [mode, setMode] = useState<Mode>("buyer")
@@ -48,14 +48,16 @@ export const ModeProvider: React.FC<ModeProviderProps> = ({ children, switchAcco
   useEffect(() => {
     const loadMode = async () => {
       try {
-        const [savedMode, remembered] = await Promise.all([
+        const [savedMode, remembered, answered] = await Promise.all([
           AsyncStorage.getItem(MODE_STORAGE_KEY),
           AsyncStorage.getItem(REMEMBERED_CHOICE_KEY),
+          AsyncStorage.getItem(ANSWERED_THIS_SIGNIN_KEY),
         ])
         if (savedMode === "buyer" || savedMode === "seller") {
           setMode(savedMode)
         }
-        setHasRememberedChoice(remembered === "true")
+        // Remembered: never asked again. Otherwise asked once per sign-in.
+        setHasRememberedChoice(remembered === "true" || answered === "true")
       } catch (error) {
         console.error("Failed to load mode from storage:", error)
         // Treat an unreadable store as "not remembered": asking again is a
@@ -67,6 +69,19 @@ export const ModeProvider: React.FC<ModeProviderProps> = ({ children, switchAcco
     }
     loadMode()
   }, [])
+
+  // Signing out ends the choice (ApiContext removes it from storage). Forget
+  // it here too, so the next sign-in in this tab is asked once.
+  const wasAuthenticated = useRef(isAuthenticated)
+  useEffect(() => {
+    if (wasAuthenticated.current && !isAuthenticated) {
+      // A remembered choice outlives sign-out; a one-time answer does not.
+      AsyncStorage.getItem(REMEMBERED_CHOICE_KEY)
+        .then((remembered) => setHasRememberedChoice(remembered === "true"))
+        .catch(() => setHasRememberedChoice(false))
+    }
+    wasAuthenticated.current = isAuthenticated
+  }, [isAuthenticated])
 
   // Track whether mode was changed by toggleMode (to avoid duplicate switchAccount calls)
   const isTogglingRef = useRef(false)
@@ -144,6 +159,7 @@ export const ModeProvider: React.FC<ModeProviderProps> = ({ children, switchAcco
 
   const rememberChoice = async (remember: boolean) => {
     try {
+      await AsyncStorage.setItem(ANSWERED_THIS_SIGNIN_KEY, "true")
       if (remember) {
         await AsyncStorage.setItem(REMEMBERED_CHOICE_KEY, "true")
       } else {
