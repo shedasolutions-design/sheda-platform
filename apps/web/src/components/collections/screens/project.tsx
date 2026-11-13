@@ -4,10 +4,19 @@ import { InterMedium, InterRegular, InterSemiBold } from "@/components/collectio
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, View } from "@/components/collections/rn";
 import { Stack, router, useLocalSearchParams } from "@/components/collections/nav";
-import { TierBadge } from "@/components/collections/Score";
 import { Building, MapPin } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import InfoTip, { MoreText } from "@/components/ui/InfoTip";
+import {
+  BuilderStrip,
+  ManagerSection,
+  MoreInformation,
+  ProjectPackCard,
+  ProjectTimeline,
+  UpdatesFeed,
+} from "@/components/collections/ProjectSections";
+import { OsmMap } from "@/components/collections/RaiseExtras";
+import { PROJECT_TYPE_TEXT } from "@/services/collections/copy";
 import {
   DEFAULT_FEE_BPS,
   perPeriod,
@@ -18,14 +27,11 @@ import {
   type Period,
 } from "@/services/collections/rent";
 import {
-  Avatar,
   Badge,
   C,
   Card,
-  Chevron,
   CollectionsButton,
   Empty,
-  ListRow,
   Meter,
   Note,
   Screen,
@@ -35,7 +41,6 @@ import {
   TYPE,
 } from "@/components/collections/ui";
 import { useCollections, useUnitPositions } from "@/hooks/useCollections";
-import { scoreFor } from "@/services/collections/ranking";
 import { formatWithSymbol } from "@/services/collections/money";
 import { DEFAULT_TOKEN } from "@/config/tokens";
 import { useApi } from "@/contexts/ApiContext";
@@ -45,7 +50,6 @@ import apiService from "@/services/api";
 import { DocumentList, DocumentUploader, PhotoAdder, PhotoGallery } from "@/components/collections/Attachments";
 import type {
   CollectionPhase,
-  CollectionProfile,
   CollectionProjectDetail,
 } from "@/services/api";
 
@@ -63,6 +67,7 @@ export default function ProjectDetail() {
   const { getProject, loading, error, connected } = useCollections();
   const { user } = useApi();
   const [project, setProject] = useState<CollectionProjectDetail | null>(null);
+  const [tab, setTab] = useState<"about" | "updates">("about");
 
   const load = useCallback(async () => {
     const result = await getProject(String(slug));
@@ -126,60 +131,91 @@ export default function ProjectDetail() {
         ) : null}
 
         <ProjectSummary project={project} />
+        {project.builder ? <BuilderStrip builder={project.builder} /> : null}
 
-        {project.description ? (
-          <div>
-            <h2 className="mb-1 text-sm font-semibold text-primaryText">Description</h2>
-            <MoreText text={project.description} className="text-sm leading-relaxed text-secondaryText" />
-          </div>
-        ) : null}
+        <div className="flex border-b border-borderColor" role="tablist">
+          {(["about", "updates"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+              className={`flex-1 py-2.5 text-sm font-medium ${
+                tab === t ? "border-b-2 border-primary text-primary" : "text-secondaryText"
+              }`}
+            >
+              {t === "about" ? "About" : `Updates${updateCount(project) ? ` (${updateCount(project)})` : ""}`}
+            </button>
+          ))}
+        </div>
 
-        <KeyNumbers project={project} released={released} />
-
-        {["stalled", "failed", "cancelled"].includes(project.status) ? null : (
-          <RentEstimator project={project} isOwner={isOwner} onChanged={load} />
-        )}
-
-        <Section title="Who is behind this">
-          {project.builder ? <PersonRow profile={project.builder} role="Builder" /> : null}
-          {project.manager ? (
-            <PersonRow profile={project.manager} role="Property manager" />
-          ) : null}
-          {sameGroup(project) ? (
-            <Note>
-              The manager is part of the builder&apos;s own group, so they may not sign off these
-              construction phases. An independent reviewer is required before any money is
-              released.
-            </Note>
-          ) : null}
-        </Section>
-
-        {project.documents.length > 0 || isOwner ? (
-          <Section title="Documents">
-            <DocumentList
-              documents={project.documents}
-              empty="The builder has not attached any documents yet. Ask for the plans, budget and title before you invest."
-            />
-            {isOwner ? (
-              <DocumentUploader
-                kinds={RAISE_DOCUMENT_KINDS}
-                onAttach={async (label, fileUrl) => {
-                  const err = errorOf(await apiService.addCollectionDocument(project.slug, { label, file_url: fileUrl }));
-                  if (!err) await load();
-                  return err;
-                }}
-              />
+        {tab === "updates" ? (
+          <UpdatesFeed
+            project={project}
+            canPost={isOwner || (!!user?.id && project.manager?.user_id === Number(user.id))}
+            onPosted={load}
+          />
+        ) : (
+          <>
+            {project.description ? (
+              <div>
+                <h2 className="mb-1 text-sm font-semibold text-primaryText">Description</h2>
+                <MoreText text={project.description} className="text-sm leading-relaxed text-secondaryText" />
+              </div>
             ) : null}
-          </Section>
-        ) : null}
 
-        {project.phases.length > 0 ? <PhaseList project={project} onChanged={load} /> : null}
+            <ProjectTimeline project={project} />
 
-        {connected ? <MoneyBack slug={project.slug} /> : null}
+            <KeyNumbers project={project} released={released} />
 
-        {connected && project.unit_list.length > 0 ? (
-          <YourShares project={project} />
-        ) : null}
+            {["stalled", "failed", "cancelled"].includes(project.status) ? null : (
+              <RentEstimator project={project} isOwner={isOwner} onChanged={load} />
+            )}
+
+            {project.latitude != null && project.longitude != null ? (
+              <section className="space-y-2">
+                <h2 className="text-sm font-semibold text-primaryText">Location</h2>
+                <OsmMap lat={project.latitude} lon={project.longitude} label={project.name} />
+                <p className="text-xs text-secondaryText">{project.address || project.location}</p>
+              </section>
+            ) : null}
+
+            <ManagerSection project={project} />
+
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold text-primaryText">Project pack and documents</h2>
+              <ProjectPackCard project={project} />
+              {project.documents.some((d) => !d.is_pack) ? (
+                <DocumentList documents={project.documents.filter((d) => !d.is_pack)} />
+              ) : null}
+              {isOwner ? (
+                <DocumentUploader
+                  kinds={RAISE_DOCUMENT_KINDS}
+                  onAttach={async (label, fileUrl) => {
+                    const err = errorOf(
+                      await apiService.addCollectionDocument(project.slug, {
+                        label,
+                        file_url: fileUrl,
+                        is_pack: label === PACK_KIND,
+                      })
+                    );
+                    if (!err) await load();
+                    return err;
+                  }}
+                />
+              ) : null}
+            </section>
+
+            {project.phases.length > 0 ? <PhaseList project={project} onChanged={load} /> : null}
+
+            <MoreInformation project={project} />
+
+            {connected ? <MoneyBack slug={project.slug} /> : null}
+
+            {connected && project.unit_list.length > 0 ? <YourShares project={project} /> : null}
+          </>
+        )}
 
         {project.unit_list.length > 0 ? (
           <div className="sticky bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 -mx-1 bg-white/95 px-1 pb-3 pt-2 backdrop-blur md:bottom-0">
@@ -200,6 +236,10 @@ export default function ProjectDetail() {
       </Screen>
     </>
   );
+}
+
+function updateCount(project: CollectionProjectDetail): number {
+  return (project.updates?.length ?? 0) + project.phases.reduce((n, ph) => n + (ph.updates?.length ?? 0), 0);
 }
 
 /** Live funding figures from the flats; shares sold come from the contract. */
@@ -269,6 +309,11 @@ function ProjectSummary({ project }: { project: CollectionProjectDetail }) {
         <span className="rounded-lg border border-borderColor px-2.5 py-1">
           {STATUS_TEXT[project.status] ?? project.status}
         </span>
+        {project.project_type ? (
+          <span className="rounded-lg border border-borderColor px-2.5 py-1">
+            {PROJECT_TYPE_TEXT[project.project_type] ?? project.project_type}
+          </span>
+        ) : null}
       </div>
       <div className="flex items-end justify-between gap-3">
         <p className="text-lg font-semibold text-primaryText">
@@ -738,45 +783,11 @@ function YourShares({ project }: { project: CollectionProjectDetail }) {
   );
 }
 
-/** R2. A manager inside the builder's own group may not inspect its work. */
-function sameGroup(project: CollectionProjectDetail): boolean {
-  const group = project.manager?.part_of_group?.trim().toLowerCase();
-  const builder = project.builder?.display_name.trim().toLowerCase();
-  return Boolean(group && builder && group === builder);
-}
-
-function PersonRow({ profile, role }: { profile: CollectionProfile; role: string }) {
-  const score = scoreFor(profile);
-
-  return (
-    <ListRow
-      leading={<Avatar name={profile.display_name} size={40} />}
-      title={profile.display_name}
-      subtitle={`${role}${profile.location ? ` · ${profile.location}` : ""}`}
-      onPress={() => router.push(`/collections/person/${profile.id}`)}
-      right={
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <View style={{ alignItems: "flex-end", gap: 3 }}>
-            {score.tier === "unrated" ? (
-              <TierBadge tier="unrated" />
-            ) : (
-              <>
-                <InterSemiBold style={{ ...TYPE.heading, color: C.text }}>
-                  {score.total}
-                </InterSemiBold>
-                <TierBadge tier={score.tier} />
-              </>
-            )}
-          </View>
-          <Chevron />
-        </View>
-      }
-    />
-  );
-}
-
 /** What a builder is asked to attach to a raise. */
+const PACK_KIND = "Project pack (every agreement and term)";
+
 const RAISE_DOCUMENT_KINDS = [
+  PACK_KIND,
   "Building plans (architectural drawings)",
   "Budget / bill of quantities",
   "Title document (C of O, Governor's Consent)",

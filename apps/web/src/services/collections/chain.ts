@@ -14,6 +14,7 @@
 import nearContractService from "@/services/nearContract";
 import {
   COLLECTIONS_GAS,
+  COLLECTIONS_MARKETPLACE_ID,
   NO_DEPOSIT,
   ONE_YOCTO,
   RAISE_CONTRACT_ID,
@@ -761,4 +762,33 @@ export async function getRoundPosition(projectSlug: string, accountId: string): 
     refunded: Boolean(refunded),
     sharesOwed: owed.reduce((a, b) => a + b, BigInt(0)),
   };
+}
+
+/** What a finished flat is doing: handed over, listed for rent, or let. */
+export interface FlatStage {
+  stage: "building" | "with_manager" | "listed" | "rented" | "redeemed";
+  leaseEndsMs?: number;
+}
+
+/**
+ * Read a flat's stage from its vault (handover) and the marketplace
+ * (listing and lease). The vault lists the flat under its property id.
+ */
+export async function getFlatStage(vaultId: string): Promise<FlatStage> {
+  const info = await getVaultInfo(vaultId);
+  const state = custodyState(info.custody);
+  if (state === "awaiting") return { stage: "building" };
+  if (state === "redeemed") return { stage: "redeemed" };
+  const property = await nearContractService
+    .viewOn<{
+      price: string;
+      lease_duration_days?: number | null;
+      active_lease?: { active: boolean; end_time: number } | null;
+    } | null>(COLLECTIONS_MARKETPLACE_ID, "get_property_by_id", { property_id: Number(info.property_id) })
+    .catch(() => null);
+  if (property?.active_lease?.active) {
+    return { stage: "rented", leaseEndsMs: Math.floor(Number(property.active_lease.end_time) / 1_000_000) };
+  }
+  if (property && property.lease_duration_days && BigInt(property.price || "0") > BigInt(0)) return { stage: "listed" };
+  return { stage: "with_manager" };
 }
