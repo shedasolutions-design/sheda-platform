@@ -11,7 +11,7 @@ import React, {
 import { AppState, type AppStateStatus } from "@/lib/appState";
 import type { FilterValues } from "@/utilities/searchFilters";
 import AsyncStorage from "@/lib/storage";
-import { getRememberedProfile } from "@/utilities/profileStorage";
+import { getRememberedProfile, ANSWERED_THIS_SIGNIN_KEY } from "@/utilities/profileStorage";
 import apiService, {
   UserShow,
   Token,
@@ -884,7 +884,7 @@ export function ApiProvider({ children }: ApiProviderProps) {
             "❌ Token expired or invalid, clearing auth data:",
             error
           );
-          await AsyncStorage.multiRemove(["auth_token", "user_data"]);
+          await AsyncStorage.multiRemove(["auth_token", "user_data", ANSWERED_THIS_SIGNIN_KEY]);
           await apiService.clearToken();
           dispatch({ type: "SET_TOKEN", payload: null });
           dispatch({ type: "SET_USER", payload: null });
@@ -1192,7 +1192,7 @@ export function ApiProvider({ children }: ApiProviderProps) {
     }
 
     // Clear AsyncStorage
-    await AsyncStorage.multiRemove(["auth_token", "user_data"]);
+    await AsyncStorage.multiRemove(["auth_token", "user_data", ANSWERED_THIS_SIGNIN_KEY]);
     console.log("🗑️ Cleared AsyncStorage data");
 
     // Drop primed Inbox/Activity lists too — they're account-scoped, but a
@@ -1472,7 +1472,7 @@ export function ApiProvider({ children }: ApiProviderProps) {
     }
 
     // Clear AsyncStorage
-    await AsyncStorage.multiRemove(["auth_token", "user_data"]);
+    await AsyncStorage.multiRemove(["auth_token", "user_data", ANSWERED_THIS_SIGNIN_KEY]);
     await apiService.clearToken();
     dispatch({ type: "RESET_STATE" });
     console.log("✅ Account deletion and cleanup completed");

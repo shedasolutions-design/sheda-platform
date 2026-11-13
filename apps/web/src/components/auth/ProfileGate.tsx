@@ -20,10 +20,8 @@ import ViewingHoursPrompt from "@/components/seller/ViewingHoursPrompt";
 /** Flows that own the whole screen and must not be redirected out of. */
 const PROTECTED_FLOWS = ["wallet-setup", "wallet-recovery"];
 
-const DESTINATIONS: Record<Profile, string> = {
-  buyer: "/home",
-  seller: "/activity",
-};
+/** Everyone starts on Home after choosing; sellers reach Activities from the tab bar. */
+const DESTINATION = "/home";
 
 export default function ProfileGate() {
   const { isAuthenticated } = useApi();
@@ -50,11 +48,15 @@ export default function ProfileGate() {
       setError(null);
       try {
         await setModeExplicitly(profile);
+        // Remembered: kept across sign-outs. Not remembered: kept for this
+        // sign-in. The answer used to live only in memory, so every reload,
+        // shared link or full page change (Collections, a property page)
+        // asked again.
         await rememberChoice(remember);
         answeredThisSession.current = true;
         setAnswered(true);
         if (!PROTECTED_FLOWS.some((flow) => pathname?.includes(flow))) {
-          router.replace(DESTINATIONS[profile]);
+          router.replace(DESTINATION);
         }
       } catch (err: any) {
         setError(err?.message || "Couldn't switch profile. Check your connection and try again.");
