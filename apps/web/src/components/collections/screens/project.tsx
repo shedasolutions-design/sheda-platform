@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, View } from "@/components/collections/rn";
 import { Stack, router, useLocalSearchParams } from "@/components/collections/nav";
 import { TierBadge } from "@/components/collections/Score";
+import { Building, MapPin } from "lucide-react";
 import {
   Avatar,
   Badge,
@@ -12,7 +13,6 @@ import {
   Card,
   Chevron,
   CollectionsButton,
-  Divider,
   Empty,
   ListRow,
   Meter,
@@ -99,59 +99,31 @@ export default function ProjectDetail() {
     <>
       <Stack.Screen options={{ title: "Project" }} />
       <Screen>
-        <View style={{ gap: 9 }}>
-          <InterSemiBold style={{ ...TYPE.display, color: C.text }}>{project.name}</InterSemiBold>
-          <InterRegular style={{ ...TYPE.label, color: C.textSecondary }}>
-            {project.location} · {project.units} units
-          </InterRegular>
-          <PhotoGallery urls={project.image_urls ?? []} alt={project.name} />
-          {isOwner ? (
-            <PhotoAdder
-              onAttach={async (urls) => {
-                const start = project.image_urls?.length ?? 0;
-                for (let i = 0; i < urls.length; i++) {
-                  const err = errorOf(await apiService.addCollectionImage(project.slug, { image_url: urls[i], position: start + i }));
-                  if (err) return err;
-                }
-                await load();
-                return null;
-              }}
-            />
-          ) : null}
-          {project.description ? (
-            <InterRegular style={{ ...TYPE.body, color: C.text }}>
-              {project.description}
-            </InterRegular>
-          ) : null}
-        </View>
+        <PhotoGallery urls={project.image_urls ?? []} alt={project.name} />
+        {isOwner ? (
+          <PhotoAdder
+            onAttach={async (urls) => {
+              const start = project.image_urls?.length ?? 0;
+              for (let i = 0; i < urls.length; i++) {
+                const err = errorOf(await apiService.addCollectionImage(project.slug, { image_url: urls[i], position: start + i }));
+                if (err) return err;
+              }
+              await load();
+              return null;
+            }}
+          />
+        ) : null}
 
-        <Card>
-          <View style={{ gap: 13 }}>
-            <StatRow>
-              <StatTile
-                label="Estimated return"
-                value={
-                  project.estimated_return_pct != null
-                    ? `${project.estimated_return_pct}% a year`
-                    : "Not stated"
-                }
-                note="the builder's figure"
-              />
-              <StatTile
-                label="Released so far"
-                value={`${(released / 100).toFixed(0)}%`}
-                tone={released > 0 ? "positive" : "plain"}
-                note="of the raise"
-              />
-            </StatRow>
+        <ProjectSummary project={project} />
 
-            <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
-              The return is the builder&apos;s own estimate. Sheda does not verify it and does not
-              guarantee it. What the raise is worth and what it has collected are held on chain,
-              not here.
-            </InterRegular>
-          </View>
-        </Card>
+        {project.description ? (
+          <div>
+            <h2 className="mb-1 text-sm font-semibold text-primaryText">Description</h2>
+            <p className="text-sm leading-relaxed text-secondaryText">{project.description}</p>
+          </div>
+        ) : null}
+
+        <KeyNumbers project={project} released={released} />
 
         <Section title="Who is behind this">
           {project.builder ? <PersonRow profile={project.builder} role="Builder" /> : null}
@@ -195,10 +167,15 @@ export default function ProjectDetail() {
         ) : null}
 
         {project.unit_list.length > 0 ? (
-          <CollectionsButton
-            label="Choose a unit"
-            onPress={() => router.push(`/collections/project/${project.slug}/units`)}
-          />
+          <div className="sticky bottom-0 -mx-1 bg-white/95 px-1 pb-3 pt-2 backdrop-blur">
+            <button
+              type="button"
+              onClick={() => router.push(`/collections/project/${project.slug}/units`)}
+              className="w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-white hover:bg-[#a82227]"
+            >
+              {project.status === "open" ? "Invest now" : "See the flats"}
+            </button>
+          </div>
         ) : (
           <Empty
             title="No units listed yet"
@@ -207,6 +184,104 @@ export default function ProjectDetail() {
         )}
       </Screen>
     </>
+  );
+}
+
+/** Live funding figures from the flats; shares sold come from the contract. */
+function fundingOf(project: CollectionProjectDetail) {
+  let target = 0n;
+  let raised = 0n;
+  let open = 0;
+  let minShare: bigint | null = null;
+  for (const u of project.unit_list) {
+    const price = BigInt(u.price_atomic || "0");
+    const total = BigInt(u.total_shares || "0");
+    const sold = BigInt(u.shares_sold || "0");
+    target += price;
+    if (total > 0n) {
+      raised += (sold * price) / total;
+      const per = price / total;
+      if (minShare === null || per < minShare) minShare = per;
+    }
+    if (sold < total) open += 1;
+  }
+  const pct = target > 0n ? Math.min(100, Number((raised * 100n) / target)) : 0;
+  return { target, raised, open, minShare, pct };
+}
+
+const STATUS_TEXT: Record<string, string> = {
+  open: "Open to invest",
+  funded: "Fully funded",
+  building: "Being built",
+  delivered: "Completed",
+  stalled: "Stopped",
+  failed: "Did not reach target",
+  cancelled: "Cancelled",
+};
+
+function ProjectSummary({ project }: { project: CollectionProjectDetail }) {
+  const { pct, raised, target } = fundingOf(project);
+  const open = project.status === "open";
+  return (
+    <div className="space-y-3">
+      <div>
+        <h1 className="text-lg font-semibold text-primaryText">{project.name}</h1>
+        <p className="mt-0.5 inline-flex items-center gap-1 text-xs text-secondaryText">
+          <MapPin size={13} /> {project.location}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2 text-xs text-primaryText">
+        <span className="inline-flex items-center gap-1 rounded-lg border border-borderColor px-2.5 py-1">
+          <Building size={13} /> {project.units} flat{project.units === 1 ? "" : "s"}
+        </span>
+        <span className="rounded-lg border border-borderColor px-2.5 py-1">
+          {STATUS_TEXT[project.status] ?? project.status}
+        </span>
+      </div>
+      <div className="flex items-end justify-between gap-3">
+        <p className="text-lg font-semibold text-primaryText">
+          {project.estimated_return_pct != null ? `${project.estimated_return_pct}% a year` : "Return not stated"}
+          <span className="ml-1 text-xs font-normal text-secondaryText">est.</span>
+        </p>
+        <p className={`text-sm font-medium ${open ? "text-primary" : "text-secondaryText"}`}>
+          {open ? `${pct}% funded` : STATUS_TEXT[project.status] ?? ""}
+        </p>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+        <div className="h-full rounded-full bg-primary" style={{ width: `${open ? pct : 100}%` }} />
+      </div>
+      {target > 0n ? (
+        <p className="text-xs text-secondaryText">
+          {formatWithSymbol(raised.toString(), DEFAULT_TOKEN)} raised of {formatWithSymbol(target.toString(), DEFAULT_TOKEN)}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function KeyNumbers({ project, released }: { project: CollectionProjectDetail; released: number }) {
+  const { open, minShare } = fundingOf(project);
+  const rows: [string, string][] = [
+    ["Flats open to invest", `${open} of ${project.unit_list.length || project.units}`],
+    ["Price per share", minShare != null ? `from ${formatWithSymbol(minShare.toString(), DEFAULT_TOKEN)}` : "—"],
+    ["Estimated return", project.estimated_return_pct != null ? `${project.estimated_return_pct}% a year` : "Not stated"],
+    ["Released to the builder", `${(released / 100).toFixed(0)}% of the raise`],
+  ];
+  return (
+    <div>
+      <dl className="space-y-2 text-sm">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex justify-between gap-3">
+            <dt className="text-secondaryText">{k}</dt>
+            <dd className="font-medium text-primaryText">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-3 text-xs leading-relaxed text-secondaryText">
+        The return is the builder&apos;s own estimate. Sheda does not verify it and does not guarantee it. What the
+        raise has collected is read from the blockchain, not from us.
+      </p>
+    </div>
   );
 }
 

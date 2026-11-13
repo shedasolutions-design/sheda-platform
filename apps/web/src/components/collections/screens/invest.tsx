@@ -10,7 +10,6 @@ import {
   C,
   Card,
   CollectionsButton,
-  Divider,
   Empty,
   FinePrint,
   ListRow,
@@ -19,13 +18,16 @@ import {
   PageTitle,
   Screen,
   Section,
-  StatRow,
-  StatTile,
   TYPE,
 } from "@/components/collections/ui";
 import { useMode } from "@/contexts/ModeContext";
-import { useCollections, useMyCollectionProfiles } from "@/hooks/useCollections";
+import { useMyCollectionProfiles } from "@/hooks/useCollections";
 import apiService, { type CollectionProjectSummary } from "@/services/api";
+import Link from "next/link";
+import { Building, MapPin } from "lucide-react";
+import { useCurrency } from "@/contexts/CurrencyContext";
+import nearContractService from "@/services/nearContract";
+import { RAISE_CONTRACT_ID } from "@/config/collections";
 
 /**
  * Invest: the way into Collections, from whichever side you are on.
@@ -48,107 +50,244 @@ export default function Invest() {
 
 // ---- buyer -----------------------------------------------------------------
 
+type Filter = "all" | "open" | "funded" | "closed";
+
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "open", label: "Open" },
+  { id: "funded", label: "Funded" },
+  { id: "closed", label: "Closed" },
+];
+
+/** A raise as a card needs it: the backend summary plus the contract's live numbers. */
+interface RaiseView {
+  project: CollectionProjectSummary;
+  status: string;
+  raised: bigint;
+  target: bigint;
+  flatsOpen: number;
+  flats: number;
+  /** Cheapest price of one share, in USDC atomic units (6 decimals). */
+  minSharePrice: bigint | null;
+}
+
+function bucket(status: string): Filter {
+  if (status === "open") return "open";
+  if (status === "funded" || status === "building") return "funded";
+  return "closed";
+}
+
+/**
+ * Invest, laid out after the ideation design: a header with Portfolio, filter
+ * chips, and a photo card per building with its live funding bar, flats still
+ * open, price per share and estimated return. Funding and status come from
+ * the raise contract, the record; the backend supplies photos and names.
+ */
 function BuyerSide() {
-  const { listProjects, loading, error } = useCollections();
-  const [projects, setProjects] = useState<CollectionProjectSummary[] | null>(null);
+  const [views, setViews] = useState<RaiseView[] | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const result = await listProjects();
-    if (result) setProjects(result);
-  }, [listProjects]);
+    setError(null);
+    const response = await apiService.getCollectionProjects({});
+    if (!response.ok) {
+      setError("We could not load the buildings. Pull to try again.");
+      setViews([]);
+      return;
+    }
+    const summaries = response.data as CollectionProjectSummary[];
+    const loaded = await Promise.all(
+      summaries.map(async (project): Promise<RaiseView> => {
+        try {
+          const live = await nearContractService.viewOn<{
+            status: string;
+            raised: string | number;
+            target: string | number;
+            units?: { price: string | number; total_shares: string | number; raised: string | number }[];
+          } | null>(project.escrow_account_id || RAISE_CONTRACT_ID, "get_project", { project_id: project.slug });
+          const units = live?.units ?? [];
+          const prices = units
+            .map((u) => (BigInt(String(u.total_shares)) > 0n ? BigInt(String(u.price)) / BigInt(String(u.total_shares)) : null))
+            .filter((p): p is bigint => p !== null);
+          return {
+            project,
+            status: live ? live.status.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase() : project.status,
+            raised: BigInt(String(live?.raised ?? 0)),
+            target: BigInt(String(live?.target ?? 0)),
+            flatsOpen: units.filter((u) => BigInt(String(u.raised)) < BigInt(String(u.price))).length,
+            flats: units.length || project.units,
+            minSharePrice: prices.length ? prices.reduce((a, b) => (b < a ? b : a)) : null,
+          };
+        } catch {
+          return { project, status: project.status, raised: 0n, target: 0n, flatsOpen: 0, flats: project.units, minSharePrice: null };
+        }
+      })
+    );
+    setViews(loaded);
+  }, []);
 
   useEffect(() => {
-    load();
+    // Deferred a tick so the effect itself sets no state.
+    const t = setTimeout(load, 0);
+    return () => clearTimeout(t);
   }, [load]);
 
+  const shown = (views ?? []).filter((v) => filter === "all" || bucket(v.status) === filter);
+
   return (
-    <Screen refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={C.primary} />}>
-      <PageTitle
-        title="Back a building"
-        subtitle="Put money into a development before it is built, and earn a share of the rent once it is let."
-      />
+    <div className="mx-auto max-w-3xl px-5 pb-10 pt-5">
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-primaryText">Invest</h1>
+        <Link href="/collections/holdings" className="text-sm font-medium text-primary">
+          Portfolio
+        </Link>
+      </div>
 
-      <ListRow
-        title="Your holdings"
-        subtitle="Units you hold, and rent ready to claim"
-        onPress={() => router.push("/collections/holdings")}
-      />
-      <ListRow
-        title="Who you are backing"
-        subtitle="Builders and managers, ranked on what the chain recorded"
-        onPress={() => router.push("/collections/directory")}
-      />
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-1" role="tablist">
+        {FILTERS.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            role="tab"
+            aria-selected={filter === f.id}
+            onClick={() => setFilter(f.id)}
+            className={`shrink-0 rounded-xl px-4 py-2 text-sm transition ${
+              filter === f.id ? "bg-primary text-white" : "bg-primaryLight text-secondaryText hover:bg-active"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
 
-      {error ? <Note tone="critical">{error}</Note> : null}
+      {error ? <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
 
-      <Section title="Open raises">
-        {loading && projects === null ? (
-          <View style={{ paddingVertical: 36, alignItems: "center" }}>
-            <ActivityIndicator color={C.primary} />
-          </View>
-        ) : projects && projects.length > 0 ? (
-          projects.map((p) => <RaiseCard key={p.id} project={p} />)
-        ) : (
-          <Empty
-            title="No raises are open"
-            body="When a builder opens one it will appear here, with its phase schedule and who is behind it."
-          />
-        )}
-      </Section>
+      {views === null ? (
+        <div className="flex justify-center py-16">
+          <ActivityIndicator color={C.primary} />
+        </div>
+      ) : shown.length === 0 ? (
+        <div className="rounded-2xl border border-borderColor px-6 py-12 text-center">
+          <p className="font-semibold text-primaryText">
+            {filter === "all" ? "No buildings to invest in yet" : "Nothing here right now"}
+          </p>
+          <p className="mt-1 text-sm text-secondaryText">
+            When a builder opens a raise it appears here, with its phase schedule and who is behind it.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          {shown.map((v) => (
+            <InvestCard key={v.project.id} view={v} />
+          ))}
+        </div>
+      )}
 
-      <FinePrint>
-        Returns shown are each builder&apos;s own estimate. Sheda does not verify them and does
-        not guarantee any return.
-      </FinePrint>
-    </Screen>
+      <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+        <Link href="/collections/directory" className="font-medium text-primary">
+          Builders and managers
+        </Link>
+        <Link href="/business-profile" className="font-medium text-primary">
+          Raise money for a building
+        </Link>
+      </div>
+      <p className="mt-4 text-xs text-secondaryText">
+        Returns shown are each builder&apos;s own estimate. Sheda does not verify them and does not
+        guarantee any return.
+      </p>
+    </div>
   );
 }
 
-function RaiseCard({ project }: { project: CollectionProjectSummary }) {
-  const closes = project.closes_at ? daysUntil(project.closes_at) : null;
+function InvestCard({ view }: { view: RaiseView }) {
+  const { formatPrice, formatUsd, selectedCurrency } = useCurrency();
+  const { project, status, raised, target, flatsOpen, flats, minSharePrice } = view;
+  const pct = target > 0n ? Math.min(100, Number((raised * 100n) / target)) : 0;
+  const open = status === "open";
+  const closes = open && project.closes_at ? daysUntil(project.closes_at) : null;
+  const shareUsd = minSharePrice != null ? Number(minSharePrice) / 1_000_000 : null;
+
+  const statusText =
+    status === "open"
+      ? `${pct}% funded`
+      : status === "funded" || status === "building"
+        ? "Fully funded"
+        : status === "delivered"
+          ? "Completed"
+          : status === "stalled"
+            ? "Stopped"
+            : "Closed";
 
   return (
-    <Card padded={false}>
-      <View style={{ padding: 15, gap: 12 }}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 10 }}>
-          <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-            <InterSemiBold style={{ ...TYPE.heading, color: C.text }}>{project.name}</InterSemiBold>
-            <InterRegular style={{ ...TYPE.label, color: C.textSecondary }}>
-              {project.location} · {project.units} units
-            </InterRegular>
-          </View>
-          <Badge
-            label={closes !== null ? `${closes} days left` : "Open"}
-            tone={closes !== null && closes <= 3 ? "caution" : "brand"}
-          />
-        </View>
+    <article className="overflow-hidden rounded-2xl border border-borderColor bg-white shadow-sm">
+      <Link href={`/collections/project/${project.slug}`} className="block">
+        <div className="relative aspect-[16/9] bg-gray-100">
+          {project.cover_image_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={project.cover_image_url} alt="" className="h-full w-full object-cover" />
+          ) : null}
+          {closes !== null ? (
+            <span className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-primaryText">
+              {closes} day{closes === 1 ? "" : "s"} left
+            </span>
+          ) : null}
+        </div>
+      </Link>
+      <div className="space-y-3 p-4">
+        <div>
+          <h2 className="text-base font-semibold text-primaryText">{project.name}</h2>
+          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-secondaryText">
+            <span className="inline-flex items-center gap-1">
+              <MapPin size={13} /> {project.location}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <Building size={13} /> {flats} flat{flats === 1 ? "" : "s"}
+            </span>
+            {project.builder ? <span>by {project.builder.display_name}</span> : null}
+          </p>
+        </div>
 
-        <StatRow>
-          <StatTile
-            label="Est. return"
-            value={
-              project.estimated_return_pct != null
-                ? `${project.estimated_return_pct}% p.a.`
-                : "Not stated"
-            }
-            note="the builder's figure"
-          />
-          <StatTile
-            label="Builder"
-            value={project.builder?.display_name ?? "Unknown"}
-            note={project.builder?.location ?? undefined}
-          />
-        </StatRow>
+        <div className="flex items-end justify-between gap-3">
+          <p className="text-lg font-semibold text-primaryText">
+            {project.estimated_return_pct != null ? `${project.estimated_return_pct}% a year` : "Return not stated"}
+            <span className="ml-1 text-xs font-normal text-secondaryText">est.</span>
+          </p>
+          <p className={`text-sm font-medium ${open ? "text-primary" : "text-secondaryText"}`}>{statusText}</p>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+          <div className="h-full rounded-full bg-primary" style={{ width: `${open ? pct : 100}%` }} />
+        </div>
 
-        <Divider />
+        <dl className="space-y-1.5 text-sm">
+          <div className="flex justify-between">
+            <dt className="text-secondaryText">Flats open to invest</dt>
+            <dd className="font-medium text-primaryText">
+              {flatsOpen} of {flats}
+            </dd>
+          </div>
+          <div className="flex justify-between">
+            <dt className="text-secondaryText">Price per share</dt>
+            <dd className="font-medium text-primaryText">
+              {shareUsd != null
+                ? selectedCurrency === "USD"
+                  ? `from ${formatUsd(shareUsd)}`
+                  : `from ${formatPrice(shareUsd)} (${formatUsd(shareUsd)})`
+                : "—"}
+            </dd>
+          </div>
+        </dl>
 
-        <ListRow
-          title="See the full raise"
-          subtitle="Phase schedule, documents, and who is behind it"
-          onPress={() => router.push(`/collections/project/${project.slug}`)}
-        />
-      </View>
-    </Card>
+        <Link
+          href={`/collections/project/${project.slug}`}
+          className={`block rounded-xl py-3 text-center text-sm font-semibold ${
+            open ? "bg-primary text-white hover:bg-[#a82227]" : "border border-borderColor text-primaryText hover:bg-cardBackground"
+          }`}
+        >
+          {open ? "Invest now" : "View details"}
+        </Link>
+      </div>
+    </article>
   );
 }
 
