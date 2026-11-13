@@ -14,17 +14,19 @@ has not decided to sign up, and a wall in front of the catalogue is how a
 catalogue stops being read.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.collection import (
     CollectionChainRecord,
     CollectionDocument,
     CollectionManagerNomination,
+    CollectionNotification,
     CollectionPhase,
     CollectionPhaseUpdate,
     CollectionProfile,
@@ -34,6 +36,7 @@ from app.models.collection import (
     CollectionProjectUpdate,
     CollectionRoleEnum,
     CollectionUnit,
+    CollectionWatch,
     DocumentStatusEnum,
     PhaseStateEnum,
     RaiseStatusEnum,
@@ -43,6 +46,7 @@ from app.services.identity import LinkedIdentityDep
 from app.utils.enums import AccountTypeEnum
 from app.schemas.collection_schema import (
     ChainRecordOut,
+    CollectionNotificationOut,
     CollectionProfileCreate,
     CollectionProfileOut,
     CollectionProfileUpdate,
@@ -68,7 +72,9 @@ from app.schemas.collection_schema import (
     UnitRent,
     UnitVaultUpdate,
 )
+from app.services.collection_lifecycle import sweep as lifecycle_sweep
 from app.services.user_service import ActiveUser, AdminUser
+from core.configs import settings
 from core.database import get_db
 
 router = APIRouter(tags=["Collections"], prefix="/collections")
@@ -1196,6 +1202,162 @@ async def post_phase_update(
     await db.commit()
     await db.refresh(update)
     return PhaseUpdateOut.model_validate(update)
+
+
+# ---- following and lifecycle notifications -------------------------------
+
+
+@router.post("/projects/{slug}/watch")
+async def watch_project(
+    slug: str, current_user: ActiveUser, db: AsyncSession = Depends(get_db)
+):
+    """Follow a building: hear when its round closes, fills, a phase is
+    signed off or paid, or a flat is let. The app calls this after you
+    invest or buy shares, and from the Follow button."""
+    project = (
+        await db.execute(select(CollectionProject).where(CollectionProject.slug == slug))
+    ).scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    existing = (
+        await db.execute(
+            select(CollectionWatch).where(
+                CollectionWatch.project_id == project.id, CollectionWatch.user_id == current_user.id
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(
+            CollectionWatch(
+                project_id=project.id,
+                user_id=current_user.id,
+                near_account_id=getattr(current_user, "near_account_id", None),
+            )
+        )
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+    return {"watching": True}
+
+
+@router.delete("/projects/{slug}/watch")
+async def unwatch_project(
+    slug: str, current_user: ActiveUser, identity: LinkedIdentityDep, db: AsyncSession = Depends(get_db)
+):
+    project = (
+        await db.execute(select(CollectionProject).where(CollectionProject.slug == slug))
+    ).scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    rows = (
+        (
+            await db.execute(
+                select(CollectionWatch).where(
+                    CollectionWatch.project_id == project.id, CollectionWatch.user_id.in_(identity.ids)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for row in rows:
+        await db.delete(row)
+    await db.commit()
+    return {"watching": False}
+
+
+@router.get("/projects/{slug}/watch")
+async def is_watching(
+    slug: str, current_user: ActiveUser, identity: LinkedIdentityDep, db: AsyncSession = Depends(get_db)
+):
+    project = (
+        await db.execute(select(CollectionProject).where(CollectionProject.slug == slug))
+    ).scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    row = (
+        await db.execute(
+            select(CollectionWatch.id).where(
+                CollectionWatch.project_id == project.id, CollectionWatch.user_id.in_(identity.ids)
+            )
+        )
+    ).first()
+    return {"watching": row is not None}
+
+
+_last_sweep: dict[str, datetime] = {}
+
+
+async def _sweep_in_background() -> None:
+    """Run the lifecycle sweep on its own session, at most every few minutes."""
+    now = datetime.now(timezone.utc)
+    last = _last_sweep.get("at")
+    if last is not None and now - last < timedelta(minutes=3):
+        return
+    _last_sweep["at"] = now
+    from core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        await lifecycle_sweep(session)
+
+
+@router.get("/notifications", response_model=List[CollectionNotificationOut])
+async def my_invest_notifications(
+    background: BackgroundTasks,
+    current_user: ActiveUser,
+    identity: LinkedIdentityDep,
+    db: AsyncSession = Depends(get_db),
+):
+    """Updates about buildings you invest in or follow, newest first.
+    Opening them also nudges the sweep that produces them."""
+    background.add_task(_sweep_in_background)
+    rows = (
+        (
+            await db.execute(
+                select(CollectionNotification)
+                .where(CollectionNotification.user_id.in_(identity.ids))
+                .order_by(CollectionNotification.created_at.desc())
+                .limit(50)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [CollectionNotificationOut.model_validate(r) for r in rows]
+
+
+@router.post("/notifications/read")
+async def read_invest_notifications(
+    current_user: ActiveUser, identity: LinkedIdentityDep, db: AsyncSession = Depends(get_db)
+):
+    rows = (
+        (
+            await db.execute(
+                select(CollectionNotification).where(
+                    CollectionNotification.user_id.in_(identity.ids),
+                    CollectionNotification.is_read.is_(False),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for r in rows:
+        r.is_read = True
+    await db.commit()
+    return {"read": len(rows)}
+
+
+@router.post("/admin/lifecycle-sweep")
+async def run_lifecycle_sweep(
+    x_cron_key: Optional[str] = Header(default=None), db: AsyncSession = Depends(get_db)
+):
+    """For a scheduled job: run the sweep now. Needs X-Cron-Key."""
+    if not settings.CRON_SECRET or x_cron_key != settings.CRON_SECRET:
+        raise HTTPException(status_code=403, detail="Not allowed")
+    created = await lifecycle_sweep(db, force=True)
+    return {"created": created}
 
 
 # ---- chain terms (Sheda ops) -------------------------------------------------

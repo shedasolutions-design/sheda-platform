@@ -202,6 +202,16 @@ class NominationRespond(BaseModel):
     accept: bool
 
 
+class CollectionNotificationOut(_Base):
+    id: int
+    kind: str
+    title: str
+    body: str
+    link: Optional[str] = None
+    is_read: bool = False
+    created_at: datetime
+
+
 PROJECT_UPDATE_KINDS = ("progress", "rental", "maintenance", "announcement")
 
 

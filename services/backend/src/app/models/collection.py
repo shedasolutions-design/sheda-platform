@@ -32,6 +32,7 @@ from sqlalchemy import (
     Enum as SAEnum,
     Float,
     ForeignKey,
+    JSON,
     Integer,
     String,
     Text,
@@ -312,6 +313,9 @@ class CollectionProject(Base):
     #: Smallest amount one investor may put in, atomic units. Empty means a
     #: single share.
     min_investment_atomic: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    #: What the lifecycle sweep last saw on chain, to notice changes.
+    chain_snapshot: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    last_swept_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
@@ -656,3 +660,45 @@ class CollectionUnit(Base):
     )
 
     project = relationship("CollectionProject", lazy="selectin")
+
+
+
+class CollectionWatch(Base):
+    """Someone following a raise: they invested, bought shares, or tapped
+    Follow. The contracts cannot list investors, so this is who hears about
+    the building's progress."""
+
+    __tablename__ = "collection_watch"
+    __table_args__ = (UniqueConstraint("project_id", "user_id", name="uq_collection_watch"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("collection_project.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    near_account_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class CollectionNotification(Base):
+    """One thing an investor should know about a building they follow."""
+
+    __tablename__ = "collection_notification"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    project_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("collection_project.id", ondelete="CASCADE"), nullable=True
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    link: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    #: Unique per person and event, so a sweep never repeats itself.
+    dedupe_key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True)
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
