@@ -132,7 +132,13 @@ export function useCollections() {
     getProject: useCallback(
       (slug: string) =>
         run(async () => {
-          const response = await apiService.getCollectionProject(slug);
+          let response = await apiService.getCollectionProject(slug);
+          // A draft is hidden from the public read; its own builder can
+          // still open it to finish photos, documents and rent.
+          if (!response.ok) {
+            const own = await apiService.getOwnCollectionDraft(slug);
+            if (own.ok) response = own;
+          }
           if (!response.ok) throw new Error(describeApiError(response.error, "Could not load that raise."));
           // Phases, funding and status as the contract has them.
           return await chain.withChainState(response.data as CollectionProjectDetail);

@@ -1938,6 +1938,14 @@ class ApiService {
     });
   }
 
+  /** The signed-in builder's own raise, including a draft the public read hides. */
+  async getOwnCollectionDraft(slug: string): Promise<ApiResponse<CollectionProjectDetail>> {
+    return this.request<CollectionProjectDetail>(
+      `/api/v1/collections/projects/${encodeURIComponent(slug)}/draft`,
+      { method: "GET", silent: true }
+    );
+  }
+
   /** Builder only. Free on a draft; on an open raise only if none was set. */
   async setCollectionUnitRent(
     slug: string,

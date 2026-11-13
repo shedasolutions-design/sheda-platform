@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.collection import CollectionProfile, CollectionProject, CollectionUnit, RaiseStatusEnum
 from app.models.user import Agent
-from app.routers.collections import set_unit_rent
+from app.routers.collections import get_own_draft, set_unit_rent
 from app.schemas.collection_schema import UnitRent
 from app.utils.enums import AccountTypeEnum
 from app.utils.utils import hash_password
@@ -55,3 +55,10 @@ def test_low_cannot_exceed_high_and_both_are_needed():
         UnitRent(rent_min_atomic="5", rent_max_atomic="4")
     with pytest.raises(ValidationError):
         UnitRent(rent_min_atomic="5")
+
+
+async def test_builder_can_open_their_own_draft(db: AsyncSession):
+    builder = await _raise(db, RaiseStatusEnum.draft, ("1000000000", "2000000000"))
+    out = await get_own_draft("ur-flats", builder, db)
+    assert out.slug == "ur-flats"
+    assert out.unit_list[0].rent_max_atomic == "2000000000"

@@ -529,6 +529,29 @@ async def get_project(slug: str, db: AsyncSession = Depends(get_db)):
     return _detail_out(project, list(units))
 
 
+@router.get("/projects/{slug}/draft", response_model=ProjectDetailOut)
+async def get_own_draft(slug: str, current_user: ActiveUser, db: AsyncSession = Depends(get_db)):
+    """A builder's own raise, draft included.
+
+    The public read hides drafts, which also hid them from the builder who
+    made one: after "Create draft raise" they landed on "not found" and
+    could not add photos, documents or the expected rent before review.
+    """
+    project, _ = await _owned_project(db, slug, current_user)
+    units = (
+        (
+            await db.execute(
+                select(CollectionUnit)
+                .where(CollectionUnit.project_id == project.id)
+                .order_by(CollectionUnit.code)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return _detail_out(project, list(units))
+
+
 @router.post(
     "/projects", response_model=ProjectDetailOut, status_code=status.HTTP_201_CREATED
 )
