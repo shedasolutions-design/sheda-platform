@@ -750,6 +750,20 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         // above. Private-key import has no seed phrase, so save the pointer
         // directly (mirrors saveWalletState's user-scoped pointer write).
         await saveAccountPointer(result.accountId, userEmail ?? undefined);
+        // Record it like every other wallet, with the current epoch. Without
+        // a record, the first write after import (markPhraseSaved) created
+        // one with no epoch; the next start read that as epoch 1, "stale",
+        // and detached the wallet, so a private-key import was forgotten on
+        // the next page load.
+        if (userEmail) {
+          const meta = await patchWalletMetadata(userEmail, {
+            accountId: result.accountId,
+            authMethod: "privateKey",
+            network: nearWalletService.getCurrentNetwork(),
+            epoch: WALLET_EPOCH,
+          });
+          setLocalWalletMetadata(meta);
+        }
 
         setWalletState({
           isConnected: true,
@@ -1160,7 +1174,13 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     // Passed explicitly right after create/import, when state hasn't caught up.
     const accountId = forAccountId ?? walletState.account?.accountId ?? localWalletMetadata?.accountId;
     if (!userEmail || !accountId) return;
-    const meta = await patchWalletMetadata(userEmail, { accountId, phraseSavedAt: Date.now() });
+    // The epoch too: a record created here without one reads as stale on the
+    // next start and detaches the wallet.
+    const meta = await patchWalletMetadata(userEmail, {
+      accountId,
+      phraseSavedAt: Date.now(),
+      epoch: localWalletMetadata?.epoch ?? WALLET_EPOCH,
+    });
     setLocalWalletMetadata(meta);
   };
 
