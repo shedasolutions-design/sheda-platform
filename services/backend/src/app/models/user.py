@@ -11,6 +11,7 @@ from sqlalchemy import (
     UniqueConstraint,
     select,
     update,
+    JSON,
 )
 import uuid
 from sqlalchemy.orm import mapped_column, Mapped, relationship
@@ -95,6 +96,12 @@ class BaseUser(Base):
         nullable=False,
     )
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Notification settings (allow_messages, push, email, sms), kept on the
+    # server so they follow the person to every device. NULL means the
+    # defaults. Written to every row of the person: the buyer and seller rows
+    # are one person with one set of preferences.
+    notification_preferences: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     device_token: Mapped[str | None] = mapped_column(
         String(255),

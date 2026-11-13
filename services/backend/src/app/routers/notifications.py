@@ -57,6 +57,29 @@ async def get_notifications(
     return NotificationListResponse(data=notifications)
 
 
+@router.get("/preferences", response_model=dict)
+async def get_preferences(current_user: ActiveUser):
+    """This person's notification settings (server defaults where unset)."""
+    from app.services.notification_prefs import effective, email_configured
+
+    return {
+        **effective(getattr(current_user, "notification_preferences", None)),
+        "email_available": email_configured(),
+        "sms_available": False,
+    }
+
+
+@router.put("/preferences", response_model=dict)
+async def put_preferences(payload: dict, current_user: ActiveUser, db: DBSession):
+    """Save notification settings for every row of this person."""
+    from app.models.user import BaseUser
+    from app.services.notification_prefs import email_configured, save_for_person
+
+    user = await db.get(BaseUser, current_user.id)
+    saved = await save_for_person(user, payload, db)
+    return {**saved, "email_available": email_configured(), "sms_available": False}
+
+
 @router.post(
     "/{notification_id}/read",
     response_model=TransactionNotificationResponse,
