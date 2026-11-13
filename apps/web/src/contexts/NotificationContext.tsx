@@ -18,7 +18,7 @@ import React, {
 } from "react";
 import AsyncStorage from "@/lib/storage";
 import { useApi } from "./ApiContext";
-import { BackendNotification } from "../services/api";
+import apiService, { BackendNotification, type ServerNotificationPreferences } from "../services/api";
 
 // ============================================================================
 // Types
@@ -189,6 +189,8 @@ interface NotificationContextType extends NotificationState {
     refreshNotifications: () => Promise<void>;
     preferences: NotificationPreferences;
     updatePreference: (key: keyof NotificationPreferences, value: boolean) => void;
+    /** Whether the server can send email / SMS at all. */
+    channels: { email: boolean; sms: boolean };
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(
@@ -206,8 +208,26 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
     allowMessages: true,
     pushNotifications: true,
     emailNotifications: true,
-    smsNotifications: true,
+    // No SMS provider yet: off until there is one.
+    smsNotifications: false,
 };
+
+/** App setting -> the server's name for it. */
+const SERVER_KEYS: Record<keyof NotificationPreferences, keyof ServerNotificationPreferences> = {
+    allowMessages: "allow_messages",
+    pushNotifications: "push_notifications",
+    emailNotifications: "email_notifications",
+    smsNotifications: "sms_notifications",
+};
+
+function fromServerPrefs(p: ServerNotificationPreferences): NotificationPreferences {
+    return {
+        allowMessages: p.allow_messages,
+        pushNotifications: p.push_notifications,
+        emailNotifications: p.email_notifications,
+        smsNotifications: p.sms_notifications,
+    };
+}
 
 async function savePreferences(prefs: NotificationPreferences) {
     try {
@@ -306,10 +326,27 @@ export function NotificationProvider({
 
     const processedWsIds = useRef(new Set<string>());
 
-    // Load preferences on mount
+    const [channels, setChannels] = React.useState({ email: false, sms: false });
+
+    // The device copy paints at once; the server's copy (which follows the
+    // person to every device) replaces it once signed in. Settings used to
+    // live only in this browser.
     useEffect(() => {
         loadPreferences().then(setPreferences);
     }, []);
+    useEffect(() => {
+        if (userId == null) return;
+        apiService
+            .getNotificationPreferences()
+            .then((r) => {
+                if (!r.ok || !r.data) return;
+                const fromServer = fromServerPrefs(r.data);
+                setPreferences(fromServer);
+                savePreferences(fromServer);
+                setChannels({ email: !!r.data.email_available, sms: !!r.data.sms_available });
+            })
+            .catch(() => {});
+    }, [userId]);
 
     const updatePreference = useCallback(
         (key: keyof NotificationPreferences, value: boolean) => {
@@ -318,6 +355,7 @@ export function NotificationProvider({
                 savePreferences(updated);
                 return updated;
             });
+            apiService.saveNotificationPreferences({ [SERVER_KEYS[key]]: value }).catch(() => {});
         },
         []
     );
@@ -461,11 +499,9 @@ export function NotificationProvider({
             route?: string,
             routeParams?: Record<string, string>
         ) => {
-            // Gate: skip if push notifications are disabled
-            if (!preferences.pushNotifications) {
-                console.log(`🔕 Notification suppressed (push off): ${title}`);
-                return;
-            }
+            // Always kept in the in-app list. The "Browser notifications"
+            // setting controls notifications outside the page (see
+            // MessagePopup), not this record of what happened.
             const notification: AppNotification = {
                 id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
                 type,
@@ -478,7 +514,7 @@ export function NotificationProvider({
             };
             dispatch({ type: "ADD_NOTIFICATION", payload: notification });
         },
-        [preferences.pushNotifications]
+        []
     );
 
     const markAsRead = useCallback(
@@ -527,6 +563,7 @@ export function NotificationProvider({
                 refreshNotifications,
                 preferences,
                 updatePreference,
+                channels,
             }}
         >
             {children}

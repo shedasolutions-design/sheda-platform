@@ -1,36 +1,93 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import AuthGuard from "@/components/auth/AuthGuard";
 import PageHeader from "@/components/ui/PageHeader";
 import { useNotifications } from "@/contexts/NotificationContext";
 
-const ITEMS = [
-  { id: "allowMessages", title: "Allow Messages", description: "Receive in-app chat messages from buyers and sellers" },
-  { id: "pushNotifications", title: "Push notifications", description: "Get notified about bids, payments, and transaction updates" },
-  { id: "emailNotifications", title: "Email notifications", description: "Receive transaction summaries and updates via email" },
-  { id: "smsNotifications", title: "SMS notifications", description: "Get critical alerts via text message" },
-] as const;
+type Key = "allowMessages" | "pushNotifications" | "emailNotifications" | "smsNotifications";
 
+/**
+ * Every switch here now does what it says. They used to be saved in this
+ * browser only, and three of the four were read by nothing. Settings are kept
+ * on the server, so they follow the person to every device.
+ */
 function NotificationSettings() {
-  const { preferences, updatePreference } = useNotifications();
+  const { preferences, updatePreference, channels } = useNotifications();
+  const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
+
+  useEffect(() => {
+    setPermission(typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported");
+  }, []);
+
+  const togglePush = async (on: boolean) => {
+    if (!on) return updatePreference("pushNotifications", false);
+    if (permission === "unsupported") return;
+    // The browser has to agree before Sheda can show a notification.
+    const result = permission === "granted" ? "granted" : await Notification.requestPermission();
+    setPermission(result);
+    updatePreference("pushNotifications", result === "granted");
+  };
+
+  const items: { id: Key; title: string; description: string; note?: string; disabled?: boolean; onChange?: (on: boolean) => void }[] = [
+    {
+      id: "allowMessages",
+      title: "Message pop-ups",
+      description: "Show a pop-up when a new chat message arrives while you are elsewhere in the app.",
+    },
+    {
+      id: "pushNotifications",
+      title: "Browser notifications",
+      description:
+        "Get a notification from your browser for new messages and deal updates while Sheda is open in another tab.",
+      note:
+        permission === "unsupported"
+          ? "This browser does not support notifications."
+          : permission === "denied"
+            ? "Notifications are blocked for Sheda in your browser settings. Allow them there, then switch this on."
+            : undefined,
+      disabled: permission === "unsupported",
+      onChange: togglePush,
+    },
+    {
+      id: "emailNotifications",
+      title: "Email notifications",
+      description: "Get an email for each step of your deals: offers, viewings, agreements and payments.",
+      note: channels.email ? undefined : "Email sending is not switched on for Sheda yet. Your choice is saved and applies once it is.",
+    },
+    {
+      id: "smsNotifications",
+      title: "SMS notifications",
+      description: "Text messages for important deal alerts.",
+      note: channels.sms ? undefined : "Not available yet.",
+      disabled: !channels.sms,
+    },
+  ];
+
   return (
     <>
       <PageHeader title="Notification settings" fallback="/profile-setting" />
       <ul className="mx-auto max-w-2xl divide-y divide-borderColor/60 pt-3">
-        {ITEMS.map((item) => {
-          const on = !!(preferences as any)[item.id];
+        {items.map((item) => {
+          const on = !item.disabled && !!preferences[item.id];
           return (
             <li key={item.id}>
-              <label className="flex cursor-pointer items-center justify-between gap-4 px-5 py-4 hover:bg-cardBackground">
+              <label
+                className={`flex items-center justify-between gap-4 px-5 py-4 ${
+                  item.disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-cardBackground"
+                }`}
+              >
                 <span>
                   <span className="block text-base">{item.title}</span>
                   <span className="mt-1 block text-xs text-secondaryText">{item.description}</span>
+                  {item.note && <span className="mt-1 block text-xs text-amber-700">{item.note}</span>}
                 </span>
                 <input
                   type="checkbox"
                   role="switch"
                   checked={on}
-                  onChange={(e) => updatePreference(item.id as any, e.target.checked)}
+                  disabled={item.disabled}
+                  onChange={(e) => (item.onChange ? item.onChange(e.target.checked) : updatePreference(item.id, e.target.checked))}
                   className="peer sr-only"
                 />
                 <span

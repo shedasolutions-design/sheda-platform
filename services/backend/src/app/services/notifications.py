@@ -81,6 +81,12 @@ async def create_transaction_notification(
     await db.commit()
     await db.refresh(notification)
 
+    from app.services.notification_prefs import email_deal_update
+
+    await email_deal_update(
+        payload.recipient_user_id, str(getattr(payload.event, "value", payload.event)), listing.title, db
+    )
+
     await send_push_notification(
         user_id=payload.recipient_user_id,
         title="Transaction update",

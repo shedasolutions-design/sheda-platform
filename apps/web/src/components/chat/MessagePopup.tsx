@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MessageSquareText, X } from "lucide-react";
 import { useApi } from "@/contexts/ApiContext";
+import { useNotifications } from "@/contexts/NotificationContext";
 import { chatPreview } from "./dealUpdate";
 
 interface Popup {
@@ -22,6 +23,7 @@ interface Popup {
 export default function MessagePopup() {
   const router = useRouter();
   const { wsMessages, user } = useApi();
+  const { preferences } = useNotifications();
   const [popup, setPopup] = useState<Popup | null>(null);
   // The newest message already accounted for. Position alone won't do: the
   // list is capped at 200, so its length stops changing.
@@ -47,14 +49,42 @@ export default function MessagePopup() {
     const params = new URLSearchParams(window.location.search);
     if (window.location.pathname === "/chat" && params.get("receiverId") === String(last.sender_id)) return;
 
+    const senderName = last.sender_name || "New message";
+    const text = chatPreview(last.message);
+
+    // In another tab: a browser notification, if the person switched them on
+    // and the browser allows it.
+    if (
+      document.visibilityState === "hidden" &&
+      preferences.pushNotifications &&
+      "Notification" in window &&
+      Notification.permission === "granted"
+    ) {
+      try {
+        const n = new Notification(senderName, { body: text, icon: "/images/sheda-logo.png", tag: `chat-${last.sender_id}` });
+        n.onclick = () => {
+          window.focus();
+          router.push(
+            `/chat?${new URLSearchParams({ id: String(last.property_id ?? ""), receiverId: String(last.sender_id), agentName: senderName }).toString()}`
+          );
+          n.close();
+        };
+      } catch {
+        /* some browsers only allow notifications from a service worker */
+      }
+    }
+
+    // The in-page pop-up, unless message pop-ups are switched off.
+    if (!preferences.allowMessages) return;
+
     setPopup({
       key: Date.now(),
       senderId: Number(last.sender_id),
-      senderName: last.sender_name || "New message",
+      senderName,
       propertyId: last.property_id,
-      text: chatPreview(last.message),
+      text,
     });
-  }, [wsMessages, user?.id]);
+  }, [wsMessages, user?.id, preferences.pushNotifications, preferences.allowMessages, router]);
 
   useEffect(() => {
     if (!popup) return;

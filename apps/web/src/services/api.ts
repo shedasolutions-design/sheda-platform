@@ -576,6 +576,16 @@ export interface RatingShow {
 
 // ---- Wallet Types (updated paths) ----
 
+export interface ServerNotificationPreferences {
+  allow_messages: boolean;
+  push_notifications: boolean;
+  email_notifications: boolean;
+  sms_notifications: boolean;
+  /** Whether the server can send email at all (a mail provider is set up). */
+  email_available?: boolean;
+  sms_available?: boolean;
+}
+
 export interface WalletUserInfo {
   id: number;
   wallet_id: string;
@@ -1617,6 +1627,21 @@ class ApiService {
   // Wallet endpoints — paths changed from /user/ to /users/
   async getUserByWallet(walletId: string): Promise<ApiResponse<WalletUserInfo>> {
     return this.request<WalletUserInfo>(`/api/v1/users/by-wallet/${encodeURIComponent(walletId)}`, {
+      silent: true,
+    });
+  }
+
+  /** This person's notification settings, kept on the server. */
+  async getNotificationPreferences(): Promise<ApiResponse<ServerNotificationPreferences>> {
+    return this.request<ServerNotificationPreferences>("/api/v1/notifications/preferences", { silent: true });
+  }
+
+  async saveNotificationPreferences(
+    changes: Partial<ServerNotificationPreferences>
+  ): Promise<ApiResponse<ServerNotificationPreferences>> {
+    return this.request<ServerNotificationPreferences>("/api/v1/notifications/preferences", {
+      method: "PUT",
+      body: JSON.stringify(changes),
       silent: true,
     });
   }
