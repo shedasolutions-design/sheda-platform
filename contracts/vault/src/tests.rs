@@ -342,3 +342,127 @@ fn the_first_claimer_cannot_redeem_the_flat_before_everyone_has_claimed() {
     ctx(acc("ada.testnet"), 1);
     let _ = v.redeem();
 }
+
+// ---- v5: the share market and replacing the manager ------------------------
+
+fn ft_call(v: &mut Vault, from: &str, amount: u128, msg: &str) -> u128 {
+    ctx(acc("usdt.testnet"), 0);
+    match v.ft_on_transfer(acc(from), U128(amount), msg.to_string()) {
+        near_sdk::PromiseOrValue::Value(left) => left.0,
+        _ => panic!("expected a value"),
+    }
+}
+
+fn two_holders() -> Vault {
+    let mut v = vault();
+    ctx(acc("gov.testnet"), 1);
+    v.mint_shares(acc("ada.testnet"), U128(600));
+    ctx(acc("gov.testnet"), 1);
+    v.mint_shares(acc("bode.testnet"), U128(400));
+    v
+}
+
+#[test]
+fn a_listed_share_sells_for_the_price_less_two_percent() {
+    let mut v = two_holders();
+    ctx(acc("ada.testnet"), 0);
+    let id = v.list_shares(U128(100), U128(1_000));
+    // 150 shares' worth sent; only 100 are listed, so 50,000 comes back.
+    let left = ft_call(
+        &mut v,
+        "chi.testnet",
+        150_000,
+        &format!(r#"{{"buy":{}}}"#, id),
+    );
+    assert_eq!(left, 50_000);
+    assert_eq!(v.ft_balance_of(acc("chi.testnet")).0, 100);
+    assert_eq!(v.ft_balance_of(acc("ada.testnet")).0, 500);
+    assert_eq!(v.locked_shares(acc("ada.testnet")).0, 0);
+    // 2% of 100,000 waits for the treasury; the rest has gone to Ada.
+    assert_eq!(v.get_owed_treasury().0, 2_000);
+    assert_eq!(v.get_info().last_accounted.0, 2_000);
+    assert!(v.get_listings(None, None).is_empty());
+}
+
+#[test]
+#[should_panic(expected = "listed for sale")]
+fn listed_shares_cannot_be_moved() {
+    let mut v = two_holders();
+    ctx(acc("ada.testnet"), 0);
+    v.list_shares(U128(600), U128(1_000));
+    ctx(acc("ada.testnet"), 1);
+    v.ft_transfer(acc("chi.testnet"), U128(1), None);
+}
+
+#[test]
+fn rent_earned_before_a_sale_stays_with_the_seller() {
+    let mut v = two_holders();
+    ctx(acc("ada.testnet"), 0);
+    let id = v.list_shares(U128(600), U128(10));
+    // 1,000 of rent arrives while the shares are listed.
+    v.credit_holders(1_000);
+    ft_call(
+        &mut v,
+        "chi.testnet",
+        6_000,
+        &format!(r#"{{"buy":{}}}"#, id),
+    );
+    assert_eq!(v.claimable(acc("ada.testnet")).0, 600);
+    assert_eq!(v.claimable(acc("chi.testnet")).0, 0);
+}
+
+#[test]
+fn a_buy_offer_is_filled_by_a_holder() {
+    let mut v = two_holders();
+    let left = ft_call(
+        &mut v,
+        "chi.testnet",
+        5_500,
+        r#"{"offer":{"shares":"5","price_per_share":"1000"}}"#,
+    );
+    assert_eq!(left, 500);
+    ctx(acc("bode.testnet"), 1);
+    v.sell_to_offer(0, U128(3));
+    assert_eq!(v.ft_balance_of(acc("chi.testnet")).0, 3);
+    assert_eq!(v.get_offers(None, None)[0].1.shares.0, 2);
+    assert_eq!(v.get_owed_treasury().0, 60);
+}
+
+#[test]
+fn market_money_is_never_counted_as_rent() {
+    let mut v = two_holders();
+    ft_call(
+        &mut v,
+        "chi.testnet",
+        5_000,
+        r#"{"offer":{"shares":"5","price_per_share":"1000"}}"#,
+    );
+    // The offer's 5,000 is booked, so a sync seeing it credits nothing.
+    assert_eq!(v.get_info().last_accounted.0, 5_000);
+}
+
+#[test]
+fn more_than_half_of_the_shares_replace_the_manager() {
+    let mut v = two_holders();
+    ctx(acc("ada.testnet"), 0);
+    v.vote_manager(acc("okon.testnet"), 700);
+    ctx(acc("anyone.testnet"), 0);
+    v.apply_manager_vote(acc("okon.testnet"), 700);
+    let info = v.get_info();
+    assert_eq!(info.manager, acc("okon.testnet"));
+    assert_eq!(info.manager_bps, 700);
+}
+
+#[test]
+#[should_panic(expected = "more than half")]
+fn half_of_the_shares_is_not_enough() {
+    let mut v = vault();
+    ctx(acc("gov.testnet"), 1);
+    v.mint_shares(acc("ada.testnet"), U128(500));
+    ctx(acc("gov.testnet"), 1);
+    v.mint_shares(acc("bode.testnet"), U128(500));
+    ctx(acc("ada.testnet"), 0);
+    v.vote_manager(acc("okon.testnet"), 700);
+    ctx(acc("anyone.testnet"), 0);
+    v.apply_manager_vote(acc("okon.testnet"), 700);
+}

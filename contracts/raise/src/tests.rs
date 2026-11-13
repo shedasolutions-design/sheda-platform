@@ -1177,6 +1177,7 @@ fn exactly_half_is_not_enough() {
     r.attest("m120".into(), 0);
     ctx("ada.testnet", 1, DAY + 5);
     r.approve("m120".into(), 0);
-    ctx("anyone.testnet", 0, DAY + 6);
+    // Past the window too, so only the approval rule can stop it.
+    ctx("anyone.testnet", 0, DAY + 4 + OBJECTION_WINDOW_NS + 1);
     let _ = r.release_phase("m120".into(), 0);
 }

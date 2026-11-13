@@ -146,6 +146,12 @@ impl Vault {
     pub fn ft_transfer(&mut self, receiver_id: AccountId, amount: U128, memo: Option<String>) {
         Self::assert_one_yocto();
         let sender = env::predecessor_account_id();
+        // Listed shares stay in the seller's balance (so they keep earning
+        // rent) but may not be moved until the listing is sold or cancelled.
+        require!(
+            self.free_balance(&sender) >= amount.0,
+            "Those shares are listed for sale; cancel the listing first"
+        );
         self.internal_transfer(&sender, &receiver_id, amount.0);
         if let Some(memo) = memo {
             env::log_str(&format!("Transfer memo: {}", memo));
