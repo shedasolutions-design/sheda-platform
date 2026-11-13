@@ -1,6 +1,6 @@
 "use client";
 
-import { withChainState } from "@/services/collections/chain";
+import { getObjectionWindowMs, withChainState } from "@/services/collections/chain";
 import { InterRegular, InterSemiBold } from "@/components/collections/rn";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, View } from "@/components/collections/rn";
@@ -63,7 +63,11 @@ interface Row {
 
 export default function Approvals() {
   const { builder, manager, actingAccountMatches } = useMyCollectionProfiles();
-  const { requestInspection, attest, capabilities, error } = useCollections();
+  const { requestInspection, attest, releasePhase, capabilities, error, connected } = useCollections();
+  const [windowMs, setWindowMs] = useState<number | null>(null);
+  useEffect(() => {
+    getObjectionWindowMs().then(setWindowMs);
+  }, []);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
 
@@ -115,6 +119,13 @@ export default function Approvals() {
   const onRequest = async (row: Row) => {
     setBusy(row.phase.id);
     const result = await requestInspection(row.project.slug, row.phase.position);
+    setBusy(null);
+    if (result.success) load();
+  };
+
+  const onRelease = async (row: Row) => {
+    setBusy(row.phase.id);
+    const result = await releasePhase(row.project.slug, row.phase.position);
     setBusy(null);
     if (result.success) load();
   };
@@ -205,6 +216,9 @@ export default function Approvals() {
                     canAttest={canAttestOn(row.project)}
                     onRequest={() => onRequest(row)}
                     onAttest={() => onAttest(row)}
+                    windowMs={windowMs}
+                    canRelease={capabilities.raises && Boolean(connected)}
+                    onRelease={() => onRelease(row)}
                   />
                 ))
               )}
@@ -256,6 +270,9 @@ function PhaseCard({
   canAttest = false,
   onRequest,
   onAttest,
+  windowMs = null,
+  canRelease = false,
+  onRelease,
 }: {
   row: Row;
   compact?: boolean;
@@ -266,8 +283,16 @@ function PhaseCard({
   canAttest?: boolean;
   onRequest?: () => void;
   onAttest?: () => void;
+  windowMs?: number | null;
+  canRelease?: boolean;
+  onRelease?: () => void;
 }) {
   const { project, phase } = row;
+  const windowClosed =
+    phase.state === "objection_window" &&
+    windowMs != null &&
+    phase.attested_at_ms != null &&
+    Date.now() >= phase.attested_at_ms + windowMs;
   const managerName = project.manager?.display_name ?? "the property manager";
   const wrongAccount =
     live &&
@@ -291,7 +316,9 @@ function PhaseCard({
           <>
             <Divider />
             <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
-              {waitingOn(phase.state, managerName, viewer)}
+              {windowClosed
+                ? "The objection window has closed. Release the payment to settle this phase: the builder is paid, unless enough holders objected."
+                : waitingOn(phase.state, managerName, viewer, windowMs)}
             </InterRegular>
 
             {wrongAccount ? (
@@ -310,6 +337,10 @@ function PhaseCard({
               />
             ) : null}
 
+            {windowClosed && canRelease && onRelease ? (
+              <CollectionsButton label="Release this payment" loading={busy} onPress={onRelease} />
+            ) : null}
+
             {phase.state === "awaiting_inspection" && canAttest && onAttest ? (
               <CollectionsButton
                 label="I have inspected this — sign it off"
@@ -324,10 +355,21 @@ function PhaseCard({
   );
 }
 
+/** "3 minutes", "7 days": the contract's objection window, in words. */
+function windowWords(ms: number | null | undefined): string {
+  if (!ms) return "a set time";
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 120) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} hours`;
+  return `${Math.round(hours / 24)} days`;
+}
+
 function waitingOn(
   state: CollectionPhaseState,
   manager: string,
-  viewer: Viewer
+  viewer: Viewer,
+  windowMs?: number | null
 ): string {
   switch (state) {
     case "building":
@@ -336,12 +378,12 @@ function waitingOn(
         : "Yours to finish. Request an inspection once it is done.";
     case "awaiting_inspection":
       return viewer === "manager"
-        ? "Yours to inspect. Sign it off once you have seen the work; holders then have seven days to object."
+        ? `Yours to inspect. Sign it off once you have seen the work; holders then have ${windowWords(windowMs)} to object.`
         : `Waiting on ${manager} to inspect and sign off. You cannot move this along yourself.`;
     case "objection_window":
-      return `${manager} has signed this off. Holders have seven days to object, and a quarter of them objecting holds the payment.`;
+      return `${manager} has signed this off. Holders have ${windowWords(windowMs)} to object, and a quarter of them objecting holds the payment.`;
     case "held":
-      return "Enough holders objected that the payment is held. It stays held until the objection is resolved.";
+      return "Enough holders objected, so the payment is held and the raise has stopped. Investors can take back their share of what is left from the project page.";
     case "released":
       return "Paid out.";
     default:

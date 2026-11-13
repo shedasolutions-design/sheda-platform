@@ -766,6 +766,8 @@ export interface CollectionPhase {
     attested_at?: string | null;
     objection_closes_at?: string | null;
     updates: CollectionPhaseUpdate[];
+    /** From the contract (withChainState): when the manager signed it off. */
+    attested_at_ms?: number;
 }
 
 export interface CollectionUnit {
