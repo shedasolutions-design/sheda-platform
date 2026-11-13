@@ -275,9 +275,7 @@ function ProjectSummary({ project }: { project: CollectionProjectDetail }) {
           {project.estimated_return_pct != null ? `${project.estimated_return_pct}% a year` : "Return not stated"}
           <span className="ml-1 text-xs font-normal text-secondaryText">est.</span>
         </p>
-        <p className={`text-sm font-medium ${open ? "text-primary" : "text-secondaryText"}`}>
-          {open ? `${pct}% funded` : STATUS_TEXT[project.status] ?? ""}
-        </p>
+        {open ? <p className="text-sm font-medium text-primary">{pct}% funded</p> : null}
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
         <div
