@@ -6,6 +6,7 @@ import { ActivityIndicator, View } from "@/components/collections/rn";
 import { Stack, router, useLocalSearchParams } from "@/components/collections/nav";
 import { TierBadge } from "@/components/collections/Score";
 import { Building, MapPin } from "lucide-react";
+import { useCurrency } from "@/contexts/CurrencyContext";
 import {
   Avatar,
   Badge,
@@ -167,7 +168,7 @@ export default function ProjectDetail() {
         ) : null}
 
         {project.unit_list.length > 0 ? (
-          <div className="sticky bottom-0 -mx-1 bg-white/95 px-1 pb-3 pt-2 backdrop-blur">
+          <div className="sticky bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 -mx-1 bg-white/95 px-1 pb-3 pt-2 backdrop-blur md:bottom-0">
             <button
               type="button"
               onClick={() => router.push(`/collections/project/${project.slug}/units`)}
@@ -219,8 +220,24 @@ const STATUS_TEXT: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
+function barOf(status: string, pct: number): { cls: string; width: number } {
+  if (status === "open") return { cls: "bg-primary", width: pct };
+  if (status === "funded" || status === "building" || status === "delivered") return { cls: "bg-green-500", width: 100 };
+  return { cls: "bg-gray-300", width: 100 };
+}
+
+/** USDC atomic units (6 decimals) shown in the person's chosen currency, as on Invest. */
+function useMoney() {
+  const { formatPrice, formatUsd, selectedCurrency } = useCurrency();
+  return (atomic: bigint) => {
+    const usd = Number(atomic) / 1_000_000;
+    return selectedCurrency === "USD" ? formatUsd(usd) : `${formatPrice(usd)} (${formatUsd(usd)})`;
+  };
+}
+
 function ProjectSummary({ project }: { project: CollectionProjectDetail }) {
   const { pct, raised, target } = fundingOf(project);
+  const money = useMoney();
   const open = project.status === "open";
   return (
     <div className="space-y-3">
@@ -248,11 +265,14 @@ function ProjectSummary({ project }: { project: CollectionProjectDetail }) {
         </p>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
-        <div className="h-full rounded-full bg-primary" style={{ width: `${open ? pct : 100}%` }} />
+        <div
+          className={`h-full rounded-full ${barOf(project.status, pct).cls}`}
+          style={{ width: `${barOf(project.status, pct).width}%` }}
+        />
       </div>
       {target > 0n ? (
         <p className="text-xs text-secondaryText">
-          {formatWithSymbol(raised.toString(), DEFAULT_TOKEN)} raised of {formatWithSymbol(target.toString(), DEFAULT_TOKEN)}
+          {money(raised)} raised of {money(target)}
         </p>
       ) : null}
     </div>
@@ -261,9 +281,10 @@ function ProjectSummary({ project }: { project: CollectionProjectDetail }) {
 
 function KeyNumbers({ project, released }: { project: CollectionProjectDetail; released: number }) {
   const { open, minShare } = fundingOf(project);
+  const money = useMoney();
   const rows: [string, string][] = [
     ["Flats open to invest", `${open} of ${project.unit_list.length || project.units}`],
-    ["Price per share", minShare != null ? `from ${formatWithSymbol(minShare.toString(), DEFAULT_TOKEN)}` : "—"],
+    ["Price per share", minShare != null ? `from ${money(minShare)}` : "—"],
     ["Estimated return", project.estimated_return_pct != null ? `${project.estimated_return_pct}% a year` : "Not stated"],
     ["Released to the builder", `${(released / 100).toFixed(0)}% of the raise`],
   ];

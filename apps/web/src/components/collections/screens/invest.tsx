@@ -256,7 +256,7 @@ function InvestCard({ view }: { view: RaiseView }) {
           <p className={`text-sm font-medium ${open ? "text-primary" : "text-secondaryText"}`}>{statusText}</p>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
-          <div className="h-full rounded-full bg-primary" style={{ width: `${open ? pct : 100}%` }} />
+          <div className={`h-full rounded-full ${barOf(status, pct).cls}`} style={{ width: `${barOf(status, pct).width}%` }} />
         </div>
 
         <dl className="space-y-1.5 text-sm">
@@ -289,6 +289,12 @@ function InvestCard({ view }: { view: RaiseView }) {
       </div>
     </article>
   );
+}
+
+function barOf(status: string, pct: number): { cls: string; width: number } {
+  if (status === "open") return { cls: "bg-primary", width: pct };
+  if (status === "funded" || status === "building" || status === "delivered") return { cls: "bg-green-500", width: 100 };
+  return { cls: "bg-gray-300", width: 100 };
 }
 
 function daysUntil(iso: string): number {

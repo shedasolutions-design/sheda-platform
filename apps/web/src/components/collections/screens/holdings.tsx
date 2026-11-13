@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useCurrency } from "@/contexts/CurrencyContext";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, RefreshControl, View } from "@/components/collections/rn";
 import { Stack } from "@/components/collections/nav";
@@ -96,6 +97,7 @@ export default function Holdings() {
   const token = holdings?.[0]?.info.stablecoin;
   // What the shares cost: shares held times the flat's price per share.
   const invested = (holdings ?? []).reduce((sum, h) => sum + costOf(h, meta[h.vaultId]), 0n);
+  const money = useMoney();
 
   // A vault counts rent only once it has synced the money that arrived.
   // The call existed with no button, so rent paid into a vault could never
@@ -121,7 +123,7 @@ export default function Holdings() {
       <Screen refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={C.primary} />}>
         <div className="rounded-2xl bg-gray-100 px-5 py-7 text-center">
           <p className="text-xs text-secondaryText">Invested</p>
-          <p className="mt-1 text-3xl font-bold text-primaryText">{formatWithSymbol(invested.toString(), token)}</p>
+          <p className="mt-1 text-3xl font-bold text-primaryText">{money(invested)}</p>
           <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs text-primaryText">
             <span className={`h-2 w-2 rounded-full ${total > 0n ? "bg-green-500" : "bg-gray-300"}`} />
             {holdings === null
@@ -186,6 +188,15 @@ interface VaultMeta {
   totalShares?: string;
 }
 
+/** USDC atomic units (6 decimals) shown in the person's chosen currency, as on Invest. */
+function useMoney() {
+  const { formatPrice, formatUsd, selectedCurrency } = useCurrency();
+  return (atomic: bigint) => {
+    const usd = Number(atomic) / 1_000_000;
+    return selectedCurrency === "USD" ? formatUsd(usd) : `${formatPrice(usd)} (${formatUsd(usd)})`;
+  };
+}
+
 function costOf(h: Holding, m?: VaultMeta): bigint {
   if (!m?.priceAtomic || !m.totalShares) return 0n;
   const total = BigInt(m.totalShares);
@@ -211,6 +222,7 @@ function HoldingCard({
   const share = ownershipBps(balance, info.total_supply);
   const paying = BigInt(claimable || "0") > 0n;
   const cost = costOf(holding, meta);
+  const money = useMoney();
 
   const status =
     state === "awaiting"
@@ -241,7 +253,7 @@ function HoldingCard({
             {meta?.location ? <p className="text-xs text-secondaryText">{meta.location}</p> : null}
           </div>
           {cost > 0n ? (
-            <p className="shrink-0 font-semibold text-primaryText">{formatWithSymbol(cost.toString(), info.stablecoin)}</p>
+            <p className="shrink-0 text-right font-semibold text-primaryText">{money(cost)}</p>
           ) : null}
         </div>
 
@@ -271,7 +283,7 @@ function HoldingCard({
             </div>
           ) : state !== "redeemed" ? (
             <div className="flex-1">
-              <CollectionsButton label="Check for new rent" variant="quiet" loading={busy} onPress={onSync} />
+              <CollectionsButton label="Check for rent" variant="quiet" loading={busy} onPress={onSync} />
             </div>
           ) : null}
           {meta?.slug ? (
