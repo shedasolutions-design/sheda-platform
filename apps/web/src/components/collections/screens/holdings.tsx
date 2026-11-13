@@ -34,7 +34,7 @@ import apiService, { type CollectionProjectSummary } from "@/services/api";
  * stop including units bought after it was written.
  */
 export default function Holdings() {
-  const { getHoldings, claim, connected, accountId, loading, error } = useCollections();
+  const { getHoldings, claim, syncIncome, connected, accountId, loading, error } = useCollections();
   const [holdings, setHoldings] = useState<Holding[] | null>(null);
   const [failed, setFailed] = useState<string[]>([]);
   const [claiming, setClaiming] = useState<string | null>(null);
@@ -80,8 +80,19 @@ export default function Holdings() {
   const earning = (holdings ?? []).filter((h) => BigInt(h.claimable || "0") > 0n).length;
   const token = holdings?.[0]?.info.stablecoin;
 
+  // A vault counts rent only once it has synced the money that arrived.
+  // The call existed with no button, so rent paid into a vault could never
+  // be claimed. Claim syncs first; "Check for new rent" does it on its own.
+  const onSync = async (vaultId: string) => {
+    setClaiming(vaultId);
+    await syncIncome(vaultId);
+    setClaiming(null);
+    load();
+  };
+
   const onClaim = async (vaultId: string) => {
     setClaiming(vaultId);
+    await syncIncome(vaultId).catch(() => null);
     const result = await claim(vaultId);
     setClaiming(null);
     if (result.success) load();
@@ -152,6 +163,7 @@ export default function Holdings() {
                 holding={h}
                 busy={claiming === h.vaultId}
                 onClaim={() => onClaim(h.vaultId)}
+                onSync={() => onSync(h.vaultId)}
               />
             ))}
           </View>
@@ -173,10 +185,12 @@ function HoldingRow({
   holding,
   busy,
   onClaim,
+  onSync,
 }: {
   holding: Holding;
   busy: boolean;
   onClaim: () => void;
+  onSync: () => void;
 }) {
   const { info, balance, claimable } = holding;
   const state = custodyState(info.custody);
@@ -216,6 +230,8 @@ function HoldingRow({
 
         {paying ? (
           <CollectionsButton label="Claim" loading={busy} onPress={onClaim} />
+        ) : state !== "redeemed" ? (
+          <CollectionsButton label="Check for new rent" variant="quiet" loading={busy} onPress={onSync} />
         ) : null}
       </View>
     </Card>
