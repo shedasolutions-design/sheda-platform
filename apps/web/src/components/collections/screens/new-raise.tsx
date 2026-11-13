@@ -67,6 +67,8 @@ interface UnitDraft {
   bedrooms: string;
   price: string;
   shares: string;
+  rentLow: string;
+  rentHigh: string;
 }
 
 const DEFAULT_PHASES: PhaseDraft[] = [
@@ -87,7 +89,7 @@ export default function NewRaise() {
   const [returnPct, setReturnPct] = useState("");
   const [phases, setPhases] = useState<PhaseDraft[]>(DEFAULT_PHASES);
   const [unitList, setUnitList] = useState<UnitDraft[]>([
-    { code: "1a", label: "Unit 1A", bedrooms: "2", price: "", shares: "10000" },
+    { code: "1a", label: "Unit 1A", bedrooms: "2", price: "", shares: "10000", rentLow: "", rentHigh: "" },
   ]);
   const [photos, setPhotos] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -100,6 +102,18 @@ export default function NewRaise() {
   const scheduleBalances = useMemo(() => scheduleAddsUp(phases), [phases]);
 
   const unitsPriced = unitList.every((u) => parseAmount(u.price, token));
+  // Expected rent is optional, but if given it needs both ends, low first.
+  const rentProblem = (u: UnitDraft): string | null => {
+    const lo = u.rentLow.trim();
+    const hi = u.rentHigh.trim();
+    if (!lo && !hi) return null;
+    const a = parseAmount(lo, token);
+    const b = parseAmount(hi, token);
+    if (!a || !b) return "Give both a low and a high yearly rent, or leave both empty.";
+    if (BigInt(a) > BigInt(b)) return "The low rent is more than the high rent.";
+    return null;
+  };
+  const rentsValid = unitList.every((u) => rentProblem(u) === null);
   const ready =
     Boolean(builder) &&
     name.trim().length >= 2 &&
@@ -108,6 +122,7 @@ export default function NewRaise() {
     phases.every((p) => p.name.trim()) &&
     unitList.length > 0 &&
     unitsPriced &&
+    rentsValid &&
     !uploading;
 
   const submit = async () => {
@@ -135,6 +150,12 @@ export default function NewRaise() {
         bedrooms: parseInt(u.bedrooms, 10) || 0,
         price_atomic: parseAmount(u.price, token) as string,
         total_shares: u.shares.trim() || "10000",
+        ...(u.rentLow.trim() && u.rentHigh.trim()
+          ? {
+              rent_min_atomic: parseAmount(u.rentLow, token) as string,
+              rent_max_atomic: parseAmount(u.rentHigh, token) as string,
+            }
+          : {}),
       })),
     });
 
@@ -353,6 +374,38 @@ export default function NewRaise() {
                     placeholder="18000000"
                   />
 
+                  <View style={{ flexDirection: "row", gap: 10 }}>
+                    <View style={{ flex: 1 }}>
+                      <Field
+                        label="Expected rent a year, low"
+                        value={unit.rentLow}
+                        onChangeText={(v) =>
+                          setUnitList(unitList.map((u, j) => (j === i ? { ...u, rentLow: v } : u)))
+                        }
+                        keyboardType="decimal-pad"
+                        placeholder="Optional"
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Field
+                        label="High"
+                        value={unit.rentHigh}
+                        onChangeText={(v) =>
+                          setUnitList(unitList.map((u, j) => (j === i ? { ...u, rentHigh: v } : u)))
+                        }
+                        keyboardType="decimal-pad"
+                        placeholder="Optional"
+                      />
+                    </View>
+                  </View>
+                  {rentProblem(unit) ? (
+                    <InterRegular style={{ ...TYPE.label, color: C.caution }}>{rentProblem(unit)}</InterRegular>
+                  ) : (
+                    <InterRegular style={{ ...TYPE.micro, color: C.textMuted }}>
+                      For the whole flat, from rents nearby. Put your research in the raise documents.
+                    </InterRegular>
+                  )}
+
                   {perShare ? (
                     <InterRegular style={{ ...TYPE.label, color: C.textSecondary }}>
                       Divides into {unit.shares} shares, so one share costs{" "}
@@ -393,6 +446,8 @@ export default function NewRaise() {
                   label: "",
                   bedrooms: "2",
                   price: "",
+                  rentLow: "",
+                  rentHigh: "",
                   shares: "10000",
                 },
               ])

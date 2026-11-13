@@ -778,6 +778,9 @@ export interface CollectionUnit {
     price_atomic: string;
     total_shares: string;
     shares_sold: string;
+    /** Builder's expected yearly rent for the whole flat, low and high (atomic). */
+    rent_min_atomic?: string | null;
+    rent_max_atomic?: string | null;
     vault_account_id?: string | null;
 }
 
@@ -829,6 +832,8 @@ export interface CollectionProjectCreate {
         bedrooms: number;
         price_atomic: string;
         total_shares: string;
+        rent_min_atomic?: string;
+        rent_max_atomic?: string;
     }[];
 }
 
@@ -1931,6 +1936,18 @@ class ApiService {
     return this.request<void>(`/api/v1/collections/images/${imageId}`, {
       method: "DELETE",
     });
+  }
+
+  /** Builder only. Free on a draft; on an open raise only if none was set. */
+  async setCollectionUnitRent(
+    slug: string,
+    unitCode: string,
+    payload: { rent_min_atomic: string | null; rent_max_atomic: string | null }
+  ): Promise<ApiResponse<CollectionUnit>> {
+    return this.request<CollectionUnit>(
+      `/api/v1/collections/projects/${encodeURIComponent(slug)}/units/${encodeURIComponent(unitCode)}/rent`,
+      { method: "PATCH", body: JSON.stringify(payload) }
+    );
   }
 
   async addCollectionDocument(

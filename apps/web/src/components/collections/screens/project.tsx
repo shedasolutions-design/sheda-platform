@@ -7,6 +7,16 @@ import { Stack, router, useLocalSearchParams } from "@/components/collections/na
 import { TierBadge } from "@/components/collections/Score";
 import { Building, MapPin } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
+import InfoTip, { MoreText } from "@/components/ui/InfoTip";
+import {
+  DEFAULT_FEE_BPS,
+  perPeriod,
+  rentRangeOf,
+  sharePriceOf,
+  sharesFor,
+  yearlyRentFor,
+  type Period,
+} from "@/services/collections/rent";
 import {
   Avatar,
   Badge,
@@ -120,11 +130,15 @@ export default function ProjectDetail() {
         {project.description ? (
           <div>
             <h2 className="mb-1 text-sm font-semibold text-primaryText">Description</h2>
-            <p className="text-sm leading-relaxed text-secondaryText">{project.description}</p>
+            <MoreText text={project.description} className="text-sm leading-relaxed text-secondaryText" />
           </div>
         ) : null}
 
         <KeyNumbers project={project} released={released} />
+
+        {["stalled", "failed", "cancelled"].includes(project.status) ? null : (
+          <RentEstimator project={project} isOwner={isOwner} onChanged={load} />
+        )}
 
         <Section title="Who is behind this">
           {project.builder ? <PersonRow profile={project.builder} role="Builder" /> : null}
@@ -282,29 +296,290 @@ function ProjectSummary({ project }: { project: CollectionProjectDetail }) {
 function KeyNumbers({ project, released }: { project: CollectionProjectDetail; released: number }) {
   const { open, minShare } = fundingOf(project);
   const money = useMoney();
-  const rows: [string, string][] = [
+  const rows: [React.ReactNode, string][] = [
     ["Flats open to invest", `${open} of ${project.unit_list.length || project.units}`],
     ["Price per share", minShare != null ? `from ${money(minShare)}` : "—"],
-    ["Estimated return", project.estimated_return_pct != null ? `${project.estimated_return_pct}% a year` : "Not stated"],
-    ["Released to the builder", `${(released / 100).toFixed(0)}% of the raise`],
+    [
+      <span key="r" className="inline-flex items-center gap-1">
+        Estimated return
+        <InfoTip label="About the estimated return">
+          The builder&apos;s own estimate. Sheda does not check it and does not guarantee any return.
+        </InfoTip>
+      </span>,
+      project.estimated_return_pct != null ? `${project.estimated_return_pct}% a year` : "Not stated",
+    ],
+    [
+      <span key="d" className="inline-flex items-center gap-1">
+        Paid to the builder
+        <InfoTip label="About payments to the builder">
+          Investors&apos; money is held by the raise contract and paid out phase by phase, only after each phase
+          is inspected and signed off. These figures are read from the blockchain, not from Sheda.
+        </InfoTip>
+      </span>,
+      `${(released / 100).toFixed(0)}% of the raise`,
+    ],
   ];
   return (
-    <div>
-      <dl className="space-y-2 text-sm">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex justify-between gap-3">
-            <dt className="text-secondaryText">{k}</dt>
-            <dd className="font-medium text-primaryText">{v}</dd>
-          </div>
-        ))}
-      </dl>
-      <p className="mt-3 text-xs leading-relaxed text-secondaryText">
-        The return is the builder&apos;s own estimate. Sheda does not verify it and does not guarantee it. What the
-        raise has collected is read from the blockchain, not from us.
+    <dl className="space-y-2 text-sm">
+      {rows.map(([k, v], i) => (
+        <div key={i} className="flex justify-between gap-3">
+          <dt className="text-secondaryText">{k}</dt>
+          <dd className="font-medium text-primaryText">{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+const PERIODS: { id: Period; label: string; suffix: string }[] = [
+  { id: "day", label: "Day", suffix: "a day" },
+  { id: "month", label: "Month", suffix: "a month" },
+  { id: "year", label: "Year", suffix: "a year" },
+];
+
+const toAtomic = (usd: string): bigint => {
+  const n = Number(usd.replace(/,/g, ""));
+  return Number.isFinite(n) && n > 0 ? BigInt(Math.round(n * 1_000_000)) : 0n;
+};
+
+/**
+ * What a stake might earn in rent, from the builder's expected rent range.
+ *
+ * Starts from what this person already put into the flat, or $100 if
+ * nothing. Counts whole shares only (the contract sells no fractions) and
+ * takes off the vault's real fees where the vault exists, the launch fees
+ * where it does not yet.
+ */
+function RentEstimator({
+  project,
+  isOwner,
+  onChanged,
+}: {
+  project: CollectionProjectDetail;
+  isOwner: boolean;
+  onChanged: () => void;
+}) {
+  const money = useMoney();
+  const { positions } = useUnitPositions(project.slug, project.unit_list);
+  const priced = project.unit_list.filter((u) => rentRangeOf(u) && sharePriceOf(u));
+  const [code, setCode] = useState<string | null>(null);
+  const [amount, setAmount] = useState<string | null>(null);
+  const [period, setPeriod] = useState<Period>("month");
+  const [fees, setFees] = useState<Record<string, number>>({});
+
+  const unit = priced.find((u) => u.code === code) ?? priced[0] ?? null;
+  const committed = unit ? BigInt(positions[unit.code]?.committedAtomic || "0") : 0n;
+  const amountText = amount ?? (committed > 0n ? String(Number(committed) / 1_000_000) : "100");
+
+  useEffect(() => {
+    let alive = true;
+    const vaults = project.unit_list.filter((u) => u.vault_account_id);
+    Promise.all(
+      vaults.map(async (u) => {
+        try {
+          const info = await chain.getVaultInfo(u.vault_account_id as string);
+          return [u.code, info.manager_bps + info.reserve_bps + info.platform_bps] as const;
+        } catch {
+          return null;
+        }
+      })
+    ).then((rows) => {
+      if (alive) setFees(Object.fromEntries(rows.filter((r): r is readonly [string, number] => r !== null)));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [project.unit_list]);
+
+  if (!unit) {
+    return (
+      <div className="rounded-2xl border border-borderColor p-4">
+        <h2 className="text-sm font-semibold text-primaryText">Rent you could earn</h2>
+        <p className="mt-1 text-sm text-secondaryText">The builder has not given an expected rent yet.</p>
+        {isOwner ? <RentEditor project={project} onChanged={onChanged} /> : null}
+      </div>
+    );
+  }
+
+  const range = rentRangeOf(unit)!;
+  const total = BigInt(unit.total_shares);
+  const shares = sharesFor(toAtomic(amountText), unit);
+  const feeBps = fees[unit.code] ?? DEFAULT_FEE_BPS;
+  const shown = perPeriod(yearlyRentFor(shares > total ? total : shares, total, range, feeBps), period);
+  const suffix = PERIODS.find((p) => p.id === period)!.suffix;
+  const pct = total > 0n ? (Number((shares > total ? total : shares) * 10_000n / total) / 100).toString() : "0";
+  const minShare = sharePriceOf(unit)!;
+
+  return (
+    <div className="rounded-2xl border border-borderColor p-4">
+      <div className="flex items-center gap-1">
+        <h2 className="text-sm font-semibold text-primaryText">Rent you could earn</h2>
+        <InfoTip label="How this estimate works">
+          Uses the builder&apos;s expected rent for the whole flat, from their research on rents nearby (see the
+          documents). Your part is your share of the flat, after the vault&apos;s fees ({feeBps / 100}%). Rent
+          starts only once the flat is finished and let, and empty months earn nothing. An estimate, not a promise.
+        </InfoTip>
+      </div>
+
+      {priced.length > 1 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {priced.map((u) => (
+            <button
+              key={u.code}
+              type="button"
+              onClick={() => {
+                setCode(u.code);
+                setAmount(null);
+              }}
+              className={`rounded-lg px-3 py-1.5 text-xs ${
+                u.code === unit.code ? "bg-primary text-white" : "bg-primaryLight text-secondaryText"
+              }`}
+            >
+              {u.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <label className="mt-3 block text-xs text-secondaryText">
+        {committed > 0n && amount === null ? "What you put in (USD)" : "If you invest (USD)"}
+        <input
+          inputMode="decimal"
+          value={amountText}
+          onChange={(e) => setAmount(e.target.value)}
+          className="mt-1 w-full rounded-xl border border-borderColor px-3 py-2.5 text-base text-primaryText outline-none focus:border-primary"
+        />
+      </label>
+      <p className="mt-1 text-xs text-secondaryText">
+        {shares > 0n
+          ? `${shares > total ? total : shares} shares, ${pct}% of ${unit.label}`
+          : `One share costs ${money(minShare)}`}
+        {shares > total ? " (the whole flat)" : ""}
       </p>
+
+      <div className="mt-3 flex rounded-xl bg-gray-100 p-1 text-xs" role="tablist">
+        {PERIODS.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            role="tab"
+            aria-selected={period === p.id}
+            onClick={() => setPeriod(p.id)}
+            className={`flex-1 rounded-lg py-1.5 ${period === p.id ? "bg-white font-medium text-primaryText shadow-sm" : "text-secondaryText"}`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      <p className="mt-3 text-xl font-semibold text-primaryText">
+        {money(shown.min)} – {money(shown.max)}
+        <span className="ml-1 text-xs font-normal text-secondaryText">{suffix}</span>
+      </p>
+      <p className="mt-1 text-xs text-secondaryText">
+        Whole flat lets for {money(range.min)} – {money(range.max)} a year, by the builder&apos;s estimate.
+      </p>
+
+      {isOwner ? <RentEditor project={project} onChanged={onChanged} /> : null}
     </div>
   );
 }
+
+/**
+ * The builder sets each flat's expected yearly rent. Same rule as the
+ * server: editable on a draft, and on an open raise only where none was
+ * given, since investors may have committed against a figure once shown.
+ */
+function RentEditor({ project, onChanged }: { project: CollectionProjectDetail; onChanged: () => void }) {
+  const editable = project.unit_list.filter((u) => project.status === "draft" || !rentRangeOf(u));
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState<Record<string, { lo: string; hi: string }>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  if (editable.length === 0) return null;
+
+  const valueOf = (code: string, rangeLo?: string | null, rangeHi?: string | null) =>
+    values[code] ?? {
+      lo: rangeLo ? String(Number(rangeLo) / 1_000_000) : "",
+      hi: rangeHi ? String(Number(rangeHi) / 1_000_000) : "",
+    };
+
+  const save = async (code: string, lo: string, hi: string) => {
+    const a = toAtomic(lo);
+    const b = toAtomic(hi);
+    if (a <= 0n || b <= 0n) return setMessage("Enter both a low and a high yearly rent.");
+    if (a > b) return setMessage("The low rent is more than the high rent.");
+    setBusy(code);
+    setMessage(null);
+    const r = await apiService.setCollectionUnitRent(project.slug, code, {
+      rent_min_atomic: a.toString(),
+      rent_max_atomic: b.toString(),
+    });
+    setBusy(null);
+    if (!r.ok) {
+      const err = r.error as { detail?: unknown; message?: string } | undefined;
+      return setMessage(String(err?.detail ?? err?.message ?? "That did not save. Please try again."));
+    }
+    setMessage(project.status === "draft" ? "Saved." : "Saved. It is now fixed for this raise.");
+    onChanged();
+  };
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="mt-3 text-sm font-medium text-primary">
+        Set expected rent
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-4 space-y-3 border-t border-borderColor pt-3">
+      <p className="inline-flex items-center gap-1 text-xs text-secondaryText">
+        Yearly rent for each whole flat
+        <InfoTip label="About setting rent">
+          Base it on rents for similar flats nearby and add that research to the documents. On an open raise you
+          can add it once, and it cannot be changed after.
+        </InfoTip>
+      </p>
+      {editable.map((u) => {
+        const v = valueOf(u.code, u.rent_min_atomic, u.rent_max_atomic);
+        const set = (patch: Partial<{ lo: string; hi: string }>) => setValues({ ...values, [u.code]: { ...v, ...patch } });
+        return (
+          <div key={u.code} className="space-y-2">
+            <p className="text-sm font-medium text-primaryText">{u.label}</p>
+            <div className="flex gap-2">
+              <input
+                inputMode="decimal"
+                placeholder="Low (USD)"
+                value={v.lo}
+                onChange={(e) => set({ lo: e.target.value })}
+                className="min-w-0 flex-1 rounded-xl border border-borderColor px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+              <input
+                inputMode="decimal"
+                placeholder="High (USD)"
+                value={v.hi}
+                onChange={(e) => set({ hi: e.target.value })}
+                className="min-w-0 flex-1 rounded-xl border border-borderColor px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+              <button
+                type="button"
+                disabled={busy === u.code}
+                onClick={() => save(u.code, v.lo, v.hi)}
+                className="rounded-xl bg-primary px-4 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {busy === u.code ? "…" : "Save"}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+      {message ? <p className="text-xs text-secondaryText">{message}</p> : null}
+    </div>
+  );
+}
+
 
 const CLAIMABLE_STATUSES = new Set(["funded", "building", "delivered"]);
 
@@ -586,10 +861,13 @@ function PhaseList({ project, onChanged }: { project: CollectionProjectDetail; o
         </View>
       </Card>
       {message ? <Note>{message}</Note> : null}
-      <InterRegular style={{ ...TYPE.label, lineHeight: 17, color: C.textSecondary }}>
-        Each phase is inspected and signed off before its money is released. Holders have {windowText} to
-        object, and a quarter of them objecting holds the payment and stops the raise.
-      </InterRegular>
+      <p className="inline-flex items-center gap-1 text-xs text-secondaryText">
+        Paid phase by phase, after inspection.
+        <InfoTip label="How payments are released">
+          Each phase is inspected and signed off before its money is released. Holders then have {windowText} to
+          object, and if a quarter of them object, the payment is held and the raise stops.
+        </InfoTip>
+      </p>
     </Section>
   );
 }

@@ -58,6 +58,7 @@ from app.schemas.collection_schema import (
     ProjectSummaryOut,
     ProjectUpdate,
     UnitOut,
+    UnitRent,
     UnitVaultUpdate,
 )
 from app.services.user_service import ActiveUser, AdminUser
@@ -598,6 +599,8 @@ async def create_project(
                 price_atomic=unit.price_atomic,
                 total_shares=unit.total_shares,
                 shares_sold="0",
+                rent_min_atomic=unit.rent_min_atomic,
+                rent_max_atomic=unit.rent_max_atomic,
             )
         )
 
@@ -724,6 +727,49 @@ async def publish_project(
     await db.commit()
     await db.refresh(project)
     return _summary_out(project)
+
+
+@router.patch("/projects/{slug}/units/{unit_code}/rent", response_model=UnitOut)
+async def set_unit_rent(
+    slug: str,
+    unit_code: str,
+    payload: UnitRent,
+    current_user: ActiveUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """The builder's expected yearly rent for one flat.
+
+    Same rule as the rest of a raise's terms: free to change while it is a
+    draft, frozen once people can commit against it. A raise that opened
+    without a figure may add one once, because that discloses more without
+    rewriting anything an investor already relied on.
+    """
+    project, _ = await _owned_project(db, slug, current_user)
+    unit = (
+        await db.execute(
+            select(CollectionUnit).where(
+                CollectionUnit.project_id == project.id,
+                CollectionUnit.code == unit_code,
+            )
+        )
+    ).scalar_one_or_none()
+    if unit is None:
+        raise HTTPException(status_code=404, detail="Unit not found")
+
+    if project.status != RaiseStatusEnum.draft and unit.rent_min_atomic is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This raise is open and this flat already has an expected rent. "
+                "Investors committed against it, so it cannot be changed now."
+            ),
+        )
+
+    unit.rent_min_atomic = payload.rent_min_atomic
+    unit.rent_max_atomic = payload.rent_max_atomic
+    await db.commit()
+    await db.refresh(unit)
+    return UnitOut.model_validate(unit)
 
 
 @router.patch("/projects/{slug}/units/{unit_code}/vault", response_model=UnitOut)

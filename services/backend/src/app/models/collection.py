@@ -538,6 +538,11 @@ class CollectionUnit(Base):
     price_atomic: Mapped[str] = mapped_column(String(40), nullable=False, default="0")
     total_shares: Mapped[str] = mapped_column(String(40), nullable=False, default="0")
     shares_sold: Mapped[str] = mapped_column(String(40), nullable=False, default="0")
+    #: The builder's expected yearly rent for the whole flat, low and high,
+    #: in atomic units. Their own research, backed by the raise documents;
+    #: investors use it to estimate what a stake might earn. Optional.
+    rent_min_atomic: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    rent_max_atomic: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
     #: The vault that owns this unit once it exists.
     vault_account_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 

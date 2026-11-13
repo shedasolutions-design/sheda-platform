@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useCurrency } from "@/contexts/CurrencyContext";
+import InfoTip from "@/components/ui/InfoTip";
+import { perPeriod, rentRangeOf, yearlyRentFor } from "@/services/collections/rent";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, RefreshControl, View } from "@/components/collections/rn";
 import { Stack } from "@/components/collections/nav";
@@ -60,6 +62,8 @@ export default function Holdings() {
           unit: u.label,
           priceAtomic: u.price_atomic,
           totalShares: u.total_shares,
+          rentMin: u.rent_min_atomic ?? undefined,
+          rentMax: u.rent_max_atomic ?? undefined,
         };
       });
     });
@@ -143,8 +147,8 @@ export default function Holdings() {
 
         {failed.length > 0 ? (
           <Note>
-            {failed.length} {failed.length === 1 ? "vault" : "vaults"} could not be read just now, so anything held
-            there is missing from this list rather than gone. Pull to try again.
+            {failed.length} {failed.length === 1 ? "flat" : "flats"} could not be loaded. Your shares are safe;
+            refresh to try again.
           </Note>
         ) : null}
 
@@ -172,7 +176,11 @@ export default function Holdings() {
           </div>
         )}
 
-        {accountId ? <p className="text-center text-[11px] text-secondaryText">Read for {accountId}</p> : null}
+        {accountId ? (
+          <p className="text-center text-[11px] text-secondaryText" title={accountId}>
+            Wallet {accountId.length > 24 ? `${accountId.slice(0, 8)}…${accountId.slice(-6)}` : accountId}
+          </p>
+        ) : null}
       </Screen>
     </>
   );
@@ -186,6 +194,8 @@ interface VaultMeta {
   unit?: string;
   priceAtomic?: string;
   totalShares?: string;
+  rentMin?: string;
+  rentMax?: string;
 }
 
 /** USDC atomic units (6 decimals) shown in the person's chosen currency, as on Invest. */
@@ -223,6 +233,17 @@ function HoldingCard({
   const paying = BigInt(claimable || "0") > 0n;
   const cost = costOf(holding, meta);
   const money = useMoney();
+  // The builder's expected rent, as this holder's cut a month after the
+  // vault's own fees. Not shown once redeemed: nothing more will be paid.
+  const range = meta ? rentRangeOf({ rent_min_atomic: meta.rentMin, rent_max_atomic: meta.rentMax }) : null;
+  const supply = BigInt(info.total_supply || "0") > 0n ? BigInt(info.total_supply) : BigInt(meta?.totalShares || "0");
+  const possible =
+    range && state !== "redeemed"
+      ? perPeriod(
+          yearlyRentFor(BigInt(balance || "0"), supply, range, info.manager_bps + info.reserve_bps + info.platform_bps),
+          "month"
+        )
+      : null;
 
   const status =
     state === "awaiting"
@@ -270,6 +291,20 @@ function HoldingCard({
               {formatWithSymbol(claimable, info.stablecoin)}
             </dd>
           </div>
+          {possible ? (
+            <div className="flex justify-between gap-3">
+              <dt className="inline-flex items-center gap-1 text-secondaryText">
+                Possible rent
+                <InfoTip label="About possible rent">
+                  Your share of the builder&apos;s expected rent, after the vault&apos;s fees. Starts once the flat is
+                  finished and let. An estimate, not a promise.
+                </InfoTip>
+              </dt>
+              <dd className="font-medium text-primaryText">
+                {money(possible.min)} – {money(possible.max)} a month
+              </dd>
+            </div>
+          ) : null}
           <div className="flex justify-between gap-3">
             <dt className="text-secondaryText">Managed by</dt>
             <dd className="truncate font-medium text-primaryText">{info.manager}</dd>

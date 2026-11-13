@@ -25,7 +25,7 @@ no number to adjust.
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.collection import (
     CollectionRoleEnum,
@@ -197,10 +197,28 @@ class UnitOut(_Base):
     price_atomic: str
     total_shares: str
     shares_sold: str
+    rent_min_atomic: Optional[str] = None
+    rent_max_atomic: Optional[str] = None
     vault_account_id: Optional[str] = None
 
 
-class UnitCreate(BaseModel):
+class UnitRent(BaseModel):
+    """Expected yearly rent for a whole flat, as a low and a high figure."""
+
+    rent_min_atomic: Optional[str] = Field(default=None, pattern=r"^\d{1,39}$")
+    rent_max_atomic: Optional[str] = Field(default=None, pattern=r"^\d{1,39}$")
+
+    @model_validator(mode="after")
+    def _ordered(self):
+        lo, hi = self.rent_min_atomic, self.rent_max_atomic
+        if (lo is None) != (hi is None):
+            raise ValueError("Give both a low and a high yearly rent, or neither.")
+        if lo is not None and int(lo) > int(hi):
+            raise ValueError("The low rent cannot be more than the high rent.")
+        return self
+
+
+class UnitCreate(UnitRent):
     code: str = Field(min_length=1, max_length=32)
     label: str = Field(min_length=1, max_length=120)
     bedrooms: int = Field(ge=0, le=99)

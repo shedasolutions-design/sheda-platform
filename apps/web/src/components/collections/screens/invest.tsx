@@ -24,6 +24,7 @@ import { useMode } from "@/contexts/ModeContext";
 import { useMyCollectionProfiles } from "@/hooks/useCollections";
 import apiService, { type CollectionProjectSummary } from "@/services/api";
 import Link from "next/link";
+import InfoTip from "@/components/ui/InfoTip";
 import { Building, MapPin } from "lucide-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import nearContractService from "@/services/nearContract";
@@ -172,9 +173,7 @@ function BuyerSide() {
           <p className="font-semibold text-primaryText">
             {filter === "all" ? "No buildings to invest in yet" : "Nothing here right now"}
           </p>
-          <p className="mt-1 text-sm text-secondaryText">
-            When a builder opens a raise it appears here, with its phase schedule and who is behind it.
-          </p>
+          <p className="mt-1 text-sm text-secondaryText">New raises appear here.</p>
         </div>
       ) : (
         <div className="space-y-5">
@@ -192,9 +191,12 @@ function BuyerSide() {
           Raise money for a building
         </Link>
       </div>
-      <p className="mt-4 text-xs text-secondaryText">
-        Returns shown are each builder&apos;s own estimate. Sheda does not verify them and does not
-        guarantee any return.
+      <p className="mt-4 inline-flex items-center gap-1 text-xs text-secondaryText">
+        Returns are builders&apos; estimates.
+        <InfoTip label="About returns">
+          Each builder sets their own return and rent estimates from their research. Sheda does not check them
+          and does not guarantee any return. Read the raise documents before you invest.
+        </InfoTip>
       </p>
     </div>
   );
