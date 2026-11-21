@@ -80,6 +80,37 @@ async def get_me(current_user: ActiveUser, db: DBSession):
     return out
 
 
+@router.get("/username-check", status_code=status.HTTP_200_OK, response_model=dict)
+async def username_check(
+    current_user: ActiveUser,
+    db: DBSession,
+    username: str = Query(default="", max_length=64, description="The username wanted, if any"),
+    name: str = Query(default="", max_length=120, description="A full name to suggest usernames from"),
+):
+    """Is this username free, and free ones made from a name.
+
+    Signed in only, so it can't be used to list who is on Sheda. "Free"
+    ignores the person's own rows: their current username counts as free.
+    """
+    from app.services import usernames
+
+    wanted = usernames.normalize(username)
+    result: dict = {"username": wanted or None, "available": None, "problem": None}
+    if wanted:
+        result["problem"] = usernames.problem(wanted)
+        if result["problem"] is None:
+            result["available"] = not await usernames.is_taken(wanted, db, own_email=current_user.email)
+            if not result["available"]:
+                result["problem"] = "That username is taken."
+        else:
+            result["available"] = False
+    source = name or (wanted if not result["available"] else "")
+    result["suggestions"] = (
+        await usernames.suggest(source, db, own_email=current_user.email) if source else []
+    )
+    return result
+
+
 @router.get("/{user_id}", response_model=UserShow, status_code=status.HTTP_200_OK)
 async def get_user_by_id(user_id: int, current_user: ActiveVerifiedUser, db: DBSession):
     """

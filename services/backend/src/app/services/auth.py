@@ -33,7 +33,7 @@ from app.utils.enums import AccountTypeEnum
 from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
 from core.database import AsyncSessionLocal
 from pydantic import EmailStr
-from sqlalchemy import or_, and_
+from sqlalchemy import func, or_, and_, update
 from sqlalchemy.orm import selectinload
 
 
@@ -139,7 +139,7 @@ async def get_user(
         options.append(selectinload(Agent.availabilities))
     conditions = [
         BaseUser.email == identifier,
-        BaseUser.username == identifier,
+        func.lower(BaseUser.username) == identifier.strip().lower(),
         BaseUser.phone_number == identifier,
     ]
     if identifier.isdigit():
@@ -254,29 +254,33 @@ async def process_social_login(
         except HTTPException:
             # User doesn't exist, create account
             is_new_user = True
-            username = idinfo.get("name") or idinfo.get("given_name") or email.split("@")[0]
-            username = "".join(e for e in username if e.isalnum())[:30]
-            if not username:
-                username = "User"
+            # Made from the Google name and free: two people called the same
+            # used to collide, and the second was told the email was taken.
+            from app.services.usernames import unique_from_name
+
+            google_name = idinfo.get("name") or idinfo.get("given_name") or email.split("@")[0]
+            username = await unique_from_name(google_name, db)
             
             import uuid
             user_data = UserCreate(
                 username=username,
                 email=email,
                 password=generate_random_password(),
-                near_account_id=f"{username.lower()}-{uuid.uuid4().hex[:6]}{settings.near_account_suffix}",
+                # Dots would make a sub-account the factory can't create.
+                near_account_id=f"{re.sub(r'[^a-z0-9_-]', '', username.lower()) or 'member'}-{uuid.uuid4().hex[:6]}{settings.near_account_suffix}",
                 profile=payload.profile,
             )
 
             user = await create_account(user_data, db)
-            user.verified = True
-            
-            # update avatar_url if available
-            picture = idinfo.get("picture")
-            if picture:
-                user.avatar_url = picture
-                
-            db.add(user)
+
+            # Google vouches for the email, and knows the name and photo: on
+            # both of the person's rows (buyer and seller), not just one.
+            fields = {"verified": True}
+            if idinfo.get("name"):
+                fields["fullname"] = idinfo["name"][:255]
+            if idinfo.get("picture"):
+                fields["avatar_url"] = idinfo["picture"]
+            await db.execute(update(BaseUser).where(BaseUser.email == email).values(**fields))
             await db.commit()
             await db.refresh(user)
             
