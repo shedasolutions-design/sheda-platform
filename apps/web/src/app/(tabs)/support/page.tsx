@@ -19,6 +19,13 @@ export default function SupportPage() {
           involved, so we can look it up straight away.
         </p>
         <div className="mt-6 flex flex-col gap-3">
+          <Link href="/help" className="flex items-center gap-3 rounded-xl border border-borderColor p-4 hover:bg-cardBackground">
+            <BookOpen size={20} className="text-primary" />
+            <span>
+              <span className="block font-medium">Help Center</span>
+              <span className="block text-sm text-secondaryText">How deals, escrow, Invest and your wallet work</span>
+            </span>
+          </Link>
           <a
             href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Help with Sheda")}`}
             className="flex items-center gap-3 rounded-xl border border-borderColor p-4 hover:bg-cardBackground"
