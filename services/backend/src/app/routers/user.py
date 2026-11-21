@@ -130,7 +130,28 @@ async def get_user_by_id(user_id: int, current_user: ActiveUser, db: DBSession):
     user = await db.get(BaseUser, user_id)
     if user is None or user.is_deleted or not user.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    shown = UserShow.model_validate(user, from_attributes=True)
+    # Built from the person's own columns only. Validating the row itself
+    # read its appointments, payment accounts and viewing hours: lazily, which
+    # the async session refuses (every request failed with a 500), and they
+    # are not anyone else's business anyway (bank details among them).
+    public = {
+        "id": user.id,
+        "username": user.username,
+        "fullname": user.fullname,
+        "avatar_url": user.avatar_url,
+        "location": user.location,
+        "email": user.email,
+        "phone_number": user.phone_number,
+        "near_account_id": user.near_account_id,
+        "agency_name": getattr(user, "agency_name", None),
+        "is_active": user.is_active,
+        "is_deleted": user.is_deleted,
+        "created_at": user.created_at,
+        "verified": user.verified,
+        "kyc_status": user.kyc_status,
+        "account_type": user.account_type,
+    }
+    shown = UserShow.model_validate(public)
     if user.id == current_user.id:
         return shown
 

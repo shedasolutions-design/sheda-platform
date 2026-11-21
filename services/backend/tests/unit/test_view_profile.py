@@ -26,6 +26,8 @@ async def test_unverified_viewer_sees_profile_without_contact(db: AsyncSession):
     shown = await get_user_by_id(seller.id, viewer, db)
     assert shown.id == seller.id
     assert shown.email is None and shown.phone_number is None
+    # Never someone else's appointments, payment accounts or hours.
+    assert shown.appointments == [] and shown.account_info == [] and shown.availabilities == []
 
 
 async def test_closed_account_is_not_found(db: AsyncSession):
