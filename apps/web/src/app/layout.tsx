@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Manrope, Sora } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import Providers from "./providers";
 import "./globals.css";
 
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full bg-white font-sans text-primaryText">
         <Providers>{children}</Providers>
+        <Analytics />
       </body>
     </html>
   );
