@@ -29,7 +29,7 @@ import apiService, {
 } from "@/services/api";
 import { getFlatStage, type FlatStage } from "@/services/collections/chain";
 import { INFO } from "@/services/collections/copy";
-import { RAISE_CAN_WITHDRAW } from "@/config/collections";
+import { raiseAllowsWithdraw } from "@/config/collections";
 
 // ---- builder ---------------------------------------------------------------
 
@@ -306,7 +306,7 @@ export function MoreInformation({ project }: { project: CollectionProjectDetail 
         {
           Icon: LogOut,
           title: "Leaving a round",
-          line: RAISE_CAN_WITHDRAW
+          line: raiseAllowsWithdraw(project.escrow_account_id)
             ? "Take your money out while it fills, except in the last 7 days."
             : "If a round doesn't fill, everyone gets everything back.",
           help: "how-a-raise-works",

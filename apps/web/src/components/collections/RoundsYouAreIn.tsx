@@ -209,6 +209,15 @@ export default function RoundsYouAreIn({ accountId }: { accountId: string | null
                 ))}
               </div>
             ) : null}
+            {pos.status === "Open" && !expired && !pos.canWithdraw ? (
+              <p className="mt-3 border-t border-borderColor pt-3 text-xs text-secondaryText">
+                {pos.withdrawUntilMs
+                  ? "The last days before the deadline have started, so money can't be taken out now."
+                  : "This round can't be left early."}{" "}
+                If it hasn&apos;t filled by {new Date(pos.deadlineMs).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}, you&apos;ll
+                get everything back here.
+              </p>
+            ) : null}
             {note[project.slug] ? <p className="mt-2 text-xs text-secondaryText">{note[project.slug]}</p> : null}
           </article>
         );

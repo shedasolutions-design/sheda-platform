@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- project photos come from arbitrary hosts */
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, Delete } from "lucide-react";
+import { ArrowLeft, Check } from "lucide-react";
 import { Stack, router, useLocalSearchParams } from "@/components/collections/nav";
 import { ActivityIndicator } from "@/components/collections/rn";
 import { C, Empty, NotLiveYet } from "@/components/collections/ui";
@@ -13,7 +13,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useCollections } from "@/hooks/useCollections";
 import { amountForShares, bpsToPercent, formatAmount, ownershipBps, parseAmount, sharesForAmount } from "@/services/collections/money";
 import { DEFAULT_TOKEN } from "@/config/tokens";
-import { RAISE_CAN_WITHDRAW, RAISE_CONTRACT_ID } from "@/config/collections";
+import { RAISE_CONTRACT_ID, raiseAllowsWithdraw } from "@/config/collections";
 import {
   getChainSharesSold,
   getRaiseChainState,
@@ -225,18 +225,6 @@ export default function ChooseUnit() {
     else router.back();
   };
 
-  const press = (k: string) => {
-    if (mode === "shares") {
-      if (k === "del") return setShareInput((v) => v.slice(0, -1));
-      if (k === "." || shareInput.length >= 9) return;
-      return setShareInput((v) => (v === "0" ? k : v + k));
-    }
-    if (k === "del") return setAmount((a) => a.slice(0, -1));
-    if (k === "." && amount.includes(".")) return;
-    if (amount.includes(".") && amount.split(".")[1].length >= 2) return;
-    if (amount.replace(".", "").length >= 9) return;
-    setAmount((a) => (a === "0" && k !== "." ? k : a + k));
-  };
 
   const stepNo = { flat: 1, amount: 2, terms: 3, check: 4, done: 4 }[step];
 
@@ -346,7 +334,7 @@ export default function ChooseUnit() {
                   <p className="text-xs text-secondaryText">How much do you want to invest? (USD)</p>
                   <input
                     aria-label="Amount to invest in US dollars"
-                    inputMode="none"
+                    inputMode="decimal"
                     value={amount ? `$${amount}` : ""}
                     placeholder="$0"
                     onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
@@ -358,7 +346,7 @@ export default function ChooseUnit() {
                   <p className="text-xs text-secondaryText">How many shares do you want?</p>
                   <input
                     aria-label="Number of shares to buy"
-                    inputMode="none"
+                    inputMode="numeric"
                     value={shareInput}
                     placeholder="0"
                     onChange={(e) => setShareInput(e.target.value.replace(/[^0-9]/g, "").slice(0, 9))}
@@ -465,19 +453,6 @@ export default function ChooseUnit() {
               </p>
             ) : null}
 
-            <div className="grid grid-cols-3 gap-2 md:hidden" aria-label="Number pad">
-              {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "del"].map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => press(k)}
-                  aria-label={k === "del" ? "Delete" : k}
-                  className="flex h-12 items-center justify-center rounded-xl bg-gray-50 text-xl font-medium text-primaryText active:bg-gray-200"
-                >
-                  {k === "del" ? <Delete size={20} /> : k}
-                </button>
-              ))}
-            </div>
           </>
         ) : null}
 
@@ -491,7 +466,7 @@ export default function ChooseUnit() {
                 {shares} share{shares === "1" ? "" : "s"} of {unit.label}, {bpsToPercent(ownershipBps(shares, unit.total_shares))} of
                 that flat: its rent and a say in who manages it. Your money waits in the raise contract until the round
                 fills; if it does not fill by the deadline, you get it all back.
-                {RAISE_CAN_WITHDRAW ? " You can take it out while the round is filling, except in its last 7 days." : ""}
+                {raiseAllowsWithdraw(project.escrow_account_id) ? " You can take it out while the round is filling, except in its last 7 days." : ""}
               </p>
             </section>
             <section className="space-y-2 rounded-2xl border border-borderColor p-4 text-sm">

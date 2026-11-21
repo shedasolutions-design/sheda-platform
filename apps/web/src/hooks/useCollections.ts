@@ -49,7 +49,7 @@ function describe(e: unknown): { error: string | null; unavailable: string | nul
 }
 
 export function useCollections() {
-  const { walletState } = useWallet();
+  const { walletState, getAuthorizedPrivateKey } = useWallet();
   const [state, setState] = useState<CollectionsState>({
     loading: false,
     error: null,
@@ -83,9 +83,17 @@ export function useCollections() {
       operation: (accountId: string, privateKey: string) => Promise<ContractCallResult<void>>
     ): Promise<ContractCallResult<void>> => {
       const id = walletState.account?.accountId;
-      const key = walletState.account?.privateKey;
-      if (!id || !key) {
+      if (!id) {
         const error = "Connect your wallet before signing this.";
+        setState({ loading: false, error, unavailable: null });
+        return { success: false, error };
+      }
+      // The same check every marketplace payment goes through: the
+      // transaction PIN, when one is set. Invest used to sign straight from
+      // the loaded key, so investing never asked for it.
+      const key = await getAuthorizedPrivateKey(id);
+      if (!key) {
+        const error = "Not confirmed. Enter your transaction PIN to continue.";
         setState({ loading: false, error, unavailable: null });
         return { success: false, error };
       }
@@ -105,7 +113,7 @@ export function useCollections() {
         return { success: false, error: described.error ?? described.unavailable ?? "Failed" };
       }
     },
-    [walletState]
+    [walletState, getAuthorizedPrivateKey]
   );
 
   return {

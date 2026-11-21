@@ -138,3 +138,15 @@ export const SHARES_PER_UNIT = 10_000n;
  * app never promises what the contract cannot do.
  */
 export const RAISE_CAN_WITHDRAW = process.env.NEXT_PUBLIC_RAISE_CAN_WITHDRAW === "true";
+
+/**
+ * Whether the contract a particular round runs on lets investors leave
+ * early. Rounds live on different contracts (testnet's older ones on v4,
+ * newer on v5), so a single switch either promised v4 investors something
+ * the contract refuses, or hid the option from v5 investors entirely.
+ */
+export function raiseAllowsWithdraw(escrowAccountId?: string | null): boolean {
+  const id = (escrowAccountId || RAISE_CONTRACT_ID || "").toLowerCase();
+  if (/raise-v[1-4]\./.test(id)) return false;
+  return RAISE_CAN_WITHDRAW || /raise-v([5-9]|\d{2,})\./.test(id);
+}
