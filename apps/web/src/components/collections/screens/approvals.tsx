@@ -1,6 +1,6 @@
 "use client";
 
-import { getObjectionWindowMs, withChainState } from "@/services/collections/chain";
+import { getObjectionWindowMs, getRaiseChainState, withChainState } from "@/services/collections/chain";
 import { InterRegular, InterSemiBold } from "@/components/collections/rn";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, View } from "@/components/collections/rn";
@@ -106,7 +106,13 @@ export default function Approvals() {
     const live = await Promise.all(
       details.filter((d) => d.ok).map((d) => withChainState(d.data as CollectionProjectDetail))
     );
-    live.forEach((project) => {
+    // Phases only matter once a round has its money. A round still filling,
+    // or one that missed its deadline, listed its first phase as "Building"
+    // with a request button the contract would refuse.
+    const states = await Promise.all(live.map((p) => getRaiseChainState(p.slug).catch(() => null)));
+    live.forEach((project, i) => {
+      const status = states[i]?.status;
+      if (status && !["Funded", "Delivered", "Stalled"].includes(status)) return;
       project.phases.forEach((phase) => collected.push({ project, phase }));
     });
     setRows(collected);
