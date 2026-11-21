@@ -41,9 +41,10 @@ export const PROPERTY_CATEGORIES = Object.keys(CATEGORY_TO_PROPERTY_TYPE);
 /**
  * Whether a property belongs in a category chip.
  *
- * Every chip maps to a backend type. A listing whose title names the
- * category (say "Duplex" saved as an apartment before the backend knew
- * duplexes) still matches, so older listings don't drop out of their chip.
+ * A listing with a type matches on its type alone. The title used to count
+ * too, as a substring: "Land" matched every title containing "Island", so
+ * a shortlet in Victoria Island showed under Land. A title is only read for
+ * a listing with no type at all, and then as whole words.
  *
  * Applied on top of backend results as well as local ones, so a search with a
  * chip selected narrows the same way whichever list is on screen.
@@ -53,30 +54,20 @@ export function matchesCategory(
   category?: string | null
 ): boolean {
   if (!category || category === "All") return true;
+  const wanted = CATEGORY_TO_PROPERTY_TYPE[category];
+  const type = property.property_type?.trim().toLowerCase();
+  if (type) return !!wanted && type === wanted;
 
-  const categoryLower = category.toLowerCase();
-  const typeLower = property.property_type?.toLowerCase().replace(/_/g, " ");
-
-  if (categoryLower === "apartments" && typeLower === "apartment") return true;
-  if (categoryLower === "land" && typeLower === "land") return true;
-  if (categoryLower === "shortlets" && typeLower === "shortlet") return true;
-  if (categoryLower === "shared apartments" && typeLower === "shared apartment") return true;
-
-  // Chips are plural, types are singular.
-  let categorySingular = categoryLower;
-  if (categoryLower.endsWith("ies")) {
-    categorySingular = categoryLower.slice(0, -3) + "y";
-  } else if (categoryLower.endsWith("es") && categoryLower !== "houses") {
-    categorySingular = categoryLower.slice(0, -2);
-  } else if (categoryLower.endsWith("s")) {
-    categorySingular = categoryLower.slice(0, -1);
-  }
-
-  if (typeLower === categorySingular) return true;
-  if (typeLower === categoryLower) return true;
-
-  if (property.title?.toLowerCase().includes(categorySingular)) return true;
-  if (property.title?.toLowerCase().includes(categoryLower)) return true;
-
-  return false;
+  // No type on record: whole words of the title, singular or plural.
+  const label = category.toLowerCase();
+  const singular = label.endsWith("ies")
+    ? label.slice(0, -3) + "y"
+    : label.endsWith("xes") || label.endsWith("ses")
+      ? label.slice(0, -2)
+      : label.endsWith("s")
+        ? label.slice(0, -1)
+        : label;
+  const escape = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const words = new RegExp(`\\b(${escape(singular)}|${escape(label)})\\b`, "i");
+  return words.test(property.title || "");
 }

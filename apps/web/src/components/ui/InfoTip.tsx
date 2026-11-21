@@ -1,44 +1,53 @@
 "use client";
 
-import { Info } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import Link from "next/link";
+import { Info, X } from "lucide-react";
+import { useEffect, useId, useState } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * A small "i" that opens the longer explanation, so screens keep the short
- * version on show and the detail one tap away. Closes on a second tap, a
- * tap elsewhere, or Escape.
+ * version on show and the detail one tap away.
+ *
+ * It opens as a panel from the bottom of the screen, drawn outside the page.
+ * It used to float beside the icon, and near the right edge it ran off the
+ * screen and pushed the whole page sideways. Closes on the X, a tap outside,
+ * or Escape. `readMore` adds a link to the full article in the Help Center.
  */
 export default function InfoTip({
   children,
   label = "More about this",
-  align = "left",
+  title,
+  readMore,
 }: {
   children: React.ReactNode;
   label?: string;
+  /** Heading on the panel; defaults to the label. */
+  title?: string;
+  /** A Help Center path for the full explanation. */
+  readMore?: { href: string; text?: string };
+  /** No longer used: the panel always opens from the bottom. */
   align?: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLSpanElement>(null);
   const id = useId();
 
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent | TouchEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("touchstart", onDown);
     document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("touchstart", onDown);
       document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
     };
   }, [open]);
 
+  const heading = title || label.replace(/^About /, "").replace(/^\w/, (c) => c.toUpperCase());
+
   return (
-    <span ref={ref} className="relative inline-flex align-middle">
+    <>
       <button
         type="button"
         aria-label={label}
@@ -47,24 +56,54 @@ export default function InfoTip({
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          setOpen((v) => !v);
+          setOpen(true);
         }}
-        className="inline-flex h-5 w-5 items-center justify-center rounded-full text-secondaryText hover:text-primary"
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full align-middle text-secondaryText hover:text-primary"
       >
         <Info size={14} />
       </button>
-      {open ? (
-        <span
-          id={id}
-          role="tooltip"
-          className={`absolute top-6 z-50 w-64 max-w-[80vw] rounded-xl border border-borderColor bg-white p-3 text-left text-xs font-normal leading-relaxed text-primaryText shadow-lg ${
-            align === "right" ? "right-0" : "left-0"
-          }`}
-        >
-          {children}
-        </span>
-      ) : null}
-    </span>
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <div className="fixed inset-0 z-[60] flex items-end justify-center" role="presentation">
+              <button
+                type="button"
+                aria-label="Close"
+                className="absolute inset-0 bg-black/40"
+                onClick={() => setOpen(false)}
+              />
+              <div
+                id={id}
+                role="dialog"
+                aria-modal="true"
+                aria-label={heading}
+                className="relative w-full max-w-xl rounded-t-3xl bg-white px-6 pb-8 pt-5 text-left shadow-2xl"
+              >
+                <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-gray-200" aria-hidden="true" />
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  aria-label="Close"
+                  className="absolute right-4 top-4 rounded-full p-2 text-secondaryText hover:bg-cardBackground"
+                >
+                  <X size={18} />
+                </button>
+                <h2 className="pr-10 text-lg font-semibold text-primaryText">{heading}</h2>
+                <div className="mt-2 text-sm font-normal leading-relaxed text-secondaryText">{children}</div>
+                {readMore ? (
+                  <Link
+                    href={readMore.href}
+                    onClick={() => setOpen(false)}
+                    className="mt-4 inline-block text-sm font-semibold text-primaryText underline underline-offset-4"
+                  >
+                    {readMore.text || "Read more"}
+                  </Link>
+                ) : null}
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+    </>
   );
 }
 
