@@ -26,6 +26,7 @@ import { bidAssets, bidPropertyIdsToFetch, mergeAssetSources, ownedAssets } from
 import { formatAmount } from "@/utilities/atomicAmount";
 import { formatDateTime, formatRelativeTime } from "@/utilities/formatTimestamp";
 import { getAccountExplorerUrl, getTxExplorerUrl } from "@/utilities/nearExplorer";
+import { isCheckDue } from "@/utilities/backupCheck";
 
 /** NEAR Intents is mainnet-only, so only these show in its pickers. */
 const WALLET_WHITELISTED_SYMBOLS = ["USDC", "USDT", "wNEAR", "NEAR"];
@@ -36,7 +37,15 @@ const TABS: WalletTab[] = ["Tokens", "Transactions", "Assets"];
 const short = (s: string, n = 14) => (s.length > n + 3 ? `${s.slice(0, n)}…` : s);
 
 function Portfolio() {
-  const { walletState, currentNetwork, getAccountTransactions, getTokenBalances, sendTransaction, sendFungibleToken, loading } = useWallet();
+  const { walletState, currentNetwork, getAccountTransactions, getTokenBalances, sendTransaction, sendFungibleToken, loading, hasCloudBackup } = useWallet();
+  // Read once per wallet; the date lives in this browser.
+  const [backupCheckDue, setBackupCheckDue] = useState(false);
+  const [dueReadFor, setDueReadFor] = useState<string | null>(null);
+  const walletIdForCheck = walletState.account?.accountId ?? null;
+  if (walletIdForCheck && dueReadFor !== walletIdForCheck) {
+    setDueReadFor(walletIdForCheck);
+    setBackupCheckDue(isCheckDue(walletIdForCheck));
+  }
   const { run } = useTransactionToast();
   const { transferProperty, getTestTokens } = useNearContract();
   const [toppingUp, setToppingUp] = useState(false);
@@ -346,6 +355,15 @@ function Portfolio() {
         <Link href="/wallet-recovery" className="mt-1 inline-block text-xs font-medium text-primary hover:underline">
           Backup &amp; recovery
         </Link>
+        {hasCloudBackup && backupCheckDue && (
+          <Link
+            href="/wallet-recovery?check=1"
+            className="mx-auto mt-3 block max-w-sm rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 hover:bg-amber-100"
+          >
+            Still remember your backup password? <span className="font-semibold underline">Test it</span>. Nobody can
+            reset it for you.
+          </Link>
+        )}
         <div className="mt-5 grid grid-cols-2 gap-3">
           <Button variant="outline" onClick={() => setDepositOpen(true)}>
             <ArrowDownToLine size={18} /> Deposit
