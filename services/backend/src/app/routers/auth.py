@@ -35,6 +35,8 @@ from app.services.user_service import (
 from app.utils.utils import verify_otp, blacklist_token, token_exp_time
 from app.utils.email import create_send_otp
 from app.schemas.auth_schema import SignUpShow
+from app.schemas.auth_schema import ConfirmEmailRequest, DeviceCheck, DeviceCodeRequest, DeviceResendRequest
+from app.services import device_check
 
 router = APIRouter(
     tags=["Auth"],
@@ -95,6 +97,20 @@ async def login_for_access_token(
 ) -> Token:
     login_data = LoginData(**form_data.__dict__)  # type: ignore
     user: UserInDB = await authenticate_user(login_data, db)
+    # The password was right. On a device this account hasn't used, it is
+    # not enough on its own: hold the sign-in until the emailed code comes
+    # back (POST /auth/login/verify-device).
+    device_id = getattr(form_data, "device_id", None)
+    if device_check.enabled() and not await device_check.is_trusted(user.email, device_id):  # type: ignore
+        challenge = await device_check.start(user, device_id)
+        return Token(
+            access_token="",
+            device_check=DeviceCheck(challenge=challenge, email_hint=device_check.mask_email(user.email)),  # type: ignore
+        )
+    return await _signin_token(user)
+
+
+async def _signin_token(user) -> Token:
     scopes = [user.account_type.value, user.role.value]  # type: ignore
     # Derived from the row that was actually authenticated, never from what
     # the caller asked for — so the claim can't describe a different identity
@@ -104,6 +120,31 @@ async def login_for_access_token(
         data=TokenData(sub=user.id, scopes=scopes, active_profile=active_profile),  # type: ignore
     )
     return Token(access_token=access_token, active_profile=active_profile)
+
+
+@router.post("/login/verify-device", response_model=Token)
+async def verify_device(payload: DeviceCodeRequest, db: DBSession) -> Token:
+    """Finish a sign-in that was held for a code: the device is remembered."""
+    user = await device_check.finish(payload.challenge, payload.otp, db)
+    return await _signin_token(user)
+
+
+@router.post("/login/resend-code", status_code=status.HTTP_202_ACCEPTED, response_model=dict)
+async def resend_device_code(payload: DeviceResendRequest):
+    await device_check.resend(payload.challenge)
+    return {"detail": "Code sent"}
+
+
+@router.post("/confirm-email", status_code=status.HTTP_200_OK, response_model=dict)
+async def confirm_email(payload: ConfirmEmailRequest, current_user: ActiveUser, db: DBSession):
+    """The code sent at sign-up. Keeps the session: nothing to swap or re-sign."""
+    from app.utils.utils import verify_otp
+
+    if not await verify_otp(payload.otp, current_user.email):  # type: ignore
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid code. Please check it and try again.")
+    await device_check.mark_email_verified(current_user.email, db)  # type: ignore
+    await device_check.trust(current_user.email, payload.device_id)  # type: ignore
+    return {"verified": True}
 
 
 @router.post("/logout", status_code=status.HTTP_202_ACCEPTED)
@@ -280,7 +321,7 @@ async def forgot_password(payload: ForgotPasswordResetRequest, db: DBSession):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
-    otp_sent = await create_send_otp(user.email)  # type: ignore
+    otp_sent = await create_send_otp(user.email, purpose="reset")  # type: ignore
     if not otp_sent:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Unable to send OTP"

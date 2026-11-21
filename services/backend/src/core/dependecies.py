@@ -39,8 +39,14 @@ class CustomOAuth2PasswordRequestForm(OAuth2PasswordRequestForm):
             default=None,
             description="Sign in as 'buyer' or 'seller'. Omit for buyer.",
         ),
+        device_id: Optional[str] = Form(
+            default=None,
+            max_length=128,
+            description="A random id the app keeps for this device, so a new device can be asked for a code.",
+        ),
     ):
         super().__init__(username=username, password=password)
+        self.device_id = device_id
         # Left as a plain string here and validated against ProfileEnum when
         # LoginData is built from this object, so an unrecognised value is a
         # 422 on the request rather than something that silently degrades to

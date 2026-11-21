@@ -1,5 +1,6 @@
 
 import AsyncStorage from "@/lib/storage";
+import { getDeviceId } from "@/utilities/deviceId";
 import { rememberRaise } from "@/services/collections/raiseRegistry";
 
 import {
@@ -73,9 +74,18 @@ export interface UserShow {
   availabilities?: AvailabilityShow[] | null;
 }
 
+export interface DeviceCheck {
+  /** Answered with the emailed code at /auth/login/verify-device. */
+  challenge: string;
+  /** The account's email, partly hidden: a****@gmail.com. */
+  email_hint: string;
+}
+
 export interface Token {
   access_token: string;
   token_type?: string;
+  /** Present (with an empty access_token) when this device needs a code first. */
+  device_check?: DeviceCheck | null;
 }
 
 export interface OtpSend {
@@ -1243,12 +1253,40 @@ class ApiService {
     if (profile) {
       body += `&profile=${encodeURIComponent(profile)}`;
     }
+    // Lets the server recognise this browser; a new one is asked for a code.
+    const deviceId = getDeviceId();
+    if (deviceId) {
+      body += `&device_id=${encodeURIComponent(deviceId)}`;
+    }
 
     // The endpoint expects urlencoded form
     return this.request<Token>(`/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: body,
+    });
+  }
+
+  /** Finish a sign-in held for a new device, with the emailed code. */
+  async verifyDevice(challenge: string, otp: string): Promise<ApiResponse<Token>> {
+    return this.request<Token>("/api/v1/auth/login/verify-device", {
+      method: "POST",
+      body: JSON.stringify({ challenge, otp }),
+    });
+  }
+
+  async resendDeviceCode(challenge: string): Promise<ApiResponse<{ detail: string }>> {
+    return this.request<{ detail: string }>("/api/v1/auth/login/resend-code", {
+      method: "POST",
+      body: JSON.stringify({ challenge }),
+    });
+  }
+
+  /** The code emailed at sign-up. Keeps the session as it is. */
+  async confirmEmail(otp: string): Promise<ApiResponse<{ verified: boolean }>> {
+    return this.request<{ verified: boolean }>("/api/v1/auth/confirm-email", {
+      method: "POST",
+      body: JSON.stringify({ otp, device_id: getDeviceId() || null }),
     });
   }
 

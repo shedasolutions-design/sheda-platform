@@ -1,38 +1,60 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Button from "@/components/ui/Button";
 import CodeInput from "@/components/ui/CodeInput";
 import FeedbackModal from "@/components/ui/FeedbackModal";
 import BackLink from "@/components/ui/BackLink";
+import { useWallet } from "@/contexts/WalletContext";
 import { useAuth } from "@/hooks/useShedaApi";
 import { useFeedback } from "@/hooks/useFeedback";
-import { getQueryParam } from "@/lib/navigation";
+import { getQueryParam, safeNextPath } from "@/lib/navigation";
 
 const RESEND_COOLDOWN = 30; // seconds
 
 const formatTime = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
+type Flow = "reset" | "signup" | "device";
+
 /**
- * Email code entry. Two flows land here:
- *   ?email=...                       password reset, continues to /reset-pass
- *   ?email=...&returnTo=wallet-setup  email verification before wallet setup
+ * Email code entry. Three flows land here:
+ *   ?email=...                          password reset, continues to /reset-pass
+ *   ?email=...&returnTo=wallet-setup     confirming the email right after sign-up
+ *   ?mode=device&challenge=...&hint=...  signing in on a device the account hasn't used
  */
 export default function OtpPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
-  const [returnTo, setReturnTo] = useState<string | null>(null);
+  const [flow, setFlow] = useState<Flow>("reset");
+  const [challenge, setChallenge] = useState("");
+  const [hint, setHint] = useState("");
   const [otp, setOtp] = useState("");
-  const { verifyOtp, sendOtp, forgotPassword, verifyForgotPassword, isLoading, error, clearError } = useAuth();
+  const {
+    sendOtp,
+    forgotPassword,
+    verifyForgotPassword,
+    confirmEmail,
+    completeDeviceSignIn,
+    resendDeviceCode,
+    isLoading,
+    error,
+    clearError,
+  } = useAuth();
+  const { hasLocalWallet } = useWallet();
   const isSubmitting = useRef(false);
   const [countdown, setCountdown] = useState(RESEND_COOLDOWN);
   const { feedback, show, hide, isConnectionError } = useFeedback();
 
   useEffect(() => {
     setEmail(getQueryParam("email") ?? "");
-    setReturnTo(getQueryParam("returnTo"));
+    setChallenge(getQueryParam("challenge") ?? "");
+    setHint(getQueryParam("hint") ?? "");
+    setFlow(
+      getQueryParam("mode") === "device" ? "device" : getQueryParam("returnTo") === "wallet-setup" ? "signup" : "reset"
+    );
   }, []);
 
   // One ticking effect drives both the first cooldown and every resend.
@@ -54,6 +76,8 @@ export default function OtpPage() {
       );
     } else if (e.includes("cors") || e.includes("configuration")) {
       show("error", "Server Error", "Server is not configured properly. Please contact support.");
+    } else if (e.includes("too many") || e.includes("sign in again")) {
+      show("error", "Please sign in again", error);
     } else if (/invalid|incorrect|wrong/.test(e)) {
       show("error", "Invalid Code", "The code you entered is incorrect. Please check and try again.");
     } else if (e.includes("expired")) {
@@ -73,45 +97,52 @@ export default function OtpPage() {
       }
       isSubmitting.current = true;
       try {
-        // Password reset happens signed out, so it has its own routes: the
-        // signed-in ones answered "Not authenticated" and no reset could
-        // ever finish.
-        if (returnTo === "wallet-setup") await verifyOtp(email, code);
-        else await verifyForgotPassword(email, code);
-        if (returnTo === "wallet-setup") {
-          show("success", "Email Verified!", "Redirecting to wallet setup…");
+        if (flow === "device") {
+          await completeDeviceSignIn(challenge, code);
+          show("success", "Welcome Back!", "This device is now remembered. Redirecting…");
           setTimeout(() => {
             hide();
-            router.replace(`/wallet-setup?email=${encodeURIComponent(email)}`);
+            router.replace(hasLocalWallet ? safeNextPath("/home") : "/wallet-setup");
+          }, 800);
+        } else if (flow === "signup") {
+          await confirmEmail(code);
+          show("success", "Email Verified!", "Setting up your wallet…");
+          setTimeout(() => {
+            hide();
+            router.replace("/wallet-setup/provision");
           }, 800);
         } else {
+          // Password reset happens signed out, so it has its own routes.
+          await verifyForgotPassword(email, code);
           // The verified code is held by the API client; reset needs only the new password.
           router.push("/reset-pass");
         }
         setOtp("");
       } catch (err) {
-        console.error("OTP verification failed:", err);
+        console.error("Code verification failed:", err);
       } finally {
         isSubmitting.current = false;
       }
     },
-    [otp, email, returnTo, verifyOtp, verifyForgotPassword, show, hide, router]
+    [otp, flow, challenge, email, completeDeviceSignIn, confirmEmail, verifyForgotPassword, hasLocalWallet, show, hide, router]
   );
 
   const handleResend = useCallback(async () => {
     if (countdown > 0) return;
     setCountdown(RESEND_COOLDOWN);
     try {
-      if (returnTo === "wallet-setup") await sendOtp(email);
+      if (flow === "device") await resendDeviceCode(challenge);
+      else if (flow === "signup") await sendOtp(email);
       else await forgotPassword(email);
-      show("success", "Code Sent!", "A new verification code has been sent to your email.");
+      show("success", "Code Sent!", "A new code has been sent to your email.");
     } catch (err) {
-      console.error("Failed to resend OTP:", err);
+      console.error("Failed to resend code:", err);
       setCountdown(0);
     }
-  }, [countdown, email, returnTo, sendOtp, forgotPassword, show]);
+  }, [countdown, flow, challenge, email, sendOtp, forgotPassword, resendDeviceCode, show]);
 
   const showLoading = isLoading && isSubmitting.current;
+  const sentTo = flow === "device" ? hint : email;
 
   return (
     <>
@@ -128,10 +159,13 @@ export default function OtpPage() {
         }}
       />
 
-      <BackLink fallback="/forget-pass" />
-      <h1 className="mt-6 text-2xl font-bold">Please check your email</h1>
+      {flow !== "signup" ? <BackLink fallback={flow === "device" ? "/login" : "/forget-pass"} /> : null}
+      <h1 className="mt-6 text-2xl font-bold">
+        {flow === "device" ? "Confirm it's you" : flow === "signup" ? "Verify your email" : "Please check your email"}
+      </h1>
       <p className="mt-2 text-secondaryText">
-        We&apos;ve sent a code to <span className="font-medium text-primaryText">{email}</span>
+        {flow === "device" ? "This device is new to your account. " : null}
+        We&apos;ve sent a 4-digit code to <span className="font-medium text-primaryText">{sentTo || "your email"}</span>
       </p>
 
       <div className="my-8">
@@ -160,6 +194,18 @@ export default function OtpPage() {
           </p>
         )}
       </div>
+
+      {flow === "signup" ? (
+        // A slow or missing email must not strand a new account. The next
+        // sign-in on a new device asks for a code anyway, which verifies it.
+        <p className="mt-6 text-center text-xs text-secondaryText">
+          Can&apos;t find it? Check spam, or{" "}
+          <Link href="/wallet-setup/provision" replace className="font-medium underline">
+            verify later
+          </Link>
+          .
+        </p>
+      ) : null}
     </>
   );
 }
