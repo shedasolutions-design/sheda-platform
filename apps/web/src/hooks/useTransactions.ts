@@ -42,6 +42,13 @@ import {
 import { readCachedList, writeCachedList, LIST_CACHE_SCOPES } from "@/services/listCache";
 
 interface UseTransactionsReturn {
+    /**
+     * True when the deals are read for the account on the person's profile
+     * because no wallet is loaded in this browser (still starting, another
+     * device, or storage cleared). The list is complete; acting on a deal
+     * needs the wallet.
+     */
+    readOnly: boolean;
     /** All transactions for the current user */
     transactions: Transaction[];
     /** Ongoing transactions (active phases) */
@@ -300,7 +307,7 @@ interface OnChainFetchResult {
 
 export function useTransactions(): UseTransactionsReturn {
     const { walletState, currentNetwork } = useWallet();
-    const { properties, getTransactions } = useApi();
+    const { properties, getTransactions, user } = useApi();
 
     /**
      * Backend properties are used purely to prettify what's already been read
@@ -325,7 +332,14 @@ export function useTransactions(): UseTransactionsReturn {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const accountId = walletState.account?.accountId;
+    // Deals are public on chain, so they can be read for the NEAR account on
+    // the person's profile even when no wallet is loaded here. Reading only
+    // for a loaded wallet showed "No transactions" on every tab while the
+    // wallet was starting, and for good on another browser or device, even
+    // though the deals were real and still visible in chat.
+    const walletAccountId = walletState.account?.accountId;
+    const accountId = walletAccountId || user?.near_account_id || undefined;
+    const readOnly = !walletAccountId && !!accountId;
 
     /**
      * Show the last-known deals immediately while the real fetch runs behind
@@ -662,6 +676,7 @@ export function useTransactions(): UseTransactionsReturn {
     const { ongoing, completed, expired, cancelled } = partitionTransactions(transactions);
 
     return {
+        readOnly,
         transactions,
         ongoing,
         completed,

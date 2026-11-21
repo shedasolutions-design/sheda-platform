@@ -23,7 +23,7 @@ type Tab = (typeof TABS)[number];
  */
 export default function DealTabs({ deals }: { deals: ReturnType<typeof useTransactions> }) {
   const [tab, setTab] = useState<Tab>("Ongoing");
-  const { ongoing, completed, expired, cancelled, loading, error, refresh, updatePhase } = deals;
+  const { ongoing, completed, expired, cancelled, loading, error, refresh, updatePhase, readOnly } = deals;
   useExpirationChecker(useMemo(() => [...completed, ...expired], [completed, expired]));
 
   // Deals move while you look at them; poll every minute while the page is open.
@@ -68,6 +68,15 @@ export default function DealTabs({ deals }: { deals: ReturnType<typeof useTransa
       </div>
 
       <div className="mt-4">
+        {readOnly ? (
+          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Your wallet isn&apos;t loaded in this browser, so you can see your deals but not act on them yet.{" "}
+            <Link href="/wallet-setup" className="font-medium underline">
+              Restore your wallet
+            </Link>{" "}
+            to accept, cancel or reclaim.
+          </p>
+        ) : null}
         {/* A partial failure still has rows worth showing: warn above them. */}
         {error && current.length > 0 && (
           <p className="mb-3 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
