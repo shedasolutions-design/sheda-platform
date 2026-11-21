@@ -4,7 +4,6 @@ from app.services.user_service import (
     ActiveUser,
     ActiveVerifiedClient,
     ActiveAgent,
-    ActiveVerifiedUser,
     get_current_user,
 )
 from app.services.profile import (
@@ -112,7 +111,7 @@ async def username_check(
 
 
 @router.get("/{user_id}", response_model=UserShow, status_code=status.HTTP_200_OK)
-async def get_user_by_id(user_id: int, current_user: ActiveVerifiedUser, db: DBSession):
+async def get_user_by_id(user_id: int, current_user: ActiveUser, db: DBSession):
     """
     Someone else's profile. Ids are sequential, so this used to let any
     signed-in user walk 1, 2, 3... and collect every email, phone number and
@@ -124,8 +123,12 @@ async def get_user_by_id(user_id: int, current_user: ActiveVerifiedUser, db: DBS
 
     from app.models.property import Appointment
 
+    # Any signed-in account may look: it used to need a verified email, and
+    # most accounts made before codes existed never had one, so "View seller"
+    # and "View buyer" failed for them. What's private (email, phone) is
+    # still held back below unless the two have a viewing together.
     user = await db.get(BaseUser, user_id)
-    if user is None:
+    if user is None or user.is_deleted or not user.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     shown = UserShow.model_validate(user, from_attributes=True)
     if user.id == current_user.id:
