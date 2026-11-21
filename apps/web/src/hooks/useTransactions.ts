@@ -630,9 +630,14 @@ export function useTransactions(): UseTransactionsReturn {
                     (limit, cursor) => api.getProperties(limit, cursor)
                 );
                 for (const [, item] of missing) {
-                    const pid = Number(item.property_id) || 0;
-                    const bidId = Number(item.bid_id) || 0;
-                    const chainBid = bidsByProperty.get(pid)?.find((b) => Number(b.id) === bidId);
+                    // Only clean numeric ids: older backend rows hold ids
+                    // like "bid_2" that name no bid at all.
+                    if (!/^\d+$/.test(String(item.bid_id ?? "")) || !/^\d+$/.test(String(item.property_id ?? ""))) continue;
+                    const pid = Number(item.property_id);
+                    const bidId = Number(item.bid_id);
+                    const chainBids = bidsByProperty.get(pid);
+                    const chainBid = chainBids?.find((b) => Number(b.id) === bidId);
+                    if (chainBids && !chainBid) continue; // the chain says this bid does not exist
                     if (!chainBid || !propertyCache[pid]) {
                         // The chain could not be read for this one: show what
                         // the backend recorded rather than nothing.
