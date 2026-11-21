@@ -327,6 +327,7 @@ development needs `eval` and live-reload sockets they would block.
 | Web app: every screen, on market.sheda.app and testing.sheda.app | Working |
 | Marketplace: listings, inspections, offers, escrow, leases, documents, disputes | Working |
 | Built-in wallet: created and funded automatically at sign-up; import, recovery, Google backup | Working |
+| Cross-chain deposits and withdrawals via **NEAR Intents** (1Click API): bring funds in from Solana, Ethereum, Bitcoin, BSC and more, or send them out, with a live quote and status (`apps/web/src/services/nearIntents.ts`, `components/wallet/IntentsFlows.tsx`) | Built into the wallet's Deposit and Withdraw. **Mainnet only**, because NEAR Intents has no testnet: on testnet the option is shown but disabled. |
 | Invest: browse, rank, open a raise, four-step investing, manager vote, withdraw, claim shares, claim rent, share market, Invest updates | Working on testnet (raise v5 live; v4 flats upgraded) |
 | Admin panel: dashboard, every table, Smart contracts | Working |
 | Contracts: vault, raise, stake registry, marketplace | 105 unit + 37 integration tests; raise and vault v5 live on testnet, live smoke tests passed |
@@ -343,22 +344,17 @@ Still ahead on the Sheda roadmap: real estate services integration (management, 
 
 ---
 
-## Where development happens
+## Where the code came from
 
-This repository is the monorepo and the source of truth. Work happens on
-`TT`, which deploys to testing.sheda.app on every push. When it is ready,
-`TT` is merged into `main`, which deploys to market.sheda.app.
-It consolidates the code that was previously developed separately in:
+Sheda existed before the hackathon in five public repositories. They were
+combined into this one on 2026-11-08 (tag `pre-hackathon`); the work done
+during the event is the diff to `hackathon-submission`.
 
 - `shedasolutions-design/sheda-solution-mobile` → `apps/mobile/` (reference only)
 - `shedasolutions-design/Sheda-Collection-app` → `apps/collection-app/`
-- `shedasolutions-design/Sheda-Backend` → `services/backend/`. A Cloudflare
-  Workers copy was tried and removed; it is in this repo's history.
+- `shedasolutions-design/Sheda-Backend` → `services/backend/`
 - `shedasolutions-design/sheda-new-contract` → `contracts/market/`
 - `shedasolutions-design/sheda-collection-app-contract` → `contracts/{raise,vault,stake-registry}/`
-
-Those repositories are inputs now, not parallel branches of work. New changes
-land here.
 
 ---
 
