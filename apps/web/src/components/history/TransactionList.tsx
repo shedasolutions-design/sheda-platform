@@ -70,7 +70,7 @@ export default function DealTabs({ deals }: { deals: ReturnType<typeof useTransa
 
       <div className="mt-4">
         {readOnly ? (
-          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <p className="mb-3 rounded-lg border border-brandBorder bg-brandTint px-3 py-2 text-xs text-brandInk">
             Your wallet isn&apos;t loaded in this browser, so you can see your deals but not act on them yet.{" "}
             <Link href="/wallet-setup" className="font-medium underline">
               Restore your wallet
@@ -80,7 +80,7 @@ export default function DealTabs({ deals }: { deals: ReturnType<typeof useTransa
         ) : null}
         {/* A partial failure still has rows worth showing: warn above them. */}
         {error && current.length > 0 && (
-          <p className="mb-3 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          <p className="mb-3 flex items-center justify-between rounded-lg border border-brandBorder bg-brandTint px-3 py-2 text-xs text-brandInk">
             {error}
             <button type="button" onClick={refresh} className="ml-2 underline">
               Retry

@@ -220,7 +220,7 @@ export default function TokenSelectionModal({
         {actionLabel}
       </Button>
 
-      <p className="mt-4 rounded-lg bg-yellow-50 p-3 text-xs text-yellow-800">
+      <p className="mt-4 rounded-lg bg-brandTint p-3 text-xs text-brandInk">
         {exact
           ? "This property has a fixed price. The exact listing price will be sent to the blockchain."
           : "This is a negotiable offer. The seller can accept or reject your bid."}

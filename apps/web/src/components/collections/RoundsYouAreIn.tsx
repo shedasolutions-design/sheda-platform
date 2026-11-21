@@ -115,7 +115,7 @@ export default function RoundsYouAreIn({ accountId }: { accountId: string | null
     <section className="space-y-3">
       <h2 className="inline-flex items-center gap-1 text-base font-semibold text-primaryText">
         Rounds you&apos;re in
-        <InfoTip label="About rounds">
+        <InfoTip label="About rounds" readMore={{ href: "/help/how-a-raise-works" }}>
           Money you put into a round stays in the raise contract, not with the builder. If the round does not fill
           by its deadline, you take back everything you put in. Once it fills, you collect your shares here.
         </InfoTip>
@@ -128,7 +128,7 @@ export default function RoundsYouAreIn({ accountId }: { accountId: string | null
         const canRefund = expired || (pos.status === "Failed" && !pos.refunded);
 
         const state = canRefund
-          ? { text: "Did not fill in time", cls: "bg-amber-50 text-amber-800" }
+          ? { text: "Did not fill in time", cls: "bg-brandTint text-brandInk" }
           : pos.status === "Open"
             ? { text: `${daysLeft} day${daysLeft === 1 ? "" : "s"} left`, cls: "bg-primaryLight text-primary" }
             : pos.status === "Stalled"
@@ -191,7 +191,7 @@ export default function RoundsYouAreIn({ accountId }: { accountId: string | null
                 <p className="inline-flex items-center gap-1 text-xs text-secondaryText">
                   Changed your mind? You can take your money out until{" "}
                   {pos.withdrawUntilMs ? new Date(pos.withdrawUntilMs).toLocaleString() : "the last days"}.
-                  <InfoTip label="About taking money out">
+                  <InfoTip label="About taking money out" readMore={{ href: "/help/how-a-raise-works" }}>
                     While a round is filling you can take back what you put into a flat. Not once it is full, and not in
                     its last days, because the builder is counting on that money.
                   </InfoTip>

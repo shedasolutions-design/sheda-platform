@@ -31,7 +31,7 @@ const STATUS_TEXT: Record<CollectionDocumentStatus, string> = {
 };
 const STATUS_CLASS: Record<CollectionDocumentStatus, string> = {
   verified: "bg-green-50 text-green-800",
-  uploaded: "bg-amber-50 text-amber-800",
+  uploaded: "bg-brandTint text-brandInk",
   missing: "bg-red-50 text-red-800",
 };
 

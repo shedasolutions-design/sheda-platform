@@ -107,7 +107,7 @@ export function TransactionsList({
     return <EmptyState icon={<Inbox size={40} />} title="No transactions yet" message="Sends, receipts and contract calls show up here." />;
   return (
     <>
-      {error && <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">{error}</p>}
+      {error && <p className="mb-2 rounded-lg bg-brandTint px-3 py-2 text-xs text-brandInk">{error}</p>}
       <ul>
         {transactions.map((tx) => (
           <li key={tx.id}>
@@ -123,7 +123,7 @@ const stateColor: Record<string, string> = {
   listed: "bg-green-50 text-green-700",
   leased: "bg-blue-50 text-blue-700",
   sold: "bg-purple-50 text-purple-700",
-  bid: "bg-amber-50 text-amber-700",
+  bid: "bg-brandTint text-brandInk",
 };
 
 export function AssetsList({
@@ -150,7 +150,7 @@ export function AssetsList({
     return <EmptyState icon={<Home size={40} />} title="No properties yet" message="Properties you own or have bid on show up here." />;
   return (
     <>
-      {error && <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">{error}</p>}
+      {error && <p className="mb-2 rounded-lg bg-brandTint px-3 py-2 text-xs text-brandInk">{error}</p>}
       {/* grid-cols-1 is minmax(0, 1fr): without it the implicit column grows to
           a long title's full width and the row runs off the screen. */}
       <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -217,7 +217,7 @@ export function OptionCard({
         <span>
           <span className="block font-semibold">{title}</span>
           <span className="mt-1 block text-xs text-secondaryText">{body}</span>
-          <span className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs ${noteTone === "green" ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}`}>
+          <span className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs ${noteTone === "green" ? "bg-green-50 text-green-700" : "bg-brandTint text-brandInk"}`}>
             {note}
           </span>
         </span>

@@ -251,7 +251,7 @@ function RoleCard({
                     Fee {profile.fee_bps / 100}% of rent · Pledge on file
                   </p>
                 ) : (
-                  <p className="text-xs text-amber-700">Set your fee and pledge so builders can suggest you.</p>
+                  <p className="text-xs text-brandInk">Set your fee and pledge so builders can suggest you.</p>
                 )
               ) : null}
             </>
@@ -380,7 +380,7 @@ function Invitations({ manager }: { manager: CollectionProfile }) {
         and then run the finished flats.
       </p>
       {!ready ? (
-        <p className="mb-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <p className="mb-3 rounded-xl bg-brandTint px-3 py-2 text-xs text-brandInk">
           Set your fee and pledge above before accepting.
         </p>
       ) : null}

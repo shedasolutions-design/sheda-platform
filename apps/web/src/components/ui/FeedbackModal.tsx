@@ -43,7 +43,7 @@ export default function FeedbackModal({
     ) : type === "error" ? (
       <AlertCircle size={44} className="text-primary" />
     ) : type === "warning" ? (
-      <AlertTriangle size={44} className="text-amber-500" />
+      <AlertTriangle size={44} className="text-primary" />
     ) : (
       <Info size={44} className="text-secondaryText" />
     );

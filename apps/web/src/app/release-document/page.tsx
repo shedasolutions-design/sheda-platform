@@ -235,7 +235,7 @@ function ReleaseDocument() {
               )}
             </ul>
 
-            <p className="mb-5 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+            <p className="mb-5 rounded-xl bg-brandTint p-3 text-xs leading-5 text-brandInk">
               Releasing records these documents on the blockchain against this deal and sends them to the buyer. It&apos;s permanent and can&apos;t be
               reversed.
             </p>

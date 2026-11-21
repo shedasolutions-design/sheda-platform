@@ -168,9 +168,9 @@ function Availability() {
             <Spinner />
           </div>
         ) : grouped.length === 0 ? (
-          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
-            <p className="mb-1 text-sm font-medium text-amber-900">No viewing hours set</p>
-            <p className="text-sm text-amber-700">Add at least one window below so buyers can book a viewing on your listings.</p>
+          <div className="mb-5 rounded-xl border border-brandBorder bg-brandTint p-4">
+            <p className="mb-1 text-sm font-medium text-brandInk">No viewing hours set</p>
+            <p className="text-sm text-brandInk">Add at least one window below so buyers can book a viewing on your listings.</p>
           </div>
         ) : (
           <div className="mb-5">

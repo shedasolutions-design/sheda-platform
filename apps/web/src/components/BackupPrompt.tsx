@@ -46,7 +46,7 @@ export interface BackupPromptProps {
 }
 
 const STRENGTH_LABEL = ["Too weak", "Weak", "Fair", "Good", "Strong"];
-const STRENGTH_COLOR = ["text-red-600", "text-red-600", "text-amber-600", "text-emerald-600", "text-emerald-600"];
+const STRENGTH_COLOR = ["text-red-600", "text-red-600", "text-brandInk", "text-emerald-600", "text-emerald-600"];
 
 export default function BackupPrompt({ visible, mode, accountId, preferredAccountId, onClose, onDone }: BackupPromptProps) {
   const {
@@ -323,11 +323,11 @@ export default function BackupPrompt({ visible, mode, accountId, preferredAccoun
               />
               {/* Stated before the fact: there is no reset, because a reset
                   would mean Sheda could decrypt the backup. */}
-              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm">
-                <p className="font-semibold text-amber-900">
+              <div className="rounded-xl border border-brandBorder bg-brandTint p-3 text-sm">
+                <p className="font-semibold text-brandInk">
                   If you forget this passphrase, the backup is gone
                 </p>
-                <p className="mt-1 text-amber-800">
+                <p className="mt-1 text-brandInk">
                   Nobody at Sheda can recover it for you. That&apos;s what keeps your funds yours.
                   Keep your seed phrase written down as well.
                 </p>
@@ -343,7 +343,7 @@ export default function BackupPrompt({ visible, mode, accountId, preferredAccoun
             </p>
           )}
           {isCheck && checkFailed && (
-            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="rounded-xl border border-brandBorder bg-brandTint p-3 text-sm text-brandInk">
               Forgotten it? This device has your wallet, so you can set a new backup password now. The old one
               stops working.
               <Button

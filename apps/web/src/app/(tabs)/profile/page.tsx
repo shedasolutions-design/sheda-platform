@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { BadgeCheck, CalendarClock, HelpCircle, LogOut, MessageSquare, Settings } from "lucide-react";
+import { BadgeCheck, CalendarClock, HelpCircle, LogOut, Mail, MessageSquare, Settings } from "lucide-react";
 import AuthGuard from "@/components/auth/AuthGuard";
 import PageHeader from "@/components/ui/PageHeader";
 import Button from "@/components/ui/Button";
@@ -77,7 +77,8 @@ function Profile() {
   const items: MenuItem[] = [
     { key: "settings", icon: Settings, label: "Settings", href: "/profile-setting" },
     ...(isSeller ? [{ key: "hours", icon: CalendarClock, label: "Viewing Hours", href: "/availability" }] : []),
-    { key: "help", icon: HelpCircle, label: "Help", href: "/support" },
+    { key: "help", icon: HelpCircle, label: "Help Center", href: "/help" },
+    { key: "support", icon: Mail, label: "Contact support", href: "/support" },
     { key: "feedback", icon: MessageSquare, label: "Feedback", href: "/support-feedback" },
     { key: "logout", icon: LogOut, label: "Logout", onClick: confirmLogout, chevron: false, danger: true },
   ];
@@ -95,7 +96,7 @@ function Profile() {
             {user?.verified && <BadgeCheck size={18} className="text-primary" aria-label="Verified" />}
           </div>
           <div className="mt-1.5 flex items-center gap-1.5">
-            <span className={`rounded-full px-2.5 py-0.5 text-[11px] ${isSeller ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"}`}>
+            <span className={`rounded-full px-2.5 py-0.5 text-[11px] ${isSeller ? "bg-active text-brandInk" : "bg-blue-100 text-blue-800"}`}>
               {isSeller ? "Selling" : "Buying"}
             </span>
             {user?.location && <span className="text-[13px] text-gray-500">{user.location}</span>}

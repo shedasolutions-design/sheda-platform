@@ -24,7 +24,7 @@ export default function DealProgress({
           const current = step.state === "current";
           return (
             <li key={step.step} className="mb-1 flex items-start">
-              <span className={`mr-1.5 text-[11px] ${done ? "text-green-600" : current ? "text-amber-600" : "text-gray-300"}`} aria-hidden="true">
+              <span className={`mr-1.5 text-[11px] ${done ? "text-green-600" : current ? "text-brandInk" : "text-gray-300"}`} aria-hidden="true">
                 {done ? "●" : current ? "◐" : "○"}
               </span>
               <span className="flex-1">
@@ -34,7 +34,7 @@ export default function DealProgress({
                 </span>
                 {current && step.detail && <span className="mt-0.5 block text-[10px] text-secondaryText">{step.detail}</span>}
                 {current && step.waitingOn && step.waitingOn !== "both" && (
-                  <span className="mt-0.5 block text-[10px] text-amber-700">
+                  <span className="mt-0.5 block text-[10px] text-brandInk">
                     {step.waitingOn === role ? "Waiting on you" : `Waiting on the ${step.waitingOn}`}
                   </span>
                 )}

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Mail, MessageSquare } from "lucide-react";
+import { BookOpen, Mail, MessageSquare } from "lucide-react";
 import PageHeader from "@/components/ui/PageHeader";
 import { SUPPORT_EMAIL } from "@/config/support";
 

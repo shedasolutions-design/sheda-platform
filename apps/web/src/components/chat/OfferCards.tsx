@@ -34,7 +34,7 @@ export function OfferMessageCard({
         ? ["✗ Offer Rejected", "border-red-200 bg-red-50 text-red-700"]
         : latest
           ? [`✓ ${latest}`, "border-green-200 bg-green-50 text-green-700"]
-          : ["⏳ Pending Response", "border-yellow-200 bg-yellow-50 text-yellow-700"];
+          : ["⏳ Pending Response", "border-brandBorder bg-brandTint text-brandInk"];
 
   return (
     <div className="my-2 rounded-lg border border-gray-200 bg-white p-4">

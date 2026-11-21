@@ -213,7 +213,7 @@ function WalletRecovery() {
               </form>
             ) : (
               <>
-                {error && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{error}</p>}
+                {error && <p className="mb-4 rounded-lg bg-brandTint p-3 text-sm text-brandInk">{error}</p>}
                 {seed && <Secret label="Recovery phrase" value={seed} />}
                 {key && <Secret label="Private key" value={key} />}
                 {(seed || key) &&

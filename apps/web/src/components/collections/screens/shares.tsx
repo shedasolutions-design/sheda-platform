@@ -109,7 +109,7 @@ export default function Shares() {
           <h1 className="text-xl font-semibold text-primaryText">Buy from investors</h1>
           <p className="mt-1 inline-flex items-center gap-1 text-sm text-secondaryText">
             Shares in finished and rising buildings, sold by the people who hold them.
-            <InfoTip label="How buying shares works">
+            <InfoTip label="How buying shares works" readMore={{ href: "/help/fees" }}>
               You pay and the shares move to you in the same transaction. Rent the seller earned before the sale stays
               theirs; rent from then on is yours. Sheda takes 2% of each sale from the seller.
             </InfoTip>
@@ -154,7 +154,7 @@ export default function Shares() {
                       </Link>
                       <p className="text-xs text-secondaryText">
                         {l.shares} shares at {money(l.pricePerShare)} each ·{" "}
-                        <span className={premium > 0 ? "text-amber-700" : premium < 0 ? "text-green-700" : ""}>
+                        <span className={premium > 0 ? "text-brandInk" : premium < 0 ? "text-green-700" : ""}>
                           {premium === 0 ? "same as" : `${Math.abs(premium)}% ${premium > 0 ? "above" : "below"}`} the original price
                         </span>
                       </p>

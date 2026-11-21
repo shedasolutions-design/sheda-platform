@@ -352,13 +352,13 @@ export default function CreateWalletPage() {
             )}
           </div>
 
-          <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-4">
-            <p className="font-semibold text-amber-900">Back up your wallet</p>
-            <p className="mb-3 mt-1 text-xs leading-5 text-amber-800">
+          <div className="mb-4 rounded-2xl border border-brandBorder bg-brandTint p-4">
+            <p className="font-semibold text-brandInk">Back up your wallet</p>
+            <p className="mb-3 mt-1 text-xs leading-5 text-brandInk">
               Encrypt your wallet and save it to your Google account, so you can recover it on any
               device. This is the safest way to protect your funds.
             </p>
-            <Button onClick={handleBackup} className="bg-amber-600 hover:bg-amber-700">
+            <Button onClick={handleBackup} className="bg-primary hover:opacity-90">
               Back up with Google
             </Button>
           </div>

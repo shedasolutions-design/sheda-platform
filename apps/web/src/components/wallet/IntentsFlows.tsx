@@ -22,7 +22,7 @@ import {
 } from "@/services/nearIntents";
 
 const MAINNET_NOTE = (
-  <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+  <p className="mb-4 rounded-xl border border-brandBorder bg-brandTint p-3 text-xs leading-5 text-brandInk">
     NEAR Intents works on <strong>mainnet only</strong>. Funds are swapped and delivered on mainnet.
   </p>
 );
@@ -129,7 +129,7 @@ function QuoteSummary({ quote, from, to, fromChain, toChain }: { quote: QuoteRes
 
 function StatusBanner({ status, polling }: { status: string; polling: boolean }) {
   const d = getStatusDisplay(status || "PENDING_DEPOSIT");
-  const tone = { green: "border-green-200 bg-green-50 text-green-800", red: "border-red-200 bg-red-50 text-red-800", blue: "border-blue-200 bg-blue-50 text-blue-800", yellow: "border-amber-200 bg-amber-50 text-amber-800" }[d.color];
+  const tone = { green: "border-green-200 bg-green-50 text-green-800", red: "border-red-200 bg-red-50 text-red-800", blue: "border-blue-200 bg-blue-50 text-blue-800", yellow: "border-brandBorder bg-brandTint text-brandInk" }[d.color];
   return (
     <div className={`mb-4 rounded-xl border p-4 ${tone}`} aria-live="polite">
       <p className="font-semibold">

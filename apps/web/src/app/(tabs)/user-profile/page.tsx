@@ -58,7 +58,7 @@ function UserProfile() {
     profile?.kyc_status === "verified"
       ? ["Verified", "bg-green-100 text-green-800"]
       : profile?.kyc_status === "pending"
-        ? ["Verification pending", "bg-amber-100 text-amber-800"]
+        ? ["Verification pending", "bg-active text-brandInk"]
         : profile?.kyc_status === "rejected"
           ? ["Not verified", "bg-red-100 text-red-800"]
           : ["Not verified", "bg-gray-100 text-gray-500"];

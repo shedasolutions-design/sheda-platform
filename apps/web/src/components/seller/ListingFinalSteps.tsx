@@ -90,7 +90,7 @@ export function ViewingHoursForm({
         <p className="mt-2 text-xs text-secondaryText">The end time itself is not bookable: 9:00 AM to 5:00 PM offers slots from 9 through 4.</p>
       )}
       {selectedDays.length === 0 && (
-        <p className="mt-3 text-xs leading-5 text-amber-700">
+        <p className="mt-3 text-xs leading-5 text-brandInk">
           No days selected. You can skip this and set your hours later, but buyers will not be able to book a viewing until you do.
         </p>
       )}
@@ -153,7 +153,7 @@ export function MintNFTForm({
         </div>
       )}
       {!connected && (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <p className="rounded-lg border border-brandBorder bg-brandTint p-3 text-sm text-brandInk">
           Connect your NEAR wallet to continue. Go to your profile to set one up.
         </p>
       )}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { BadgeCheck, Bell, BellRing, ChevronDown, FileText, Fingerprint, ShieldAlert } from "lucide-react";
 import InfoTip, { MoreText } from "@/components/ui/InfoTip";
+import BrandNote from "@/components/ui/Note";
 import apiService, {
   type CollectionNomination,
   type CollectionProfile,
@@ -188,7 +189,7 @@ function ManagerRow({ nomination, chosen }: { nomination: CollectionNomination; 
       </div>
       {chosen ? <p className="mt-2 text-xs font-medium text-primary">Chosen manager</p> : null}
       {nomination.self_managed ? (
-        <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1 text-xs text-amber-800">The builder&apos;s own company</p>
+        <p className="mt-2 rounded-lg bg-brandTint px-2 py-1 text-xs text-brandInk">The builder&apos;s own company</p>
       ) : null}
       {nomination.status === "invited" ? <p className="mt-2 text-xs text-secondaryText">Has not accepted yet</p> : null}
       {nomination.pledge ? <PledgeView pledge={nomination.pledge} /> : null}
@@ -204,10 +205,10 @@ export function ManagerSection({ project }: { project: CollectionProjectDetail }
     <section className="space-y-2">
       <h2 className="inline-flex items-center gap-1 text-sm font-semibold text-primaryText">
         Property manager
-        <InfoTip label="About the manager">{INFO.manager}</InfoTip>
+        <InfoTip label="About the manager" readMore={{ href: "/help/phases-and-objections" }}>{INFO.manager}</InfoTip>
       </h2>
       {project.self_managed ? (
-        <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">{INFO.selfManaged}</p>
+        <p className="rounded-xl bg-brandTint px-3 py-2 text-xs leading-relaxed text-brandInk">{INFO.selfManaged}</p>
       ) : null}
       {noms.length > 1 && !chosenId ? (
         <p className="text-xs text-secondaryText">The builder suggested these managers. Investors choose one when they invest.</p>
@@ -231,9 +232,9 @@ export function ProjectPackCard({ project }: { project: CollectionProjectDetail 
   const pack = project.documents.find((d) => d.is_pack && d.file_url);
   if (!pack) {
     return (
-      <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">
-        The project pack has not been uploaded yet. Do not invest until you can read it.
-      </p>
+      <BrandNote help="how-a-raise-works" linkText="What's in a pack">
+        No project pack yet. Don&apos;t invest until you can read it.
+      </BrandNote>
     );
   }
   return (
@@ -249,7 +250,7 @@ export function ProjectPackCard({ project }: { project: CollectionProjectDetail 
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1 text-sm font-semibold text-primaryText">
           Read the project pack
-          <InfoTip label="About the project pack">{INFO.pack}</InfoTip>
+          <InfoTip label="About the project pack" readMore={{ href: "/help/how-a-raise-works" }}>{INFO.pack}</InfoTip>
         </span>
         <span className="block text-xs text-secondaryText">
           {pack.status === "verified" ? "Checked by Sheda" : "Not yet checked by Sheda"}

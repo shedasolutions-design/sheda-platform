@@ -218,9 +218,9 @@ function BookAppointment() {
             Loading the seller&apos;s available times...
           </div>
         ) : noAvailability ? (
-          <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
-            <p className="mb-1 text-sm font-semibold text-amber-900">No Viewing Times Available</p>
-            <p className="text-sm text-amber-700">
+          <div className="mt-6 rounded-xl border border-brandBorder bg-brandTint p-4">
+            <p className="mb-1 text-sm font-semibold text-brandInk">No Viewing Times Available</p>
+            <p className="text-sm text-brandInk">
               This seller hasn&apos;t published any viewing availability yet, so an appointment can&apos;t be booked automatically.
               Message them in the chat to arrange a time directly.
             </p>

@@ -357,7 +357,7 @@ function KeyNumbers({ project, released }: { project: CollectionProjectDetail; r
     [
       <span key="r" className="inline-flex items-center gap-1">
         Estimated return
-        <InfoTip label="About the estimated return">
+        <InfoTip label="About the estimated return" readMore={{ href: "/help/invest-risks" }}>
           The builder&apos;s own estimate. Sheda does not check it and does not guarantee any return.
         </InfoTip>
       </span>,
@@ -366,7 +366,7 @@ function KeyNumbers({ project, released }: { project: CollectionProjectDetail; r
     [
       <span key="d" className="inline-flex items-center gap-1">
         Paid to the builder
-        <InfoTip label="About payments to the builder">
+        <InfoTip label="About payments to the builder" readMore={{ href: "/help/phases-and-objections" }}>
           Investors&apos; money is held by the raise contract and paid out phase by phase, only after each phase
           is inspected and signed off. These figures are read from the blockchain, not from Sheda.
         </InfoTip>
@@ -929,7 +929,7 @@ function PhaseList({ project, onChanged }: { project: CollectionProjectDetail; o
       {message ? <Note>{message}</Note> : null}
       <p className="inline-flex items-center gap-1 text-xs text-secondaryText">
         Paid phase by phase, after inspection.
-        <InfoTip label="How payments are released">
+        <InfoTip label="How payments are released" readMore={{ href: "/help/phases-and-objections" }}>
           Each phase is inspected and signed off before its money is released. Holders then have {windowText} to
           object, and if a quarter of them object, the payment is held and the raise stops.
         </InfoTip>

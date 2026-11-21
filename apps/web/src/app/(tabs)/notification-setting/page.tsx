@@ -86,7 +86,7 @@ function NotificationSettings() {
                 <span>
                   <span className="block text-base">{item.title}</span>
                   <span className="mt-1 block text-xs text-secondaryText">{item.description}</span>
-                  {item.note && <span className="mt-1 block text-xs text-amber-700">{item.note}</span>}
+                  {item.note && <span className="mt-1 block text-xs text-brandInk">{item.note}</span>}
                 </span>
                 <input
                   type="checkbox"

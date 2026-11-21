@@ -342,7 +342,7 @@ function Portfolio() {
           {showBal ? `${aggregated.isComplete ? "" : "~"}${formatPrice(aggregated.totalUsd)}` : "********"}
         </p>
         {showBal && !aggregated.isComplete && (
-          <p className="text-xs text-amber-600">Some token prices are unavailable ({aggregated.missingPriceSymbols.join(", ")})</p>
+          <p className="text-xs text-brandInk">Some token prices are unavailable ({aggregated.missingPriceSymbols.join(", ")})</p>
         )}
         {showBal && aggregated.isComplete && selectedCurrency !== "USD" && <p className="text-sm text-secondaryText">≈ {formatUsd(aggregated.totalUsd)}</p>}
         <button
@@ -358,7 +358,7 @@ function Portfolio() {
         {hasCloudBackup && backupCheckDue && (
           <Link
             href="/wallet-recovery?check=1"
-            className="mx-auto mt-3 block max-w-sm rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 hover:bg-amber-100"
+            className="mx-auto mt-3 block max-w-sm rounded-lg border border-brandBorder bg-brandTint px-3 py-2 text-xs text-brandInk hover:bg-active"
           >
             Still remember your backup password? <span className="font-semibold underline">Test it</span>. Nobody can
             reset it for you.
@@ -631,7 +631,7 @@ function Portfolio() {
             <dl className="mb-4">
               <DetailRow label="Type">{getMethodLabel(selectedTx.methodName) || selectedTx.type}</DetailRow>
               <DetailRow label="Status">
-                <span className={selectedTx.status === "failed" ? "text-red-600" : selectedTx.status === "pending" ? "text-amber-600" : "text-green-600"}>
+                <span className={selectedTx.status === "failed" ? "text-red-600" : selectedTx.status === "pending" ? "text-brandInk" : "text-green-600"}>
                   {selectedTx.status || "completed"}
                 </span>
               </DetailRow>

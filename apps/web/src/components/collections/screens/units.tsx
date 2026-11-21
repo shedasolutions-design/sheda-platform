@@ -274,7 +274,7 @@ export default function ChooseUnit() {
         </div>
 
         {!open && step !== "done" ? (
-          <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <p className="rounded-xl bg-brandTint px-3 py-2 text-sm text-brandInk">
             This round is not taking money right now. You can still look at the flats.
           </p>
         ) : null}
@@ -420,7 +420,7 @@ export default function ChooseUnit() {
               <section className="space-y-2">
                 <p className="inline-flex items-center gap-1 text-sm font-medium text-primaryText">
                   Choose the property manager
-                  <InfoTip label="About choosing the manager">
+                  <InfoTip label="About choosing the manager" readMore={{ href: "/help/how-a-raise-works" }}>
                     The builder suggested these managers. Investors vote with their money, and the one with the most
                     votes when the round fills inspects each building phase and runs the flats. You can change your
                     vote until then.
@@ -441,7 +441,7 @@ export default function ChooseUnit() {
                       <span>
                         <span className="block text-sm font-medium text-primaryText">{candidateName(c)}</span>
                         {c.self_managed ? (
-                          <span className="block text-xs text-amber-700">The builder&apos;s own company</span>
+                          <span className="block text-xs text-brandInk">The builder&apos;s own company</span>
                         ) : null}
                       </span>
                       <span className="text-sm text-secondaryText">{c.fee_bps / 100}% of rent</span>
@@ -501,7 +501,7 @@ export default function ChooseUnit() {
                   Open the project pack
                 </a>
               ) : (
-                <p className="text-amber-800">The builder has not uploaded the project pack yet.</p>
+                <p className="text-brandInk">The builder has not uploaded the project pack yet.</p>
               )}
               {pledgeOf ? (
                 <details className="text-secondaryText">

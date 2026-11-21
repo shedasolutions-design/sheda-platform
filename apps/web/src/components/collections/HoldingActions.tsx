@@ -131,7 +131,7 @@ export default function HoldingActions({
         <div className="space-y-2 rounded-xl bg-cardBackground p-3">
           <p className="inline-flex items-center gap-1 text-xs text-secondaryText">
             {free.toString()} shares free to sell
-            <InfoTip label="About selling">
+            <InfoTip label="About selling" readMore={{ href: "/help/fees" }}>
               Listed shares stay yours and keep earning rent until someone buys them. You are paid the moment they do,
               less Sheda&apos;s 2%. You can cancel any time before.
             </InfoTip>

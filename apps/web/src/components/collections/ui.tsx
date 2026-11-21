@@ -1,5 +1,6 @@
 "use client";
 
+import BrandNote from "@/components/ui/Note";
 import { InterBold, InterMedium, InterRegular, InterSemiBold } from "@/components/collections/rn";
 import type { ReactNode } from "react";
 import { TouchableOpacity, View } from "@/components/collections/rn";
@@ -33,8 +34,8 @@ export const C = {
   border: "#E4E5E7",
   positive: "#0F7A46",
   positiveLight: "#E8F4ED",
-  caution: "#9D5C06",
-  cautionLight: "#FBF2E2",
+  caution: "#8E1B20",
+  cautionLight: "#FDF4F4",
   critical: "#A3171D",
   criticalLight: "#FBECEC",
 } as const;
@@ -335,7 +336,29 @@ export function ListRow({
   );
 }
 
-export function Note({ children, tone = "caution" }: { children: ReactNode; tone?: Tone }) {
+/**
+ * A short note. Cautions and plain notes use the app's brand Note (soft red
+ * or grey, with an optional Read more into the Help Center), so Invest
+ * looks like the rest of Sheda; good news keeps its green.
+ */
+export function Note({
+  children,
+  tone = "caution",
+  help,
+  linkText,
+}: {
+  children: ReactNode;
+  tone?: Tone;
+  help?: string;
+  linkText?: string;
+}) {
+  if (tone !== "positive") {
+    return (
+      <BrandNote tone={tone === "plain" ? "info" : "caution"} help={help} linkText={linkText}>
+        {children}
+      </BrandNote>
+    );
+  }
   return (
     <View style={{ backgroundColor: BG[tone], borderRadius: RADIUS_INNER, padding: 12 }}>
       <InterMedium style={{ ...TYPE.label, lineHeight: 17, color: FG[tone] }}>

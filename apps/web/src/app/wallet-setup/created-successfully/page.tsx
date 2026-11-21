@@ -37,7 +37,7 @@ export default function WalletCreatedPage() {
             <dt className="text-xs text-secondaryText">Account ID</dt>
             <dd className="mb-3 break-all font-semibold">{walletState.account.accountId}</dd>
             <dt className="text-xs text-secondaryText">Network</dt>
-            <dd className={currentNetwork === "testnet" ? "font-semibold text-amber-600" : "font-semibold text-emerald-600"}>
+            <dd className={currentNetwork === "testnet" ? "font-semibold text-brandInk" : "font-semibold text-emerald-600"}>
               {currentNetwork === "testnet" ? "Testnet" : "Mainnet"}
             </dd>
           </dl>

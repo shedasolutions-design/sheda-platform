@@ -172,11 +172,11 @@ export default function WalletSetupPage() {
               Lost access to your wallet?
             </button>
           ) : (
-            <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
-              <p className="flex items-center gap-2 font-semibold text-amber-900">
+            <div className="rounded-xl border border-brandBorder bg-brandTint p-4 text-sm">
+              <p className="flex items-center gap-2 font-semibold text-brandInk">
                 <AlertTriangle size={16} className="shrink-0" /> Only if you&apos;ve lost both your recovery phrase and your backup
               </p>
-              <p className="mt-1 text-amber-800">
+              <p className="mt-1 text-brandInk">
                 A new wallet starts empty. Your existing deals, bids and funds stay in{" "}
                 <span className="break-all font-medium">{profileWallet}</span> and won&apos;t move to the new one.
               </p>

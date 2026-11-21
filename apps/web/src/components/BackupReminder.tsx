@@ -35,7 +35,7 @@ export default function BackupReminder() {
   if (!hasLocalWallet || isWalletSafe || snoozed || onSetupPage || readiness === "idle") return null;
 
   return (
-    <div role="alert" className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 md:items-center">
+    <div role="alert" className="flex items-start gap-3 border-b border-brandBorder bg-brandTint px-4 py-3 text-sm text-brandInk md:items-center">
       <ShieldAlert size={18} className="mt-0.5 shrink-0 md:mt-0" aria-hidden="true" />
       {/* The button drops under the text on narrow screens rather than
           squeezing the text into a one-word column beside it. */}
@@ -44,7 +44,7 @@ export default function BackupReminder() {
           <strong>Back up your wallet.</strong> It&apos;s only saved in this browser. If its data is cleared, your wallet and anything in it
           are lost.
         </p>
-        <Link href="/wallet-recovery" className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 font-medium text-white hover:bg-amber-700">
+        <Link href="/wallet-recovery" className="shrink-0 rounded-lg bg-primary px-3 py-1.5 font-medium text-white hover:opacity-90">
           Back up now
         </Link>
       </div>
@@ -60,7 +60,7 @@ export default function BackupReminder() {
             /* still hidden for now */
           }
         }}
-        className="shrink-0 rounded p-1 hover:bg-amber-100"
+        className="shrink-0 rounded p-1 hover:bg-active"
       >
         <X size={16} />
       </button>

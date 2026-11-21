@@ -196,7 +196,7 @@ function BuyerSide() {
       </div>
       <p className="mt-4 inline-flex items-center gap-1 text-xs text-secondaryText">
         Returns are builders&apos; estimates.
-        <InfoTip label="About returns">
+        <InfoTip label="About returns" readMore={{ href: "/help/invest-risks" }}>
           Each builder sets their own return and rent estimates from their research. Sheda does not check them
           and does not guarantee any return. Read the raise documents before you invest.
         </InfoTip>

@@ -257,12 +257,12 @@ function HoldingCard({
 
   const status =
     state === "awaiting"
-      ? { label: "Still being built", cls: "bg-amber-50 text-amber-700" }
+      ? { label: "Still being built", cls: "bg-brandTint text-brandInk" }
       : state === "redeemed"
         ? { label: "Redeemed", cls: "bg-gray-100 text-secondaryText" }
         : paying
           ? { label: "Earning", cls: "bg-green-50 text-green-700" }
-          : { label: "No rent yet this period", cls: "bg-amber-50 text-amber-700" };
+          : { label: "No rent yet this period", cls: "bg-brandTint text-brandInk" };
 
   const title = meta?.unit ? `${meta.unit}, ${meta.project}` : (meta?.project ?? info.name);
 

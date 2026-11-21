@@ -88,9 +88,9 @@ function Activities() {
       <h1 className="mb-4 text-lg font-semibold">Activities</h1>
 
       {noViewingHours && (
-        <Link href="/availability" className="mb-4 block rounded-xl border border-amber-200 bg-amber-50 p-4 hover:bg-amber-100">
-          <p className="mb-1 text-sm font-semibold text-amber-900">Set your viewing hours</p>
-          <p className="text-sm text-amber-700">
+        <Link href="/availability" className="mb-4 block rounded-xl border border-brandBorder bg-brandTint p-4 hover:bg-active">
+          <p className="mb-1 text-sm font-semibold text-brandInk">Set your viewing hours</p>
+          <p className="text-sm text-brandInk">
             Buyers can&apos;t book a viewing on your listings until you publish the hours you&apos;re available. Click to set them up.
           </p>
         </Link>

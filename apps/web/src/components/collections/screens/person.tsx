@@ -82,9 +82,8 @@ function ProfileDocuments({ profile }: { profile: CollectionProfile }) {
   if (!docs.length && !isOwner) {
     return (
       <Section title="Licences and registration">
-        <Note>
-          No licences or registration papers yet. Ask for them before you invest with this{" "}
-          {profile.role === "builder" ? "builder" : "manager"}.
+        <Note help="builder-ranking" linkText="Why it matters">
+          No licences or papers yet. Ask before you invest.
         </Note>
       </Section>
     );
@@ -220,10 +219,7 @@ export default function Profile() {
         )}
 
         {profile.kyc_verified ? null : (
-          <Note>
-            This account has not completed identity checks. That is separate from the rank above,
-            which measures what they have done rather than who they are.
-          </Note>
+          <Note help="identity-checks">Identity not verified yet.</Note>
         )}
       </Screen>
     </>

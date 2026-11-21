@@ -106,7 +106,7 @@ export function PriceDescriptionForm({
           {isForRent ? "For Rent" : "For Sale"}
         </span>
         {isLand && (
-          <span className="flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-amber-900">
+          <span className="flex items-center gap-1 rounded-full bg-brandTint px-3 py-1 text-brandInk">
             <MapPin size={13} /> Land
           </span>
         )}

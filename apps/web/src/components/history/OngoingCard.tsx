@@ -1479,7 +1479,7 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
             documents they had never been shown: nothing on the card or in the
             dialog displayed them. */}
         {agreementShown && (
-          <div className="my-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <div className="my-2 rounded-lg border border-brandBorder bg-brandTint p-3">
             <p className="text-xs font-semibold text-[#333]">Agreement from the seller</p>
             {bid.document_description && (
               <p className="mt-1 whitespace-pre-wrap text-xs text-[#555]">{bid.document_description}</p>
@@ -1489,7 +1489,7 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
                 {agreementImages.map((url, i) => (
                   <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="block">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={url} alt={`Agreement page ${i + 1}`} className="h-20 w-16 rounded border border-amber-200 object-cover" />
+                    <img src={url} alt={`Agreement page ${i + 1}`} className="h-20 w-16 rounded border border-brandBorder object-cover" />
                   </a>
                 ))}
               </div>
@@ -1501,7 +1501,7 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
         )}
 
         {phase === TransactionPhase.BID_PENDING && bidExpiresAtMs !== undefined && (
-          <p className={`my-1 text-[11px] ${isBidExpired ? "text-red-600" : "text-amber-700"}`}>
+          <p className={`my-1 text-[11px] ${isBidExpired ? "text-red-600" : "text-brandInk"}`}>
             {isBidExpired
               ? role === "buyer"
                 ? "This bid expired. The seller can no longer accept it. Reclaim your funds below."

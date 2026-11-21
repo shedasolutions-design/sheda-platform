@@ -68,7 +68,7 @@ export default function SignOutCheck({
         </>
       ) : state === "test" ? (
         <>
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="mb-4 rounded-xl border border-brandBorder bg-brandTint p-4 text-sm text-brandInk">
             <p className="flex items-center gap-2 font-semibold">
               <KeyRound size={18} className="shrink-0" /> Remember your backup password?
             </p>

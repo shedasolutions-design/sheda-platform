@@ -269,7 +269,7 @@ export function ManagerPicker({
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium text-primaryText">
                 {m.display_name}
-                {own ? <span className="ml-1 text-xs font-normal text-amber-700">(your company)</span> : null}
+                {own ? <span className="ml-1 text-xs font-normal text-brandInk">(your company)</span> : null}
               </span>
               <span className="block truncate text-xs text-secondaryText">
                 {m.location ?? "Location not given"}
