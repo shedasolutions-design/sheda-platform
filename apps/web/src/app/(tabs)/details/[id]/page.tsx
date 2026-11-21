@@ -4,7 +4,32 @@ import { leaseSuffix } from "@/utilities/leaseTerm";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bath, BedDouble, ChevronLeft, ChevronRight, MapPin, MessageSquareText, Phone, Share2, X } from "lucide-react";
+import {
+  AirVent,
+  Armchair,
+  BadgeCheck,
+  Bath,
+  BedDouble,
+  CalendarCheck,
+  ChevronLeft,
+  ChevronRight,
+  Droplets,
+  ExternalLink,
+  Gauge,
+  Grid3x3,
+  Lock,
+  MapPin,
+  MessageSquareText,
+  Phone,
+  RotateCcw,
+  Share2,
+  ShieldCheck,
+  Sofa,
+  Square,
+  Wifi,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import Button from "@/components/ui/Button";
 import TextField from "@/components/ui/TextField";
 import FeedbackModal, { type FeedbackType } from "@/components/ui/FeedbackModal";
@@ -15,7 +40,6 @@ import PriceDisplay from "@/components/property/PriceDisplay";
 import HouseCard from "@/components/property/HouseCard";
 import Reviews from "@/components/property/Reviews";
 import Stars from "@/components/common/Stars";
-import ProfileVisibilityCard from "@/components/common/ProfileVisibilityCard";
 import TokenSelectionModal from "@/components/common/TokenSelectionModal";
 import { useApi } from "@/contexts/ApiContext";
 import { useWallet } from "@/contexts/WalletContext";
@@ -68,15 +92,18 @@ async function cacheAgent(id: number, data: AgentFeed) {
   }
 }
 
-const EXTRAS: [string, string][] = [
-  ["air_condition", "Air Conditioning"],
-  ["pop_ceiling", "POP Ceiling"],
-  ["furniture", "Furniture"],
-  ["floor_tiles", "Floor Tiles"],
-  ["running_water", "Running Water"],
-  ["prepaid_meter", "Prepaid Meter"],
-  ["wifi", "WiFi"],
+// What a listing can offer, as the listing form records it.
+const EXTRAS: [string, string, LucideIcon][] = [
+  ["furnished", "Furnished", Armchair],
+  ["air_condition", "Air conditioning", AirVent],
+  ["wifi", "WiFi", Wifi],
+  ["running_water", "Running water", Droplets],
+  ["prepaid_meter", "Prepaid meter", Gauge],
+  ["furniture", "Furniture", Sofa],
+  ["floor_tiles", "Floor tiles", Grid3x3],
+  ["pop_ceiling", "POP ceiling", Square],
 ];
+const AMENITIES_SHOWN = 5;
 
 interface Feedback {
   visible: boolean;
@@ -113,6 +140,7 @@ export default function PropertyDetailsPage() {
   const [images, setImages] = useState<string[]>([]);
   const [viewer, setViewer] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [showAllAmenities, setShowAllAmenities] = useState(false);
   const [offerPrice, setOfferPrice] = useState("");
   const [reviews, setReviews] = useState<REVIEW[]>([]);
   const [avgRating, setAvgRating] = useState(0);
@@ -527,7 +555,18 @@ export default function PropertyDetailsPage() {
   }
 
   const description = raw.description || "No description provided";
-  const extras = EXTRAS.filter(([key]) => (raw as any)[key]).map(([, label]) => label);
+  // Present first, then what's missing (struck through), like a checklist.
+  const fields = raw as unknown as Record<string, unknown>;
+  const amenities = [
+    ...EXTRAS.filter(([key]) => fields[key]).map(([, label, Icon]) => ({ label, Icon, has: true })),
+    ...EXTRAS.filter(([key]) => !fields[key]).map(([, label, Icon]) => ({ label, Icon, has: false })),
+  ];
+  const sellerHref = raw?.agent_id
+    ? `/user-profile?${new URLSearchParams({ userId: String(raw.agent_id), name: profile.displayName }).toString()}`
+    : undefined;
+  const mapsHref = raw.location
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(raw.location)}`
+    : undefined;
   const hero = images[0] || "/images/apt-1.png";
   const house = adaptPropertyToHouse(raw);
 
@@ -555,88 +594,209 @@ export default function PropertyDetailsPage() {
         )}
       </div>
 
-      <section className="p-5">
-        <h1 className="text-lg font-medium">{raw.title || "No Title"}</h1>
-        <p className="text-xs capitalize text-secondaryText">{raw.property_type ? String(raw.property_type).replace(/_/g, " ") : "Unknown Type"}</p>
+      <section className="px-5 pb-2 pt-5">
+        <h1 className="text-2xl font-bold leading-tight">{raw.title || "No Title"}</h1>
         <p className="mt-1 flex items-center gap-1 text-sm text-secondaryText">
-          <MapPin size={13} /> {raw.location || "No location"}
+          <MapPin size={14} className="shrink-0" /> {raw.location || "No location"}
         </p>
-        <div className="my-3 flex gap-2 text-xs text-secondaryText">
-          <span className="flex items-center gap-1 rounded-lg border border-secondaryText p-2">
-            <BedDouble size={15} /> {raw.bedroom || 0} Bed
+        {/* Small facts about the listing, as pills. */}
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          <span className="rounded-full bg-cardBackground px-3 py-1 font-medium capitalize">
+            {isRent ? "For rent" : "For sale"} · {raw.property_type ? String(raw.property_type).replace(/_/g, " ") : "Property"}
           </span>
-          <span className="flex items-center gap-1 rounded-lg border border-secondaryText p-2">
-            <Bath size={14} /> {raw.bathroom || 0} Bath
+          {raw.is_nft_minted || isBlockchain ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-brandTint px-3 py-1 font-medium text-brandInk">
+              <BadgeCheck size={13} /> Recorded on the blockchain
+            </span>
+          ) : null}
+          {isNegotiable ? (
+            <span className="rounded-full bg-cardBackground px-3 py-1 font-medium">Open to offers</span>
+          ) : null}
+        </div>
+        <div className="mt-4 flex gap-6 border-y border-borderColor py-4 text-sm">
+          <span className="flex items-center gap-2">
+            <BedDouble size={18} className="text-secondaryText" /> {raw.bedroom || 0} bedroom{raw.bedroom === 1 ? "" : "s"}
+          </span>
+          <span className="flex items-center gap-2">
+            <Bath size={18} className="text-secondaryText" /> {raw.bathroom || 0} bathroom{raw.bathroom === 1 ? "" : "s"}
           </span>
         </div>
       </section>
 
-      {/* Seller */}
-      <ProfileVisibilityCard
-        profile={profile}
-        href={
-          raw?.agent_id
-            ? `/user-profile?${new URLSearchParams({ userId: String(raw.agent_id), name: profile.displayName }).toString()}`
-            : undefined
-        }
-        linkLabel="View seller"
-        rightAction={
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleMessage}
-              aria-label="Message the agent"
-              className={`rounded-lg border border-gray-200 p-2.5 hover:bg-cardBackground ${hasBidOrPayment ? "" : "opacity-45"}`}
-            >
-              <MessageSquareText size={20} />
-            </button>
-            <button
-              type="button"
-              onClick={handleCall}
-              aria-label="Call the agent"
-              className={`rounded-lg bg-primary p-2.5 text-white ${hasBidOrPayment ? "" : "opacity-45"}`}
-            >
-              <Phone size={20} />
-            </button>
-          </div>
-        }
-      />
-      {!hasBidOrPayment && <p className="px-5 pb-2 text-right text-[10px] text-gray-400">Place a bid to unlock contact</p>}
+      {/* Meet the seller */}
+      <section className="px-5 py-5">
+        <h2 className="mb-4 text-xl font-semibold">Meet the {isRent ? "landlord" : "seller"}</h2>
+        <div className="flex items-center gap-5 rounded-3xl bg-white p-5 shadow-[0_6px_24px_rgba(0,0,0,0.10)]">
+          <Link href={sellerHref || "#"} className="flex min-w-0 flex-1 flex-col items-center text-center" aria-label={`View ${profile.displayName}`}>
+            <span className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={profile.avatarUrl || "/images/profile-image.png"}
+                alt=""
+                className="h-20 w-20 rounded-full object-cover"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = "/images/profile-image.png";
+                }}
+              />
+              {profile.kycStatus === "verified" ? (
+                <span className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-white ring-2 ring-white">
+                  <ShieldCheck size={15} />
+                </span>
+              ) : null}
+            </span>
+            <span className="mt-2 max-w-full truncate text-lg font-bold">{profile.displayName}</span>
+            <span className="text-xs text-secondaryText">{profile.kycStatus === "verified" ? "Identity verified" : profile.location || "Seller"}</span>
+          </Link>
+          <dl className="w-28 shrink-0 divide-y divide-borderColor text-sm">
+            <div className="pb-2">
+              <dt className="sr-only">Reviews</dt>
+              <dd className="text-lg font-bold">{reviews.length}</dd>
+              <dd className="text-xs text-secondaryText">Review{reviews.length === 1 ? "" : "s"}</dd>
+            </div>
+            <div className="pt-2">
+              <dt className="sr-only">Rating</dt>
+              <dd className="text-lg font-bold">{avgRating ? `${avgRating.toFixed(1)} ★` : "New"}</dd>
+              <dd className="text-xs text-secondaryText">Rating</dd>
+            </div>
+          </dl>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={handleMessage}
+            className="flex items-center justify-center gap-2 rounded-xl bg-cardBackground py-3 text-sm font-semibold hover:bg-gray-200"
+          >
+            {hasBidOrPayment ? <MessageSquareText size={17} /> : <Lock size={15} />} Message
+          </button>
+          <button
+            type="button"
+            onClick={handleCall}
+            className="flex items-center justify-center gap-2 rounded-xl bg-cardBackground py-3 text-sm font-semibold hover:bg-gray-200"
+          >
+            {hasBidOrPayment ? <Phone size={17} /> : <Lock size={15} />} Call
+          </button>
+        </div>
+        {!hasBidOrPayment ? (
+          <p className="mt-2 text-center text-xs text-secondaryText">Message and call open once your money is in escrow.</p>
+        ) : null}
+        <p className="mt-4 flex items-start gap-3 text-xs leading-relaxed text-secondaryText">
+          <ShieldCheck size={22} className="shrink-0 text-primary" />
+          To protect your money, always pay and talk through Sheda. Never pay a seller directly.
+        </p>
+      </section>
 
-      <section className="border-t border-borderColor px-5 py-4">
-        <h2 className="mb-2 text-sm font-semibold">Description</h2>
-        <p className="whitespace-pre-line text-sm leading-6 text-secondaryText">
+      <section className="border-t border-borderColor px-5 py-6">
+        <h2 className="mb-2 text-xl font-semibold">About this place</h2>
+        <p className="whitespace-pre-line leading-7 text-primaryText/90">
           {description.length > DESC_TRUNCATE && !expanded ? `${description.slice(0, DESC_TRUNCATE).trimEnd()}...` : description}
         </p>
         {description.length > DESC_TRUNCATE && (
-          <button type="button" onClick={() => setExpanded((e) => !e)} className="mt-1 text-xs text-primary hover:underline">
-            {expanded ? "Read less" : "Read more"}
+          <button type="button" onClick={() => setExpanded((e) => !e)} className="mt-2 text-sm font-semibold underline underline-offset-4">
+            {expanded ? "Show less" : "Show more"}
           </button>
-        )}
-        {extras.length > 0 && (
-          <>
-            <h2 className="mb-2 mt-4 text-sm font-semibold">Extras</h2>
-            <ul className="flex flex-wrap gap-2">
-              {extras.map((e) => (
-                <li key={e} className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs text-secondaryText">
-                  {e}
-                </li>
-              ))}
-            </ul>
-          </>
         )}
       </section>
 
-      <section className="border-t border-borderColor px-5 py-4">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm">Seller reviews ({reviews.length})</h2>
+      <section className="border-t border-borderColor px-5 py-6">
+        <h2 className="mb-4 text-xl font-semibold">What this place offers</h2>
+        <ul className="space-y-4">
+          {(showAllAmenities ? amenities : amenities.slice(0, AMENITIES_SHOWN)).map(({ label, Icon, has }) => (
+            <li key={label} className={`flex items-center gap-4 ${has ? "" : "text-secondaryText"}`}>
+              <Icon size={22} strokeWidth={1.6} className="shrink-0" />
+              <span className={has ? "" : "line-through"}>{label}</span>
+            </li>
+          ))}
+        </ul>
+        {amenities.length > AMENITIES_SHOWN ? (
+          <button
+            type="button"
+            onClick={() => setShowAllAmenities((v) => !v)}
+            className="mt-5 w-full rounded-xl bg-cardBackground py-3 text-sm font-semibold hover:bg-gray-200"
+          >
+            {showAllAmenities ? "Show fewer" : `Show all ${amenities.length} amenities`}
+          </button>
+        ) : null}
+      </section>
+
+      <section className="border-t border-borderColor px-5 py-6">
+        <h2 className="mb-2 text-xl font-semibold">Where it is</h2>
+        <p className="text-primaryText/90">{raw.location || "Location not given"}</p>
+        {mapsHref ? (
+          <a
+            href={mapsHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-4 flex items-center justify-between rounded-2xl bg-cardBackground p-4 hover:bg-gray-200"
+          >
+            <span className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primaryText text-white">
+                <MapPin size={18} />
+              </span>
+              <span className="text-sm font-semibold">Open in Google Maps</span>
+            </span>
+            <ExternalLink size={16} className="text-secondaryText" />
+          </a>
+        ) : null}
+        <p className="mt-2 text-xs text-secondaryText">You&apos;ll get the exact address from the seller when you book your appointment.</p>
+      </section>
+
+      <section className="border-t border-borderColor px-5 py-6">
+        <h2 className="mb-1 text-xl font-semibold">Things to know</h2>
+        <ul className="divide-y divide-borderColor">
+          {[
+            {
+              Icon: CalendarCheck,
+              title: isRent ? "How renting works" : "How buying works",
+              line: "Pay into escrow, then book an appointment to inspect.",
+              slug: "how-buying-works",
+            },
+            {
+              Icon: ShieldCheck,
+              title: "Your money is protected",
+              line: "Held in escrow until you accept the agreement.",
+              slug: "escrow",
+            },
+            {
+              Icon: RotateCcw,
+              title: "Cancellations",
+              line: "Cancel for a full refund any time before you accept the agreement.",
+              slug: "cancellations-and-refunds",
+            },
+            ...(isRent
+              ? [
+                  {
+                    Icon: Lock,
+                    title: "Refundable deposit",
+                    line: "Comes back after the lease, unless a damage claim is upheld.",
+                    slug: "renting-and-deposits",
+                  },
+                ]
+              : []),
+          ].map(({ Icon, title, line, slug }) => (
+            <li key={slug}>
+              <Link href={`/help/${slug}`} className="flex items-center gap-4 py-4 hover:bg-cardBackground">
+                <Icon size={24} strokeWidth={1.6} className="shrink-0 text-primary" />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">{title}</span>
+                  <span className="block text-sm text-secondaryText">{line}</span>
+                </span>
+                <ChevronRight size={18} className="shrink-0 text-secondaryText" />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="border-t border-borderColor px-5 py-6">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Reviews ({reviews.length})</h2>
           <Stars rating={avgRating} size={15} />
         </div>
         <Reviews reviews={reviews} />
       </section>
 
       {/* Offer / purchase */}
-      <section className="border-t border-borderColor px-5 py-4">
+      <section id="make-offer" className="border-t border-borderColor px-5 py-6">
         {isOwner ? (
           <Notice tone="blue" title="This is your listing">
             You cannot place bids or make payments on your own property. Manage this listing from your seller dashboard.
@@ -735,9 +895,19 @@ export default function PropertyDetailsPage() {
                 </p>
               )}
             </div>
-            <Button onClick={handleBuyNow} disabled={!walletState.isConnected || isSendingOffer || isPlacingBid}>
-              {isRent ? "Rent Now" : "Buy Now"}
-            </Button>
+            <div className="flex shrink-0 gap-2">
+              {isNegotiable ? (
+                <Button
+                  variant="outline"
+                  onClick={() => document.getElementById("make-offer")?.scrollIntoView({ behavior: "smooth", block: "center" })}
+                >
+                  Make an offer
+                </Button>
+              ) : null}
+              <Button onClick={handleBuyNow} disabled={!walletState.isConnected || isSendingOffer || isPlacingBid}>
+                {isRent ? "Rent now" : "Buy now"}
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -811,12 +981,13 @@ export default function PropertyDetailsPage() {
   );
 }
 
+// Brand colours: soft red for anything that stops you, grey for information.
 const TONES = {
-  blue: "border-blue-200 bg-blue-50 text-blue-800",
-  red: "border-red-200 bg-red-50 text-red-800",
-  green: "border-green-200 bg-green-50 text-green-800",
-  gray: "border-gray-200 bg-gray-50 text-gray-700",
-  orange: "border-orange-200 bg-orange-50 text-orange-800",
+  blue: "border-borderColor bg-cardBackground text-primaryText",
+  red: "border-brandBorder bg-brandTint text-brandInk",
+  green: "border-borderColor bg-cardBackground text-primaryText",
+  gray: "border-borderColor bg-cardBackground text-primaryText",
+  orange: "border-brandBorder bg-brandTint text-brandInk",
 } as const;
 
 function Notice({ tone, title, children }: { tone: keyof typeof TONES; title: string; children: React.ReactNode }) {
