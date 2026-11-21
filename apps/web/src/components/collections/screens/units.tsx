@@ -234,7 +234,7 @@ export default function ChooseUnit() {
   return (
     <>
       <Stack.Screen options={{ title: "Invest" }} />
-      <div className="mx-auto flex max-w-xl flex-col gap-4 px-5 pb-36 pt-4">
+      <div className="mx-auto flex max-w-xl flex-col gap-6 px-5 pb-36 pt-4">
         {step !== "done" ? (
           <div className="flex items-center gap-3">
             {step !== "flat" ? (
@@ -251,13 +251,13 @@ export default function ChooseUnit() {
         ) : null}
 
         {/* The building being invested in, on every step. */}
-        <div className="flex items-center gap-3 rounded-2xl border border-borderColor p-3">
+        <div className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
           <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-gray-100">
             {project.cover_image_url ? <img src={project.cover_image_url} alt="" className="h-full w-full object-cover" /> : null}
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate font-semibold text-primaryText">{project.name}</p>
-            <p className="truncate text-xs text-secondaryText">
+            <p className="truncate text-sm text-secondaryText">
               {unit ? `${unit.label} · ${money(oneShare)} a share` : project.location}
             </p>
           </div>
@@ -274,7 +274,7 @@ export default function ChooseUnit() {
         {step === "flat" ? (
           <>
             <div>
-              <h1 className="text-lg font-semibold text-primaryText">Which flat?</h1>
+              <h1 className="text-2xl font-bold text-primaryText">Which flat?</h1>
               <p className="text-sm text-secondaryText">You buy shares in one flat and earn from that flat&apos;s rent.</p>
             </div>
             <div className="space-y-2">
@@ -291,15 +291,15 @@ export default function ChooseUnit() {
                     disabled={full}
                     onClick={() => setSelected(u.code)}
                     aria-pressed={on}
-                    className={`w-full rounded-2xl border p-4 text-left disabled:opacity-50 ${on ? "border-2 border-primary bg-primaryLight" : "border-borderColor"}`}
+                    className={`w-full rounded-2xl border p-5 text-left disabled:opacity-50 ${on ? "border-2 border-primary bg-primaryLight" : "border-borderColor"}`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="font-semibold text-primaryText">{u.label}</p>
-                        <p className="text-xs text-secondaryText">
+                        <p className="text-sm text-secondaryText">
                           {u.bedrooms} bed · {money(u.price_atomic)} whole flat
                         </p>
-                        {r ? <p className="text-xs text-secondaryText">Lets for {money(r.min)} – {money(r.max)} a year (est.)</p> : null}
+                        {r ? <p className="text-sm text-secondaryText">Lets for {money(r.min)} – {money(r.max)} a year (est.)</p> : null}
                       </div>
                       <span className={`text-sm font-medium ${full ? "text-secondaryText" : "text-primary"}`}>{full ? "Full" : `${pct}% funded`}</span>
                     </div>
@@ -334,7 +334,7 @@ export default function ChooseUnit() {
             <div className="text-center">
               {mode === "amount" ? (
                 <>
-                  <p className="text-xs text-secondaryText">How much do you want to invest? (USD)</p>
+                  <p className="text-sm text-secondaryText">How much do you want to invest? (USD)</p>
                   <input
                     aria-label="Amount to invest in US dollars"
                     inputMode="decimal"
@@ -346,7 +346,7 @@ export default function ChooseUnit() {
                 </>
               ) : (
                 <>
-                  <p className="text-xs text-secondaryText">How many shares do you want?</p>
+                  <p className="text-sm text-secondaryText">How many shares do you want?</p>
                   <input
                     aria-label="Number of shares to buy"
                     inputMode="numeric"
@@ -359,7 +359,7 @@ export default function ChooseUnit() {
                 </>
               )}
               {selectedCurrency !== "USD" && atomicBig > 0n ? (
-                <p className="text-xs text-secondaryText">about {formatPrice(Number(atomicBig) / 1_000_000)}</p>
+                <p className="text-sm text-secondaryText">about {formatPrice(Number(atomicBig) / 1_000_000)}</p>
               ) : null}
             </div>
 
@@ -391,13 +391,13 @@ export default function ChooseUnit() {
                 />
               ) : null}
               {walletLimits ? (
-                <p className="text-[11px] text-secondaryText">
+                <p className="text-xs text-secondaryText">
                   Max is {maxBuy.toLocaleString()} share{maxBuy === 1n ? "" : "s"}, what your wallet covers.
                 </p>
               ) : null}
             </div>
 
-            <dl className="space-y-2 rounded-2xl bg-cardBackground p-4 text-sm">
+            <dl className="space-y-3 rounded-2xl bg-cardBackground p-5 text-[15px]">
               <Row label="Shares you get" info={INFO.shares} value={`${shares}`} />
               <Row label="Of the flat" info={INFO.ownership} value={bpsToPercent(ownershipBps(shares, unit.total_shares))} />
               <Row label="Price per share" value={money(oneShare)} />
@@ -451,7 +451,7 @@ export default function ChooseUnit() {
               </p>
             ) : null}
             {mode === "amount" && cost > 0n && cost < atomicBig ? (
-              <p className="text-xs text-secondaryText">
+              <p className="text-sm text-secondaryText">
                 Shares are whole, so {money(cost)} is used and the rest stays in your wallet.
               </p>
             ) : null}
@@ -462,8 +462,8 @@ export default function ChooseUnit() {
         {/* ---- 3. terms ---- */}
         {step === "terms" && unit ? (
           <>
-            <h1 className="text-lg font-semibold text-primaryText">Before you invest</h1>
-            <section className="space-y-2 rounded-2xl border border-borderColor p-4 text-sm leading-relaxed text-secondaryText">
+            <h1 className="text-2xl font-bold text-primaryText">Before you invest</h1>
+            <section className="space-y-3 rounded-2xl bg-white p-5 text-[15px] leading-relaxed text-secondaryText shadow-[0_4px_18px_rgba(0,0,0,0.07)]">
               <p className="font-medium text-primaryText">What you are buying</p>
               <p>
                 {shares} share{shares === "1" ? "" : "s"} of {unit.label}, {bpsToPercent(ownershipBps(shares, unit.total_shares))} of
@@ -472,7 +472,7 @@ export default function ChooseUnit() {
                 {raiseAllowsWithdraw(project.escrow_account_id) ? " You can take it out while the round is filling, except in its last 7 days." : ""}
               </p>
             </section>
-            <section className="space-y-2 rounded-2xl border border-borderColor p-4 text-sm">
+            <section className="space-y-3 rounded-2xl bg-white p-5 text-[15px] shadow-[0_4px_18px_rgba(0,0,0,0.07)]">
               <p className="font-medium text-primaryText">The builder&apos;s project pack</p>
               {pack ? (
                 <a href={pack.file_url as string} target="_blank" rel="noreferrer" className="font-medium text-primary">
@@ -484,11 +484,11 @@ export default function ChooseUnit() {
               {pledgeOf ? (
                 <details className="text-secondaryText">
                   <summary className="cursor-pointer font-medium text-primary">Read the manager&apos;s pledge</summary>
-                  <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap font-sans text-xs">{pledgeOf}</pre>
+                  <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap font-sans text-sm leading-relaxed">{pledgeOf}</pre>
                 </details>
               ) : null}
             </section>
-            <section className="space-y-2 rounded-2xl border border-borderColor p-4 text-sm">
+            <section className="space-y-3 rounded-2xl bg-white p-5 text-[15px] shadow-[0_4px_18px_rgba(0,0,0,0.07)]">
               <p className="font-medium text-primaryText">The main risks</p>
               <ul className="list-disc space-y-1 pl-4 text-secondaryText">
                 {INVEST_RISKS.map((r) => (
@@ -499,12 +499,12 @@ export default function ChooseUnit() {
                 Read the risks in full
               </Link>
             </section>
-            <label className="flex items-start gap-3 text-sm text-primaryText">
-              <input type="checkbox" checked={readPack} onChange={(e) => setReadPack(e.target.checked)} className="mt-1 h-4 w-4 accent-[#c1272d]" />
+            <label className="flex items-start gap-3 text-[15px] leading-relaxed text-primaryText">
+              <input type="checkbox" checked={readPack} onChange={(e) => setReadPack(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-[#c1272d]" />
               I have read the project pack and the manager&apos;s pledge.
             </label>
-            <label className="flex items-start gap-3 text-sm text-primaryText">
-              <input type="checkbox" checked={readRisks} onChange={(e) => setReadRisks(e.target.checked)} className="mt-1 h-4 w-4 accent-[#c1272d]" />
+            <label className="flex items-start gap-3 text-[15px] leading-relaxed text-primaryText">
+              <input type="checkbox" checked={readRisks} onChange={(e) => setReadRisks(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-[#c1272d]" />
               I understand the risks, that blockchain payments cannot be reversed, and that Sheda does not guarantee any
               return.
             </label>
@@ -514,9 +514,9 @@ export default function ChooseUnit() {
         {/* ---- 4. check ---- */}
         {step === "check" && unit ? (
           <>
-            <h1 className="text-lg font-semibold text-primaryText">Check the details</h1>
-            <dl className="space-y-2 rounded-2xl border border-borderColor p-4 text-sm">
-              <p className="pb-1 font-medium text-primaryText">The property</p>
+            <h1 className="text-2xl font-bold text-primaryText">Check the details</h1>
+            <dl className="space-y-3 rounded-2xl bg-white p-5 text-[15px] shadow-[0_4px_18px_rgba(0,0,0,0.07)]">
+              <p className="pb-1 text-lg font-semibold text-primaryText">The property</p>
               <Row label="Building" value={project.name} />
               <Row label="Location" value={project.location} />
               <Row label="Type" value={PROJECT_TYPE_TEXT[project.project_type ?? "under_construction"]} />
@@ -526,8 +526,8 @@ export default function ChooseUnit() {
                 value={chosen ? candidateName(chosen) : project.manager?.display_name ?? "Chosen by investors"}
               />
             </dl>
-            <dl className="space-y-2 rounded-2xl border border-borderColor p-4 text-sm">
-              <p className="pb-1 font-medium text-primaryText">Your investment</p>
+            <dl className="space-y-3 rounded-2xl bg-white p-5 text-[15px] shadow-[0_4px_18px_rgba(0,0,0,0.07)]">
+              <p className="pb-1 text-lg font-semibold text-primaryText">Your investment</p>
               <Row label="You pay" value={money(cost)} />
               <Row label="Shares" value={`${shares} (${bpsToPercent(ownershipBps(shares, unit.total_shares))} of the flat)`} />
               <Row label="Price per share" value={money(oneShare)} />
@@ -544,7 +544,7 @@ export default function ChooseUnit() {
             <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-50 text-green-600">
               <Check size={28} />
             </span>
-            <h1 className="text-lg font-semibold text-primaryText">You&apos;re in</h1>
+            <h1 className="text-2xl font-bold text-primaryText">You&apos;re in</h1>
             <p className="text-sm text-secondaryText">
               Your money is in the raise contract. Follow the round in Portfolio. When it fills, collect your shares there;
               if it doesn&apos;t, take your money back there too.
@@ -625,7 +625,7 @@ function PrimaryButton({ children, disabled, onClick }: { children: React.ReactN
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-white disabled:opacity-50"
+      className="w-full rounded-xl bg-primary py-4 text-base font-semibold text-white disabled:opacity-50"
     >
       {children}
     </button>

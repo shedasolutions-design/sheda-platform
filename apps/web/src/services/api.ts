@@ -2010,8 +2010,37 @@ class ApiService {
       `/api/v1/collections/projects/${encodeURIComponent(slug)}`,
       options
     );
-    if (r.ok) rememberRaise(r.data.slug, r.data.escrow_account_id);
+    if (r.ok) {
+      rememberRaise(r.data.slug, r.data.escrow_account_id);
+      await this.fillVaultsFromChain(r.data);
+    }
     return r;
+  }
+
+  /**
+   * A flat's vault as the raise contract has it, where the backend has none.
+   *
+   * The contract is the authority on which vault a flat mints into; the
+   * backend only caches it, and recording it there is an admin step. Until
+   * then a funded flat looked as if it had nowhere to claim shares into.
+   */
+  private async fillVaultsFromChain(project: CollectionProjectDetail): Promise<void> {
+    const missing = project.unit_list.filter((u) => !u.vault_account_id);
+    if (!missing.length || !project.escrow_account_id) return;
+    try {
+      const { default: near } = await import("@/services/nearContract");
+      const onChain = await near.viewOn<{ units?: { code: string; vault?: string | null }[] } | null>(
+        project.escrow_account_id,
+        "get_project",
+        { project_id: project.slug }
+      );
+      for (const u of missing) {
+        const v = onChain?.units?.find((c) => c.code === u.code)?.vault;
+        if (v) u.vault_account_id = v;
+      }
+    } catch {
+      /* the backend's view stands */
+    }
   }
 
   async getMyCollectionProjects(): Promise<ApiResponse<CollectionProjectSummary[]>> {
