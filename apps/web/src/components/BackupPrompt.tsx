@@ -6,7 +6,7 @@ import Button from "@/components/ui/Button";
 import TextField from "@/components/ui/TextField";
 import { useWallet } from "@/contexts/WalletContext";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
-import type { BackupRecord } from "@/services/cloudBackup";
+import { getCachedSession, type BackupRecord } from "@/services/cloudBackup";
 import { checkPassphrase, MIN_PASSPHRASE_LENGTH } from "@/services/walletCrypto";
 
 /**
@@ -29,6 +29,12 @@ export interface BackupPromptProps {
   mode: "backup" | "restore";
   /** Wallet being backed up. Ignored in restore mode (the user picks). */
   accountId?: string;
+  /**
+   * Restore mode: the wallet on the person's Sheda profile. Its backup is
+   * listed first, picked by default and labelled, so a returning person
+   * restores the wallet their deals were made with rather than another one.
+   */
+  preferredAccountId?: string;
   onClose: () => void;
   onDone?: () => void;
 }
@@ -36,7 +42,7 @@ export interface BackupPromptProps {
 const STRENGTH_LABEL = ["Too weak", "Weak", "Fair", "Good", "Strong"];
 const STRENGTH_COLOR = ["text-red-600", "text-red-600", "text-amber-600", "text-emerald-600", "text-emerald-600"];
 
-export default function BackupPrompt({ visible, mode, accountId, onClose, onDone }: BackupPromptProps) {
+export default function BackupPrompt({ visible, mode, accountId, preferredAccountId, onClose, onDone }: BackupPromptProps) {
   const {
     isCloudBackupAvailable,
     connectBackupAccount,
@@ -57,6 +63,43 @@ export default function BackupPrompt({ visible, mode, accountId, onClose, onDone
 
   const strength = checkPassphrase(passphrase);
   const isBackup = mode === "backup";
+
+  const showBackups = (found: BackupRecord[]) => {
+    // The profile's own wallet first; the rest keep newest-first order.
+    const ordered = preferredAccountId
+      ? [...found.filter((b) => b.accountId === preferredAccountId), ...found.filter((b) => b.accountId !== preferredAccountId)]
+      : found;
+    setBackups(ordered);
+    setSelected(ordered[0]?.accountId ?? null);
+    setStatus(ordered.length ? null : "No backups found for this Google account.");
+  };
+
+  // Already connected to Google (signing in with Google just did it): go
+  // straight to the list, no second Google step.
+  useEffect(() => {
+    if (!visible || mode !== "restore" || !isCloudBackupAvailable) return;
+    let alive = true;
+    (async () => {
+      const session = await getCachedSession().catch(() => null);
+      if (!session || !alive) return;
+      setConnected(true);
+      setStatus("Looking for backups…");
+      try {
+        const found = await listCloudBackups();
+        if (alive) showBackups(found);
+      } catch (err) {
+        if (alive) {
+          setConnected(false);
+          setStatus(null);
+          setErrorText(err instanceof Error ? err.message : "Could not load your backups.");
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, mode, isCloudBackupAvailable]);
 
   // Clear every secret-adjacent field whenever the dialog closes.
   useEffect(() => {
@@ -82,10 +125,7 @@ export default function BackupPrompt({ visible, mode, accountId, onClose, onDone
       setConnected(true);
       if (mode === "restore") {
         setStatus("Looking for backups…");
-        const found = await listCloudBackups();
-        setBackups(found);
-        setSelected(found[0]?.accountId ?? null);
-        setStatus(found.length ? null : "No backups found for this Google account.");
+        showBackups(await listCloudBackups());
       } else {
         setStatus(null);
       }
@@ -178,6 +218,15 @@ export default function BackupPrompt({ visible, mode, accountId, onClose, onDone
                     checked={selected === b.accountId}
                     onChange={() => setSelected(b.accountId)}
                   />
+                  {b.accountId === preferredAccountId ? (
+                    <span className="mb-1 w-fit rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                      Your Sheda wallet
+                    </span>
+                  ) : preferredAccountId ? (
+                    <span className="mb-1 w-fit rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-secondaryText">
+                      Another wallet, not linked to this account
+                    </span>
+                  ) : null}
                   <span className="break-all font-semibold">{b.accountId}</span>
                   <span className="text-xs text-secondaryText">
                     {b.network ?? "testnet"} ·{" "}

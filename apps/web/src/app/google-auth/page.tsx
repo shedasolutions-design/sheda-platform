@@ -20,7 +20,7 @@ import {
 export default function GoogleAuthReturnPage() {
   const router = useRouter();
   const { socialLogin } = useApi();
-  const { hasLocalWallet } = useWallet();
+  const { hasLocalWallet, connectBackupAccount, isCloudBackupAvailable } = useWallet();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   // Whether this sign-in created the account. Google is both sign-up and
@@ -93,6 +93,13 @@ export default function GoogleAuthReturnPage() {
       try {
         const result = await socialLogin({ token: idToken, provider: "google" });
         clearMarkers();
+        // A returning person: the same Google sign-in opens their encrypted
+        // backups too, so restoring needs only their backup password, not a
+        // second trip through Google. Best effort: the restore screen offers
+        // the Google button if this does not take.
+        if (result?.isNewUser !== true && isCloudBackupAvailable) {
+          await connectBackupAccount(idToken).catch(() => {});
+        }
         // The backend says whether this request created the account; only a
         // brand-new account gets a wallet.
         setIsNewUser(result?.isNewUser === true);
@@ -102,6 +109,7 @@ export default function GoogleAuthReturnPage() {
         setError(err instanceof Error ? err.message : "Could not complete sign-in. Please try again.");
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socialLogin]);
 
   useEffect(() => {
@@ -112,7 +120,7 @@ export default function GoogleAuthReturnPage() {
       router.replace("/wallet-setup/provision");
       return;
     }
-    router.replace(hasLocalWallet ? "/home" : "/wallet-setup");
+    router.replace(hasLocalWallet ? "/home" : "/wallet-setup?restore=1");
   }, [done, isNewUser, hasLocalWallet, router]);
 
   if (error) {
