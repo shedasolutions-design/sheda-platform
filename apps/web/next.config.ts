@@ -80,7 +80,12 @@ const SECURITY_HEADERS = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()" },
 ];
 
+// Which build this is, so an open tab can tell when the site has moved on
+// (components/UpdateBanner.tsx). The commit on Vercel; a timestamp elsewhere.
+const BUILD_ID = process.env.VERCEL_GIT_COMMIT_SHA || `local-${Date.now()}`;
+
 const nextConfig: NextConfig = {
+  env: { NEXT_PUBLIC_BUILD_ID: BUILD_ID },
   cacheComponents: true,
   partialPrefetching: true,
   poweredByHeader: false,

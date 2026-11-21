@@ -17,6 +17,7 @@ import { useMode } from "@/contexts/ModeContext";
 import useUnreadMessagesCount from "@/hooks/useUnreadMessagesCount";
 import useUnattendedCount from "@/hooks/useUnattendedCount";
 import BackupReminder from "./BackupReminder";
+import UpdateBanner from "./UpdateBanner";
 import MessagePopup from "./chat/MessagePopup";
 
 interface Tab {
@@ -90,6 +91,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
       </nav>
 
       <main className="min-w-0 flex-1 pb-20 md:pb-0">
+        <UpdateBanner />
         <BackupReminder />
         {children}
       </main>
