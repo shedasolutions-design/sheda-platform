@@ -122,6 +122,7 @@ async def get_user_by_id(user_id: int, current_user: ActiveUser, db: DBSession):
     from sqlalchemy import and_, or_, select
 
     from app.models.property import Appointment
+    from app.models.user import Agent
 
     # Any signed-in account may look: it used to need a verified email, and
     # most accounts made before codes existed never had one, so "View seller"
@@ -143,7 +144,11 @@ async def get_user_by_id(user_id: int, current_user: ActiveUser, db: DBSession):
         "email": user.email,
         "phone_number": user.phone_number,
         "near_account_id": user.near_account_id,
-        "agency_name": getattr(user, "agency_name", None),
+        # A seller's agency name lives on the agent table, which the generic
+        # get() above doesn't load: asked for directly, not read lazily.
+        "agency_name": (
+            await db.execute(select(Agent.agency_name).where(Agent.id == user.id))
+        ).scalar_one_or_none(),
         "is_active": user.is_active,
         "is_deleted": user.is_deleted,
         "created_at": user.created_at,

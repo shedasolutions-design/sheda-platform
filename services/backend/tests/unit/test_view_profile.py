@@ -39,3 +39,16 @@ async def test_closed_account_is_not_found(db: AsyncSession):
     with pytest.raises(HTTPException) as e:
         await get_user_by_id(gone.id, viewer, db)
     assert e.value.status_code == 404
+
+
+async def test_seller_profile_carries_the_agency(db: AsyncSession):
+    """The agency name is on the agent table: it must come back, not crash."""
+    viewer = await _row(db, Client, "viewer3@example.com", False, "viewer3.testnet")
+    seller = await _row(db, Agent, "agency@example.com", False, "agency.testnet")
+    seller.agency_name = "Obi Homes"
+    await db.commit()
+    seller_id = seller.id
+    db.expire_all()  # as in production: nothing already loaded to lean on
+    await db.refresh(viewer)  # the signed-in person is loaded fresh, as live
+    shown = await get_user_by_id(seller_id, viewer, db)
+    assert shown.agency_name == "Obi Homes"
