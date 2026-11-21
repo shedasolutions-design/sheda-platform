@@ -685,7 +685,12 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
                   message: `Your expired bid for "${title}" was refunded.`,
                 },
                 action: async () => {
-                  const claimResult = await nearContractService.claimLostBid(
+                  // An expired bid is still Pending, so cancel_bid is the way
+                  // out: a full refund to the bidder. claim_lost_bid only
+                  // serves a bid that lost to a sale or lease to someone else,
+                  // and refused every expired bid with "property not yet
+                  // sold/leased to another party".
+                  const claimResult = await nearContractService.cancelBid(
                     walletState.account!.accountId,
                     privateKey,
                     { bid_id: bid.id, property_id: bid.property_id }
