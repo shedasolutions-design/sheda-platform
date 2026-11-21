@@ -94,7 +94,7 @@ const CancelledCard = ({ transaction }: CancelledCardProps) => {
       />
       <div className="px-3 py-2">
         <DealFacts title={title} location={location} bedrooms={bedrooms} bathrooms={bathrooms} />
-        <div className="mt-1 flex items-center justify-between">
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2">
           <PriceDisplay amountUsd={stablecoinUnitsToUsd(parseInt(bid.bid_amount) || 0)} suffix={isLease ? leaseSuffix(property.lease_duration_days) : ""} compact />
           {!!updatedAt && <span className="text-xs text-[#878787BF]">{formatRelativeTime(updatedAt)}</span>}
         </div>

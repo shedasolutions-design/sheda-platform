@@ -11,7 +11,7 @@ import InfoTip from "@/components/ui/InfoTip";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { useWallet } from "@/contexts/WalletContext";
 import { useCollections } from "@/hooks/useCollections";
-import { amountForShares, bpsToPercent, ownershipBps, parseAmount, sharesForAmount } from "@/services/collections/money";
+import { amountForShares, bpsToPercent, formatAmount, ownershipBps, parseAmount, sharesForAmount } from "@/services/collections/money";
 import { DEFAULT_TOKEN } from "@/config/tokens";
 import { RAISE_CAN_WITHDRAW, RAISE_CONTRACT_ID } from "@/config/collections";
 import {
@@ -54,6 +54,12 @@ export default function ChooseUnit() {
   const [step, setStep] = useState<Step>("flat");
   const [selected, setSelected] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
+  // Investors can say how many shares they want instead of working out the
+  // dollar figure that buys them. In "shares" mode the typed count is the
+  // source of truth and the cost follows from it, never the other way round:
+  // dollars to shares and back again rounds down twice and can lose one.
+  const [mode, setMode] = useState<"amount" | "shares">("amount");
+  const [shareInput, setShareInput] = useState("");
   const [balance, setBalance] = useState<bigint | null>(null);
   const [popup, setPopup] = useState<string | null>(null);
   const [readPack, setReadPack] = useState(false);
@@ -116,14 +122,40 @@ export default function ChooseUnit() {
   const open = project.status === "open";
 
   // ---- amount arithmetic --------------------------------------------------
-  const shares = unit && atomic ? sharesForAmount(atomic, unit.price_atomic, unit.total_shares) : "0";
+  const shares =
+    mode === "shares"
+      ? String(BigInt(shareInput || "0"))
+      : unit && atomic
+        ? sharesForAmount(atomic, unit.price_atomic, unit.total_shares)
+        : "0";
   const available = unit ? BigInt(unit.total_shares || "0") - BigInt(unit.shares_sold || "0") : 0n;
   const oneShare = unit ? BigInt(amountForShares("1", unit.price_atomic, unit.total_shares)) : 0n;
   const projectMin = BigInt(project.min_investment_atomic || "0");
   const minimum = oneShare > projectMin ? oneShare : projectMin;
-  const atomicBig = atomic ? BigInt(atomic) : 0n;
   // What the shares actually cost; anything left over is not sent.
   const cost = unit ? BigInt(amountForShares(shares, unit.price_atomic, unit.total_shares)) : 0n;
+  const atomicBig = mode === "shares" ? cost : atomic ? BigInt(atomic) : 0n;
+  // The most this person can buy: what is left in the flat, and no more than
+  // their wallet covers when its balance is known.
+  const affordable =
+    unit && balance !== null ? BigInt(sharesForAmount(balance.toString(), unit.price_atomic, unit.total_shares)) : null;
+  const leftInFlat = available > 0n ? available : 0n;
+  const maxBuy = affordable !== null && affordable < leftInFlat ? affordable : leftInFlat;
+  const walletLimits = affordable !== null && affordable < leftInFlat;
+  // Typed money for a cost, with every decimal the coin has, so typing it
+  // back buys the same number of shares.
+  const plain = (atomicAmount: bigint) => formatAmount(atomicAmount, token, 6).replace(/,/g, "");
+  const setByShares = (n: bigint) => {
+    if (!unit) return;
+    setShareInput(n > 0n ? n.toString() : "");
+    setAmount(n > 0n ? plain(BigInt(amountForShares(n.toString(), unit.price_atomic, unit.total_shares))) : "");
+  };
+  const switchMode = (next: "amount" | "shares") => {
+    if (next === mode) return;
+    if (next === "shares") setShareInput(shares === "0" ? "" : shares);
+    else setAmount(cost > 0n ? plain(cost) : "");
+    setMode(next);
+  };
   const tooMany = BigInt(shares || "0") > available;
   const short = balance !== null && cost > balance;
   // A vote is asked for only when there is a real choice.
@@ -144,7 +176,7 @@ export default function ChooseUnit() {
     null;
 
   const continueFromAmount = () => {
-    if (!atomic || atomicBig < minimum) {
+    if (atomicBig <= 0n || atomicBig < minimum) {
       setPopup(`The minimum on this listing is ${money(minimum)}. Please increase the amount and try again.`);
       return;
     }
@@ -194,6 +226,11 @@ export default function ChooseUnit() {
   };
 
   const press = (k: string) => {
+    if (mode === "shares") {
+      if (k === "del") return setShareInput((v) => v.slice(0, -1));
+      if (k === "." || shareInput.length >= 9) return;
+      return setShareInput((v) => (v === "0" ? k : v + k));
+    }
     if (k === "del") return setAmount((a) => a.slice(0, -1));
     if (k === "." && amount.includes(".")) return;
     if (amount.includes(".") && amount.split(".")[1].length >= 2) return;
@@ -289,18 +326,83 @@ export default function ChooseUnit() {
         {/* ---- 2. amount ---- */}
         {step === "amount" && unit ? (
           <>
+            <div className="mx-auto flex w-fit rounded-xl bg-gray-100 p-1 text-sm" role="group" aria-label="Enter by">
+              {(["amount", "shares"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={mode === m}
+                  onClick={() => switchMode(m)}
+                  className={`rounded-lg px-4 py-1.5 ${mode === m ? "bg-white font-medium text-primaryText shadow-sm" : "text-secondaryText"}`}
+                >
+                  {m === "amount" ? "Amount ($)" : "Shares"}
+                </button>
+              ))}
+            </div>
+
             <div className="text-center">
-              <p className="text-xs text-secondaryText">How much do you want to invest? (USD)</p>
-              <input
-                aria-label="Amount to invest in US dollars"
-                inputMode="none"
-                value={amount ? `$${amount}` : ""}
-                placeholder="$0"
-                onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-                className="mt-1 w-full bg-transparent text-center text-4xl font-bold text-primaryText outline-none placeholder:text-gray-300"
-              />
+              {mode === "amount" ? (
+                <>
+                  <p className="text-xs text-secondaryText">How much do you want to invest? (USD)</p>
+                  <input
+                    aria-label="Amount to invest in US dollars"
+                    inputMode="none"
+                    value={amount ? `$${amount}` : ""}
+                    placeholder="$0"
+                    onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                    className="mt-1 w-full bg-transparent text-center text-4xl font-bold text-primaryText outline-none placeholder:text-gray-300"
+                  />
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-secondaryText">How many shares do you want?</p>
+                  <input
+                    aria-label="Number of shares to buy"
+                    inputMode="none"
+                    value={shareInput}
+                    placeholder="0"
+                    onChange={(e) => setShareInput(e.target.value.replace(/[^0-9]/g, "").slice(0, 9))}
+                    className="mt-1 w-full bg-transparent text-center text-4xl font-bold text-primaryText outline-none placeholder:text-gray-300"
+                  />
+                  {cost > 0n ? <p className="text-sm text-secondaryText">costs {money(cost)}</p> : null}
+                </>
+              )}
               {selectedCurrency !== "USD" && atomicBig > 0n ? (
                 <p className="text-xs text-secondaryText">about {formatPrice(Number(atomicBig) / 1_000_000)}</p>
+              ) : null}
+            </div>
+
+            {/* Drag to any number of shares, or take the most there is. */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2 text-xs text-secondaryText">
+                <span>
+                  {leftInFlat.toLocaleString()} of {BigInt(unit.total_shares || "0").toLocaleString()} shares still available
+                </span>
+                <button
+                  type="button"
+                  disabled={maxBuy <= 0n}
+                  onClick={() => setByShares(maxBuy)}
+                  className="shrink-0 rounded-lg border border-primary px-3 py-1 font-semibold text-primary disabled:opacity-40"
+                >
+                  Max
+                </button>
+              </div>
+              {maxBuy > 0n ? (
+                <input
+                  type="range"
+                  aria-label="Number of shares"
+                  min={1}
+                  max={Number(maxBuy)}
+                  step={1}
+                  value={Math.min(Math.max(Number(shares || "0"), 1), Number(maxBuy))}
+                  onChange={(e) => setByShares(BigInt(e.target.value))}
+                  className="w-full accent-primary"
+                />
+              ) : null}
+              {walletLimits ? (
+                <p className="text-[11px] text-secondaryText">
+                  Max is {maxBuy.toLocaleString()} share{maxBuy === 1n ? "" : "s"}, what your wallet covers.
+                </p>
               ) : null}
             </div>
 
@@ -357,7 +459,7 @@ export default function ChooseUnit() {
                 </Link>
               </p>
             ) : null}
-            {cost > 0n && cost < atomicBig ? (
+            {mode === "amount" && cost > 0n && cost < atomicBig ? (
               <p className="text-xs text-secondaryText">
                 Shares are whole, so {money(cost)} is used and the rest stays in your wallet.
               </p>
@@ -492,7 +594,7 @@ export default function ChooseUnit() {
                 Continue
               </PrimaryButton>
             ) : step === "amount" ? (
-              <PrimaryButton disabled={!open || !amount} onClick={continueFromAmount}>
+              <PrimaryButton disabled={!open || atomicBig <= 0n} onClick={continueFromAmount}>
                 Continue
               </PrimaryButton>
             ) : step === "terms" ? (

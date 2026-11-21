@@ -23,7 +23,7 @@ type Tab = (typeof TABS)[number];
  */
 export default function DealTabs({ deals }: { deals: ReturnType<typeof useTransactions> }) {
   const [tab, setTab] = useState<Tab>("Ongoing");
-  const { ongoing, completed, expired, cancelled, loading, error, refresh, updatePhase } = deals;
+  const { ongoing, completed, expired, cancelled, loading, error, refresh, updatePhase, readOnly } = deals;
   useExpirationChecker(useMemo(() => [...completed, ...expired], [completed, expired]));
 
   // Deals move while you look at them; poll every minute while the page is open.
@@ -51,7 +51,8 @@ export default function DealTabs({ deals }: { deals: ReturnType<typeof useTransa
 
   return (
     <>
-      <div className="mt-2 grid grid-cols-4 gap-2" role="tablist">
+      {/* Scrolls sideways on narrow screens or large text instead of squashing the labels. */}
+      <div className="-mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist">
         {TABS.map((t) => (
           <button
             key={t}
@@ -59,7 +60,7 @@ export default function DealTabs({ deals }: { deals: ReturnType<typeof useTransa
             role="tab"
             aria-selected={tab === t}
             onClick={() => setTab(t)}
-            className={`rounded-xl px-2 py-2.5 text-sm ${tab === t ? "bg-primary text-white" : "bg-primaryLight text-secondaryText hover:bg-active"}`}
+            className={`shrink-0 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm sm:flex-1 ${tab === t ? "bg-primary text-white" : "bg-primaryLight text-secondaryText hover:bg-active"}`}
           >
             {t}
             {lists[t].length > 0 ? ` (${lists[t].length})` : ""}
@@ -68,6 +69,15 @@ export default function DealTabs({ deals }: { deals: ReturnType<typeof useTransa
       </div>
 
       <div className="mt-4">
+        {readOnly ? (
+          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Your wallet isn&apos;t loaded in this browser, so you can see your deals but not act on them yet.{" "}
+            <Link href="/wallet-setup" className="font-medium underline">
+              Restore your wallet
+            </Link>{" "}
+            to accept, cancel or reclaim.
+          </p>
+        ) : null}
         {/* A partial failure still has rows worth showing: warn above them. */}
         {error && current.length > 0 && (
           <p className="mb-3 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
@@ -96,7 +106,7 @@ export default function DealTabs({ deals }: { deals: ReturnType<typeof useTransa
             }
           />
         ) : (
-          <ul className="grid gap-4 sm:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {current.map((tx) => (
               <li key={tx.key}>
                 <Card transaction={tx} onPhaseUpdate={onPhaseUpdate} />

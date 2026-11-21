@@ -228,8 +228,10 @@ async def search_properties(
     # file pins no FastAPI version, so that difference is not stable.
     db: DBSession,
     query: str = Query(..., min_length=1, description="Search query"),
-    min_price: Annotated[int, Query(description="Minimum price")] = None,
-    max_price: Annotated[int, Query(description="Maximum price")] = None,
+    # Prices are USD and may carry cents once converted from another
+    # currency; an int here answered 422 to any filter typed in naira.
+    min_price: Annotated[float, Query(ge=0, description="Minimum price (USD)")] = None,
+    max_price: Annotated[float, Query(ge=0, description="Maximum price (USD)")] = None,
     location: Annotated[str, Query(description="Location filter")] = None,
     property_type: Annotated[str, Query(description="Property type")] = None,
     listing_type: Annotated[
@@ -252,6 +254,9 @@ async def search_properties(
     ] = None,
     amenities: Annotated[
         List[str], Query(description="Required amenities")
+    ] = None,
+    negotiable: Annotated[
+        bool, Query(description="Negotiable price only")
     ] = None,
     sort: Annotated[
         str, Query(description="Sort order")
@@ -344,6 +349,7 @@ async def search_properties(
             max_bathroom=max_bathroom,
             furnished=furnished,
             amenities=amenities,
+            negotiable=negotiable,
             sort=sort,
             limit=limit,
             offset=offset,

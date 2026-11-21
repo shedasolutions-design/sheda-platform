@@ -947,6 +947,8 @@ export interface PropertySearchParams {
   max_bathroom?: number;
   furnished?: boolean;
   amenities?: string[];
+  /** Only listings marked negotiable. */
+  negotiable?: boolean;
   sort?: string;
   limit?: number;
   offset?: number;
@@ -1856,6 +1858,7 @@ class ApiService {
     if (params.min_bathroom !== undefined) queryParts.push(`min_bathroom=${params.min_bathroom}`);
     if (params.max_bathroom !== undefined) queryParts.push(`max_bathroom=${params.max_bathroom}`);
     if (params.furnished !== undefined) queryParts.push(`furnished=${params.furnished}`);
+    if (params.negotiable) queryParts.push(`negotiable=true`);
     if (params.amenities && params.amenities.length > 0) {
       params.amenities.forEach(a => queryParts.push(`amenities=${encodeURIComponent(a)}`));
     }

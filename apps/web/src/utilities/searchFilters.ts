@@ -46,9 +46,8 @@ const EXTRA_TO_AMENITY: Record<string, string> = {
   furniture: "furniture",
   prepaidMeter: "prepaid_meter",
   wifi: "wifi",
-  // `negotiable` is deliberately absent: it is `is_negotiable` on the
-  // property, not an amenity, and the search endpoint has no filter for it.
-  // Sending it would be silently dropped, so it stays a local concern.
+  // `negotiable` is not an amenity: it is `is_negotiable` on the property,
+  // sent as its own `negotiable` filter below.
 };
 
 /** Screen wording → the sort values the endpoint understands. */
@@ -117,13 +116,21 @@ export function filtersToSearchParams(
     narrowed = true;
   }
 
-  if (filters.minPrice && filters.minPrice > 0) {
-    params.min_price = filters.minPrice;
+  // Prices are USD here (the filter screen converts what was typed). An
+  // empty box used to arrive as Infinity, which the server rejected, so
+  // every filter with no maximum returned nothing; only finite values go.
+  if (filters.minPrice && Number.isFinite(filters.minPrice) && filters.minPrice > 0) {
+    params.min_price = Math.floor(filters.minPrice * 100) / 100;
     narrowed = true;
   }
   // A max of zero is the slider at rest, not a request for free properties.
-  if (filters.maxPrice && filters.maxPrice > 0) {
-    params.max_price = filters.maxPrice;
+  if (filters.maxPrice && Number.isFinite(filters.maxPrice) && filters.maxPrice > 0) {
+    params.max_price = Math.ceil(filters.maxPrice * 100) / 100;
+    narrowed = true;
+  }
+
+  if (filters.extras?.negotiable) {
+    params.negotiable = true;
     narrowed = true;
   }
 

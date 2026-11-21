@@ -42,6 +42,13 @@ import {
 import { readCachedList, writeCachedList, LIST_CACHE_SCOPES } from "@/services/listCache";
 
 interface UseTransactionsReturn {
+    /**
+     * True when the deals are read for the account on the person's profile
+     * because no wallet is loaded in this browser (still starting, another
+     * device, or storage cleared). The list is complete; acting on a deal
+     * needs the wallet.
+     */
+    readOnly: boolean;
     /** All transactions for the current user */
     transactions: Transaction[];
     /** Ongoing transactions (active phases) */
@@ -300,7 +307,7 @@ interface OnChainFetchResult {
 
 export function useTransactions(): UseTransactionsReturn {
     const { walletState, currentNetwork } = useWallet();
-    const { properties, getTransactions } = useApi();
+    const { properties, getTransactions, user } = useApi();
 
     /**
      * Backend properties are used purely to prettify what's already been read
@@ -325,7 +332,14 @@ export function useTransactions(): UseTransactionsReturn {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const accountId = walletState.account?.accountId;
+    // Deals are public on chain, so they can be read for the NEAR account on
+    // the person's profile even when no wallet is loaded here. Reading only
+    // for a loaded wallet showed "No transactions" on every tab while the
+    // wallet was starting, and for good on another browser or device, even
+    // though the deals were real and still visible in chat.
+    const walletAccountId = walletState.account?.accountId;
+    const accountId = walletAccountId || user?.near_account_id || undefined;
+    const readOnly = !walletAccountId && !!accountId;
 
     /**
      * Show the last-known deals immediately while the real fetch runs behind
@@ -457,10 +471,8 @@ export function useTransactions(): UseTransactionsReturn {
     }, [accountId, currentNetwork]);
 
     const fetchTransactions = useCallback(async () => {
-        if (!accountId) {
-            setTransactions([]);
-            return;
-        }
+        // No early exit without an account: the backend still knows this
+        // person's deals, and each is then read from the chain by its id.
 
         setLoading(true);
         setError(null);
@@ -491,7 +503,7 @@ export function useTransactions(): UseTransactionsReturn {
                 const backendItems = Object.values(backendByKey);
                 if (backendItems.length > 0) {
                     const sorted = backendItems
-                        .map((item) => feedItemToTransaction(item, accountId))
+                        .map((item) => feedItemToTransaction(item, accountId || ""))
                         .sort((a, b) => b.updatedAt - a.updatedAt);
                     setTransactions(sorted);
                     // The backend mirrors bids; the chain decides them. When the
@@ -592,6 +604,56 @@ export function useTransactions(): UseTransactionsReturn {
                 if (tx) allTransactions.push(tx);
             }
 
+            // Deals the backend knows are this person's but the read above did
+            // not find: made with another wallet (a new browser or device, a
+            // wallet created again), or read before the wallet loaded. Each is
+            // looked up on chain by its own property and bid id, so its status
+            // is the chain's, not the backend's possibly stale copy.
+            const known = new Set(allTransactions.map((t) => t.key));
+            const missing = Object.entries(backendByKey).filter(([key]) => !known.has(key));
+            if (missing.length > 0) {
+                const missingPids = Array.from(new Set(missing.map(([, item]) => Number(item.property_id) || 0)));
+                const bidsByProperty = new Map<number, BidView[]>();
+                await Promise.all(
+                    missingPids.map(async (pid) => {
+                        const bids = await nearContractService.getBidsForProperty(pid).catch(() => null);
+                        if (bids?.success && bids.data) bidsByProperty.set(pid, bids.data as BidView[]);
+                        if (!propertyCache[pid]) {
+                            const prop = await nearContractService.getPropertyById(pid).catch(() => null);
+                            if (prop?.success && prop.data) propertyCache[pid] = prop.data;
+                        }
+                    })
+                );
+                await resolveBackendProperties(
+                    new Set(missingPids),
+                    backendPropertyCache,
+                    (limit, cursor) => api.getProperties(limit, cursor)
+                );
+                for (const [, item] of missing) {
+                    // Only clean numeric ids: older backend rows hold ids
+                    // like "bid_2" that name no bid at all.
+                    if (!/^\d+$/.test(String(item.bid_id ?? "")) || !/^\d+$/.test(String(item.property_id ?? ""))) continue;
+                    const pid = Number(item.property_id);
+                    const bidId = Number(item.bid_id);
+                    const chainBids = bidsByProperty.get(pid);
+                    const chainBid = chainBids?.find((b) => Number(b.id) === bidId);
+                    if (chainBids && !chainBid) continue; // the chain says this bid does not exist
+                    if (!chainBid || !propertyCache[pid]) {
+                        // The chain could not be read for this one: show what
+                        // the backend recorded rather than nothing.
+                        allTransactions.push(feedItemToTransaction(item, accountId || ""));
+                        continue;
+                    }
+                    // The counterparty on the backend record is the other side:
+                    // if they placed this bid, this person is the seller.
+                    const counterparty = item.counterparty?.wallet_id || "";
+                    const bidder = (chainBid as BidView & { bidder?: string }).bidder_id || (chainBid as { bidder?: string }).bidder || "";
+                    const role: "buyer" | "seller" = counterparty && counterparty === bidder ? "seller" : "buyer";
+                    const tx = buildTransaction(chainBid, propertyCache[pid], role);
+                    if (tx) allTransactions.push(tx);
+                }
+            }
+
             await enrichLeaseExpiryFromChain(allTransactions);
 
             const sorted = allTransactions.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -601,7 +663,7 @@ export function useTransactions(): UseTransactionsReturn {
             // means at least one bid read errored, so this list is knowingly
             // incomplete — caching it would resurface those gaps later with
             // no error banner to explain them.
-            if (!hadReadFailure) {
+            if (!hadReadFailure && accountId) {
                 writeCachedList(LIST_CACHE_SCOPES.transactions, accountId, sorted);
             }
 
@@ -662,6 +724,7 @@ export function useTransactions(): UseTransactionsReturn {
     const { ongoing, completed, expired, cancelled } = partitionTransactions(transactions);
 
     return {
+        readOnly,
         transactions,
         ongoing,
         completed,

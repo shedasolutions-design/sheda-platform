@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>{{ heading }}</title>
+</head>
+{#- Every style is inline and the layout is tables: Gmail and Outlook drop
+    <style> blocks and flexbox, and this is what survives them. Everything
+    put in is escaped (autoescape), so a property name cannot carry markup. -#}
+<body style="margin:0;padding:0;background-color:#f5f5f5;">
+<span style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f5f5f5;">{{ preheader or heading }}</span>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f5f5f5;">
+<tr><td align="center" style="padding:24px 12px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background-color:#ffffff;border-radius:12px;overflow:hidden;font-family:'Segoe UI',Helvetica,Arial,sans-serif;color:#1f1f1f;">
+    <tr><td style="height:4px;background-color:#C1272D;line-height:4px;font-size:0;">&nbsp;</td></tr>
+    <tr><td align="center" style="padding:24px 24px 8px;">
+      <a href="{{ site_url }}" target="_blank" style="text-decoration:none;">
+        <img src="{{ logo_url }}" alt="Sheda Solutions" width="64" style="display:block;width:64px;max-width:64px;height:auto;border:0;">
+      </a>
+    </td></tr>
+    {% if network_note %}
+    <tr><td align="center" style="padding:4px 24px 0;">
+      <span style="display:inline-block;background-color:#FFF4D6;color:#7A5300;font-size:12px;padding:4px 10px;border-radius:999px;">{{ network_note }}</span>
+    </td></tr>
+    {% endif %}
+    <tr><td style="padding:20px 32px 4px;">
+      <h1 style="margin:0;font-size:22px;line-height:1.3;font-weight:700;color:#1f1f1f;">{{ heading }}</h1>
+    </td></tr>
+    <tr><td style="padding:8px 32px 0;font-size:15px;line-height:1.6;color:#444444;">
+      {% for p in paragraphs %}<p style="margin:0 0 14px;">{{ p }}</p>{% endfor %}
+    </td></tr>
+    {% if code %}
+    <tr><td align="center" style="padding:8px 32px 18px;">
+      <div style="display:inline-block;font-family:'Courier New',monospace;font-size:32px;font-weight:700;letter-spacing:8px;color:#C1272D;background-color:#FDF1F1;border:1px dashed #E8A5A7;border-radius:8px;padding:14px 28px;">{{ code }}</div>
+      {% if code_note %}<p style="margin:10px 0 0;font-size:13px;color:#777777;">{{ code_note }}</p>{% endif %}
+    </td></tr>
+    {% endif %}
+    {% if cta_url %}
+    <tr><td align="center" style="padding:8px 32px 20px;">
+      <a href="{{ cta_url }}" target="_blank" style="display:inline-block;background-color:#C1272D;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 28px;border-radius:8px;">{{ cta_label }}</a>
+    </td></tr>
+    {% endif %}
+    {% if notice %}
+    <tr><td style="padding:0 32px 20px;">
+      <p style="margin:0;background-color:#FFF8E6;border-left:4px solid #E0A800;padding:10px 12px;font-size:13px;line-height:1.5;color:#6B5200;border-radius:4px;">{{ notice }}</p>
+    </td></tr>
+    {% endif %}
+    <tr><td style="padding:0 32px;"><div style="height:1px;background-color:#eeeeee;line-height:1px;font-size:0;">&nbsp;</div></td></tr>
+    <tr><td align="center" style="padding:18px 32px 24px;font-size:12px;line-height:1.6;color:#888888;">
+      <p style="margin:0 0 6px;font-weight:600;color:#C1272D;">Revolutionizing real estate operations</p>
+      <p style="margin:0 0 10px;">Making real estate operations affable, affordable, available, and secure through blockchain.</p>
+      {% if footnote %}<p style="margin:0 0 10px;">{{ footnote }}{% if settings_url %} <a href="{{ settings_url }}" style="color:#888888;text-decoration:underline;">Notification settings</a>{% endif %}</p>{% endif %}
+      <p style="margin:0;">
+        <a href="https://x.com/Shedasolutions" style="color:#888888;text-decoration:underline;">X</a> &middot;
+        <a href="https://t.me/shedasolutions" style="color:#888888;text-decoration:underline;">Telegram</a> &middot;
+        <a href="mailto:{{ support_email }}" style="color:#888888;text-decoration:underline;">{{ support_email }}</a>
+      </p>
+      <p style="margin:8px 0 0;color:#aaaaaa;">&copy; {{ year }} Sheda Solutions</p>
+    </td></tr>
+  </table>
+</td></tr>
+</table>
+</body>
+</html>

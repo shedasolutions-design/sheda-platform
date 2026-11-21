@@ -8,6 +8,7 @@ import TextField from "@/components/ui/TextField";
 import SelectField from "@/components/ui/SelectField";
 import LocationField from "@/components/ui/LocationField";
 import { useApi } from "@/contexts/ApiContext";
+import { useCurrency } from "@/contexts/CurrencyContext";
 import { getPropertyTypeOptions, isLandType, isShortletType } from "@/constants/propertyTypes";
 import type { FilterValues } from "@/utilities/searchFilters";
 
@@ -79,6 +80,14 @@ const NO_EXTRAS: Extras = {
 export default function FilterPage() {
   const router = useRouter();
   const { setSelectedCategory, setActiveFilters } = useApi();
+  // Listings are priced in USD; people type prices in the currency they
+  // browse in, so what they type is converted before it is searched.
+  const { selectedCurrency, currencyInfo, fiatToUsd } = useCurrency();
+  const toUsd = (typed: string): number => {
+    const n = parseFloat(typed.replace(/,/g, ""));
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return selectedCurrency === "USD" ? n : fiatToUsd(n, selectedCurrency);
+  };
   const [location, setLocation] = useState("");
   const [propertyType, setPropertyType] = useState("");
   const [listingType, setListingType] = useState("");
@@ -105,8 +114,9 @@ export default function FilterPage() {
       sortBy,
       bedrooms: fields.bedrooms ? bedrooms : 0,
       bathrooms: fields.bathrooms ? bathrooms : 0,
-      minPrice: parseFloat(minPrice.replace(/,/g, "")) || 0,
-      maxPrice: parseFloat(maxPrice.replace(/,/g, "")) || Infinity,
+      minPrice: toUsd(minPrice),
+      // 0 means "no maximum"; it is never sent.
+      maxPrice: toUsd(maxPrice),
       furnished: fields.furnished ? furnished : false,
       extras: {
         ...Object.fromEntries(AMENITIES.map(([k]) => [k, fields[k] || (land && k === "runningWater") ? extras[k] : false])),
@@ -177,10 +187,12 @@ export default function FilterPage() {
           onValueChange={setSortBy}
         />
         <fieldset>
-          <legend className="mb-1 text-sm">{land ? "Price range (per plot)" : "Price range"}</legend>
+          <legend className="mb-1 text-sm">
+            {land ? "Price range (per plot)" : "Price range"} in {selectedCurrency}
+          </legend>
           <div className="grid grid-cols-2 gap-3">
-            <TextField inputMode="numeric" placeholder="Min 20,000" aria-label="Minimum price" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} />
-            <TextField inputMode="numeric" placeholder="Max 10,000,000" aria-label="Maximum price" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
+            <TextField inputMode="decimal" placeholder={`Min ${currencyInfo?.symbol ?? ""}`} aria-label="Minimum price" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} />
+            <TextField inputMode="decimal" placeholder={`Max ${currencyInfo?.symbol ?? ""}`} aria-label="Maximum price" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
           </div>
         </fieldset>
         {fields.furnished && <Check label="Furnished Only" checked={furnished} onChange={() => setFurnished((f) => !f)} />}

@@ -32,10 +32,12 @@ async def send_via_brevo(
 ) -> bool:
     """Send one email. Returns True on success, False (and logs) on failure."""
     payload: dict = {
-        "sender": {"email": settings.SMTP_SEND_FROM_MAIL, "name": "Sheda"},
+        "sender": {"email": settings.SMTP_SEND_FROM_MAIL, "name": settings.EMAIL_FROM_NAME or "Sheda Solutions"},
         "to": [{"email": to_email}],
         "subject": subject,
     }
+    if settings.EMAIL_REPLY_TO:
+        payload["replyTo"] = {"email": settings.EMAIL_REPLY_TO, "name": settings.EMAIL_FROM_NAME or "Sheda Solutions"}
     if html:
         payload["htmlContent"] = html
     if text:

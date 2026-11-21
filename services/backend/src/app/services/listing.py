@@ -1,4 +1,5 @@
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.engine import Result
 from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError
@@ -831,7 +832,8 @@ _SORT_COLUMNS = {
 def _apply_search_filters(stmt, *, query=None, location=None, property_type=None,
                           listing_type=None, min_price=None, max_price=None,
                           min_bedroom=None, max_bedroom=None, min_bathroom=None,
-                          max_bathroom=None, furnished=None, amenities=None):
+                          max_bathroom=None, furnished=None, amenities=None,
+                          negotiable=None):
     """Narrow a Property select by everything the search endpoint accepts."""
     if query and query.strip() and query.strip() != "*":
         like = f"%{query.strip()}%"
@@ -865,6 +867,8 @@ def _apply_search_filters(stmt, *, query=None, location=None, property_type=None
         stmt = stmt.where(Property.bathroom <= max_bathroom)
     if furnished is not None:
         stmt = stmt.where(Property.furnished == furnished)
+    if negotiable:
+        stmt = stmt.where(Property.is_negotiable.is_(True))
 
     for name in amenities or []:
         column = _AMENITY_COLUMNS.get(str(name).strip().lower().replace(" ", "_"))
@@ -884,7 +888,7 @@ async def search_properties(
     query=None, location=None, property_type=None, listing_type=None,
     min_price=None, max_price=None, min_bedroom=None, max_bedroom=None,
     min_bathroom=None, max_bathroom=None, furnished=None, amenities=None,
-    sort="relevance", limit=20, offset=0, ranked_ids=None,
+    negotiable=None, sort="relevance", limit=20, offset=0, ranked_ids=None,
 ):
     """Find properties, returning whole rows rather than index fragments.
 
@@ -897,7 +901,7 @@ async def search_properties(
         listing_type=listing_type, min_price=min_price, max_price=max_price,
         min_bedroom=min_bedroom, max_bedroom=max_bedroom,
         min_bathroom=min_bathroom, max_bathroom=max_bathroom,
-        furnished=furnished, amenities=amenities,
+        furnished=furnished, amenities=amenities, negotiable=negotiable,
     )
 
     count_stmt = _apply_search_filters(select(func.count(Property.id)), **filters)

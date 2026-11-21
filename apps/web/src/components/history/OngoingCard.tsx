@@ -1452,7 +1452,7 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
         <h3 className="truncate text-sm font-medium">{title}</h3>
         <ul className="mt-1 flex flex-wrap gap-x-3 text-xs text-[#878787BF]">
           <li className="flex items-center gap-1">
-            <MapPin size={12} /> {location}
+            <MapPin size={12} className="shrink-0" /> <span className="break-words">{location}</span>
           </li>
           {bedrooms > 0 && (
             <li className="flex items-center gap-1">
@@ -1465,7 +1465,7 @@ const OngoingCard = ({ transaction, onPhaseUpdate }: OngoingCardProps) => {
             </li>
           )}
         </ul>
-        <div className="mt-1 flex items-center justify-between">
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2">
           <PriceDisplay amountUsd={stablecoinUnitsToUsd(parseInt(bid.bid_amount) || 0)} suffix={mode === "rent" ? leaseSuffix(property.lease_duration_days) : ""} compact />
         </div>
 
@@ -1550,7 +1550,7 @@ function ActionButton({ act, half }: { act: { label: string; onPress: () => void
       type="button"
       onClick={act.onPress}
       aria-disabled={act.disabled || undefined}
-      className={`${half ? "w-1/2" : "w-full"} truncate border-r border-borderColor px-2 py-3 text-sm last:border-r-0 hover:bg-cardBackground ${act.disabled ? "text-xs" : ""}`}
+      className={`${half ? "w-1/2" : "w-full"} min-w-0 break-words border-r border-borderColor px-2 py-3 text-sm leading-tight last:border-r-0 hover:bg-cardBackground ${act.disabled ? "text-xs" : ""}`}
       style={{ color: act.color || "#C1272D" }}
     >
       {act.label}
