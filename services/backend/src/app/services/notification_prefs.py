@@ -81,14 +81,18 @@ async def email_deal_update(recipient_id: int, event: str, property_title: str |
             return
         title, body = EVENT_WORDS.get(event, ("Deal update", "There is an update on the deal for {p}."))
         name = f'"{property_title}"' if property_title else "your property"
-        from app.utils.email import email_sender
+        from app.utils.email import branded_email, email_sender
 
-        text = (
-            f"{body.format(p=name)}\n\n"
-            f"Open Sheda to see the details: {app_url()}/history\n\n"
-            "You get these emails because email notifications are on. "
-            f"Turn them off in Settings > Notifications: {app_url()}/notification-setting"
+        message = body.format(p=name)
+        html, text = branded_email(
+            title,
+            [message],
+            cta_label="See the deal",
+            cta_url=f"{app_url()}/history",
+            footnote="You get these emails because email notifications are on.",
+            settings_url=f"{app_url()}/notification-setting",
+            preheader=message,
         )
-        await email_sender.send_email(text, user.email, f"Sheda: {title}")
+        await email_sender.send_email(html, user.email, f"Sheda: {title}", text_type="html", alt_text=text)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Deal update email to user {recipient_id} not sent: {exc}")

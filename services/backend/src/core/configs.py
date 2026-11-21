@@ -122,6 +122,10 @@ class Settings(BaseSettings):
     SMTP_SEND_FROM_MAIL: str = Field(
         default="", description="Sender address (must be verified in Brevo)"
     )
+    # How the sender reads in an inbox, and where a reply goes. Changing
+    # either is a variable on the host, not a code change.
+    EMAIL_FROM_NAME: str = Field(default="Sheda Solutions", description="Sender name shown in inboxes")
+    EMAIL_REPLY_TO: Optional[str] = Field(default=None, description="Address replies go to (e.g. support@sheda.app)")
 
     # Database
     # DATABASE_URL is the name Neon (and most hosts) write; DB_URL is ours.

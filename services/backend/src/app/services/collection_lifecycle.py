@@ -211,14 +211,18 @@ async def _email(user: BaseUser, event: Event, link: str) -> None:
         prefs = effective(user.notification_preferences)
         if not prefs["email_notifications"] or not prefs.get("invest_updates", True):
             return
-        from app.utils.email import email_sender
+        from app.utils.email import branded_email, email_sender
 
-        text = (
-            f"{event.body}\n\nOpen Sheda: {app_url()}{link}\n\n"
-            "You get these because you invest in or follow this building. "
-            f"Change it in Settings > Notifications: {app_url()}/notification-setting"
+        html, text = branded_email(
+            event.title,
+            [event.body],
+            cta_label="Open in Sheda",
+            cta_url=f"{app_url()}{link}",
+            footnote="You get these because you invest in or follow this building.",
+            settings_url=f"{app_url()}/notification-setting",
+            preheader=event.body,
         )
-        await email_sender.send_email(text, user.email, f"Sheda: {event.title}")
+        await email_sender.send_email(html, user.email, f"Sheda: {event.title}", text_type="html", alt_text=text)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Invest update email not sent: {exc}")
 
