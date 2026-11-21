@@ -12,6 +12,7 @@ import FeedbackModal, { type FeedbackType } from "@/components/ui/FeedbackModal"
 import Avatar from "@/components/common/Avatar";
 import { useApi } from "@/contexts/ApiContext";
 import ChangeEmailModal from "@/components/common/ChangeEmailModal";
+import UsernameField, { type UsernameStatus } from "@/components/common/UsernameField";
 import { useMode } from "@/contexts/ModeContext";
 import AsyncStorage from "@/lib/storage";
 import { fileToAsset } from "@/lib/files";
@@ -29,6 +30,8 @@ function PersonalInfo() {
   const { isSeller } = useMode();
   const [location, setLocation] = useState("");
   const [changingEmail, setChangingEmail] = useState(false);
+  const [username, setUsername] = useState("");
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
   const [avatar, setAvatar] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -48,6 +51,9 @@ function PersonalInfo() {
     setFullName(user.fullname || "");
     setPhone(user.phone_number || "");
     setEmail(user.email || "");
+    // Older accounts kept their email as their username: show an empty box
+    // for those, so a real one can be picked.
+    setUsername(user.username && !user.username.includes("@") ? user.username : "");
     setLocation(user.location || "");
     setAvatar(user.avatar_url || "");
   }, [user]);
@@ -78,6 +84,8 @@ function PersonalInfo() {
         );
       }
     }
+    if (usernameStatus === "checking") return show("info", "One moment", "Still checking that username.");
+    if (username.trim() && usernameStatus === "bad") return show("error", "Username not available", "Pick a username that's free.");
     setSaving(true);
     show("loading", "Saving Changes", "We're updating your profile info...");
     try {
@@ -85,6 +93,7 @@ function PersonalInfo() {
         fullname: fullName,
         phone_number: formatted,
         location,
+        ...(username.trim() && username.trim() !== (user.username || "") ? { username: username.trim() } : {}),
         account_type: user.account_type || "client",
       };
       if (avatar) update.avatar_url = avatar;
@@ -146,6 +155,14 @@ function PersonalInfo() {
             </a>
             .
           </p>
+          <UsernameField
+            value={username}
+            onChange={setUsername}
+            name={username ? "" : fullName}
+            currentUsername={user?.username}
+            onStatus={setUsernameStatus}
+            autoFill={false}
+          />
           <TextField label="Phone number" type="tel" placeholder="+234..." value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
           {/* Changed only with a code to the new address: it carries sign-in codes and resets. */}
           <div>

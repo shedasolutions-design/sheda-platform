@@ -1365,6 +1365,17 @@ class ApiService {
     });
   }
 
+  /** Is this username free, and free ones made from a full name. */
+  async checkUsername(
+    username: string,
+    name = ""
+  ): Promise<ApiResponse<{ username: string | null; available: boolean | null; problem: string | null; suggestions: string[] }>> {
+    const q = new URLSearchParams();
+    if (username) q.set("username", username);
+    if (name) q.set("name", name);
+    return this.request(`/api/v1/user/username-check?${q.toString()}`);
+  }
+
   /** Email a code to confirm a sensitive change (keys, PIN, closing the account). */
   async sendActionCode(): Promise<ApiResponse<void>> {
     return this.request<void>("/api/v1/auth/send-otp?purpose=action", { method: "POST" });
