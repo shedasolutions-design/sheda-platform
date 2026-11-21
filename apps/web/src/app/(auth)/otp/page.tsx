@@ -25,7 +25,7 @@ export default function OtpPage() {
   const [email, setEmail] = useState("");
   const [returnTo, setReturnTo] = useState<string | null>(null);
   const [otp, setOtp] = useState("");
-  const { verifyOtp, sendOtp, isLoading, error, clearError } = useAuth();
+  const { verifyOtp, sendOtp, forgotPassword, verifyForgotPassword, isLoading, error, clearError } = useAuth();
   const isSubmitting = useRef(false);
   const [countdown, setCountdown] = useState(RESEND_COOLDOWN);
   const { feedback, show, hide, isConnectionError } = useFeedback();
@@ -73,7 +73,11 @@ export default function OtpPage() {
       }
       isSubmitting.current = true;
       try {
-        await verifyOtp(email, code);
+        // Password reset happens signed out, so it has its own routes: the
+        // signed-in ones answered "Not authenticated" and no reset could
+        // ever finish.
+        if (returnTo === "wallet-setup") await verifyOtp(email, code);
+        else await verifyForgotPassword(email, code);
         if (returnTo === "wallet-setup") {
           show("success", "Email Verified!", "Redirecting to wallet setup…");
           setTimeout(() => {
@@ -91,20 +95,21 @@ export default function OtpPage() {
         isSubmitting.current = false;
       }
     },
-    [otp, email, returnTo, verifyOtp, show, hide, router]
+    [otp, email, returnTo, verifyOtp, verifyForgotPassword, show, hide, router]
   );
 
   const handleResend = useCallback(async () => {
     if (countdown > 0) return;
     setCountdown(RESEND_COOLDOWN);
     try {
-      await sendOtp(email);
+      if (returnTo === "wallet-setup") await sendOtp(email);
+      else await forgotPassword(email);
       show("success", "Code Sent!", "A new verification code has been sent to your email.");
     } catch (err) {
       console.error("Failed to resend OTP:", err);
       setCountdown(0);
     }
-  }, [countdown, email, sendOtp, show]);
+  }, [countdown, email, returnTo, sendOtp, forgotPassword, show]);
 
   const showLoading = isLoading && isSubmitting.current;
 

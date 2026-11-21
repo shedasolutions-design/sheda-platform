@@ -33,6 +33,10 @@ interface UseAuthReturn {
   resetPassword: (password: string) => Promise<void>;
   sendOtp: (email: string) => Promise<void>;
   verifyOtp: (email: string, otp: string | number) => Promise<void>;
+  /** Password reset, signed out: emails a code to the account's address. */
+  forgotPassword: (email: string) => Promise<void>;
+  /** Password reset, signed out: checks the code and holds a short-lived token for the new password. */
+  verifyForgotPassword: (email: string, otp: string) => Promise<void>;
   refreshToken: () => Promise<void>;
   switchAccount: (accountType: "client" | "agent") => Promise<void>;
   getMe: () => Promise<any>;
@@ -139,6 +143,8 @@ export function useAuth(): UseAuthReturn {
   const resetPassword = useCallback((password: string) => api.resetPassword(password), [api.resetPassword]);
   const sendOtp = useCallback((email: string) => api.sendOtp(email), [api.sendOtp]);
   const verifyOtp = useCallback((email: string, otp: string | number) => api.verifyOtp(email, otp), [api.verifyOtp]);
+  const forgotPassword = useCallback((email: string) => api.forgotPassword(email), [api.forgotPassword]);
+  const verifyForgotPassword = useCallback((email: string, otp: string) => api.verifyForgotPassword(email, otp), [api.verifyForgotPassword]);
   const refreshToken = useCallback(() => api.refreshToken(), [api.refreshToken]);
   const switchAccount = useCallback((accountType: "client" | "agent") => api.switchAccount(accountType), [api.switchAccount]);
   const getMe = useCallback(() => api.getMe(), [api.getMe]);
@@ -159,6 +165,8 @@ export function useAuth(): UseAuthReturn {
     resetPassword,
     sendOtp,
     verifyOtp,
+    forgotPassword,
+    verifyForgotPassword,
     refreshToken,
     switchAccount,
     getMe,
