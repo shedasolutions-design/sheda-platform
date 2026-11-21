@@ -66,7 +66,7 @@ export function DealFacts({
       <h3 className="truncate text-sm font-medium">{title}</h3>
       <ul className="mt-1 flex flex-wrap gap-x-3 text-xs text-[#878787BF]">
         <li className="flex items-center gap-1">
-          <MapPin size={12} /> {location}
+          <MapPin size={12} className="shrink-0" /> <span className="break-words">{location}</span>
         </li>
         {bedrooms > 0 && (
           <li className="flex items-center gap-1">
@@ -111,7 +111,7 @@ export function DealAction({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex-1 truncate px-2 py-3 text-sm hover:bg-cardBackground disabled:opacity-40"
+      className="min-w-0 flex-1 break-words px-2 py-3 text-sm leading-tight hover:bg-cardBackground disabled:opacity-40"
       style={{ color: color || "#878787" }}
     >
       {children}

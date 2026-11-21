@@ -12,7 +12,7 @@ export default function DonutChart({ data, size = 120 }: { data: DonutSlice[]; s
   const c = 2 * Math.PI * r;
   let offset = 0;
   return (
-    <div className="flex items-center gap-6">
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true" className="shrink-0">
         <circle cx={size / 2} cy={size / 2} r={r} stroke="#F3F4F6" strokeWidth={stroke} fill="none" />
         {data.map((d, i) => {
@@ -36,14 +36,14 @@ export default function DonutChart({ data, size = 120 }: { data: DonutSlice[]; s
           return el;
         })}
       </svg>
-      <dl className="flex-1">
+      <dl className="min-w-0 flex-1 basis-40">
         {data.map((d) => (
           <div key={d.label} className="mb-3 flex items-center justify-between gap-2">
-            <dt className="flex items-center text-sm text-secondaryText">
-              <span className="mr-3 h-3 w-3 rounded-sm" style={{ backgroundColor: d.color }} />
+            <dt className="flex min-w-0 items-center text-sm text-secondaryText">
+              <span className="mr-3 h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: d.color }} />
               {d.label}
             </dt>
-            <dd className="font-bold">{typeof d.value === "string" ? d.value : d.value.toLocaleString()}</dd>
+            <dd className="min-w-0 break-words text-right font-bold">{typeof d.value === "string" ? d.value : d.value.toLocaleString()}</dd>
           </div>
         ))}
       </dl>

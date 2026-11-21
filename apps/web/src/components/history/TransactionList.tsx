@@ -51,7 +51,8 @@ export default function DealTabs({ deals }: { deals: ReturnType<typeof useTransa
 
   return (
     <>
-      <div className="mt-2 grid grid-cols-4 gap-2" role="tablist">
+      {/* Scrolls sideways on narrow screens or large text instead of squashing the labels. */}
+      <div className="-mx-1 mt-2 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist">
         {TABS.map((t) => (
           <button
             key={t}
@@ -59,7 +60,7 @@ export default function DealTabs({ deals }: { deals: ReturnType<typeof useTransa
             role="tab"
             aria-selected={tab === t}
             onClick={() => setTab(t)}
-            className={`rounded-xl px-2 py-2.5 text-sm ${tab === t ? "bg-primary text-white" : "bg-primaryLight text-secondaryText hover:bg-active"}`}
+            className={`shrink-0 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm sm:flex-1 ${tab === t ? "bg-primary text-white" : "bg-primaryLight text-secondaryText hover:bg-active"}`}
           >
             {t}
             {lists[t].length > 0 ? ` (${lists[t].length})` : ""}
@@ -105,7 +106,7 @@ export default function DealTabs({ deals }: { deals: ReturnType<typeof useTransa
             }
           />
         ) : (
-          <ul className="grid gap-4 sm:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {current.map((tx) => (
               <li key={tx.key}>
                 <Card transaction={tx} onPhaseUpdate={onPhaseUpdate} />
