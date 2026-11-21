@@ -1,5 +1,6 @@
 "use client";
 
+import { effectiveRaiseStatus } from "@/services/collections/chain";
 import { InterRegular, InterSemiBold } from "@/components/collections/rn";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, RefreshControl, View } from "@/components/collections/rn";
@@ -105,6 +106,7 @@ function BuyerSide() {
             status: string;
             raised: string | number;
             target: string | number;
+            deadline_ns?: string | number;
             units?: { price: string | number; total_shares: string | number; raised: string | number }[];
           } | null>(project.escrow_account_id || RAISE_CONTRACT_ID, "get_project", { project_id: project.slug });
           const units = live?.units ?? [];
@@ -113,7 +115,11 @@ function BuyerSide() {
             .filter((p): p is bigint => p !== null);
           return {
             project,
-            status: live ? live.status.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase() : project.status,
+            status: live
+              ? effectiveRaiseStatus(live.status, live.raised, live.target, live.deadline_ns)
+                  .replace(/([a-z])([A-Z])/g, "$1_$2")
+                  .toLowerCase()
+              : project.status,
             raised: BigInt(String(live?.raised ?? 0)),
             target: BigInt(String(live?.target ?? 0)),
             flatsOpen: units.filter((u) => BigInt(String(u.raised)) < BigInt(String(u.price))).length,

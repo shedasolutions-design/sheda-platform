@@ -1,5 +1,6 @@
 "use client";
 
+import { useRoundStatus } from "@/hooks/useRoundStatus";
 import { InterMedium, InterRegular, InterSemiBold } from "@/components/collections/rn";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, View } from "@/components/collections/rn";
@@ -78,6 +79,9 @@ export default function ProjectDetail() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Past its deadline a round is closed, whatever the backend still says.
+  const roundStatus = useRoundStatus(project?.slug, project?.status);
 
   if (loading && !project) {
     return (
@@ -230,9 +234,9 @@ export default function ProjectDetail() {
               onClick={() => router.push(`/collections/project/${project.slug}/units`)}
               className="w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-white hover:bg-[#a82227]"
             >
-              {project.status === "open" ? "Invest now" : "See the flats"}
+              {roundStatus === "open" ? "Invest now" : "See the flats"}
             </button>
-            {project.status !== "open" && !["stalled", "failed", "cancelled"].includes(project.status) ? (
+            {roundStatus !== "open" && !["stalled", "failed", "cancelled"].includes(roundStatus ?? "") ? (
               <a href="/collections/shares" className="mt-2 block text-center text-sm font-medium text-primary">
                 Round closed? Buy from investors
               </a>
@@ -304,7 +308,7 @@ function useMoney() {
 function ProjectSummary({ project }: { project: CollectionProjectDetail }) {
   const { pct, raised, target } = fundingOf(project);
   const money = useMoney();
-  const open = project.status === "open";
+  const open = useRoundStatus(project.slug, project.status) === "open";
   return (
     <div className="space-y-3">
       <div>

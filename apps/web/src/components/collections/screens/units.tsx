@@ -25,6 +25,7 @@ import {
 import { DEFAULT_FEE_BPS, perPeriod, rentRangeOf, yearlyRentFor } from "@/services/collections/rent";
 import { INFO, INVEST_RISKS, PROJECT_TYPE_TEXT } from "@/services/collections/copy";
 import apiService, { type CollectionProjectDetail, type CollectionUnit } from "@/services/api";
+import { useRoundStatus } from "@/hooks/useRoundStatus";
 
 type Step = "flat" | "amount" | "terms" | "check" | "done";
 
@@ -105,6 +106,8 @@ export default function ChooseUnit() {
   }, [accountId, token, txHash]);
 
   const unit: CollectionUnit | null = project?.unit_list.find((u) => u.code === selected) ?? null;
+  // Past its deadline a round is closed, whatever the backend still says.
+  const roundStatus = useRoundStatus(project?.slug, project?.status);
   const atomic = useMemo(() => (amount ? parseAmount(amount, token) : null), [amount, token]);
 
   if (!project) {
@@ -119,7 +122,7 @@ export default function ChooseUnit() {
   }
 
   const escrow = project.escrow_account_id || RAISE_CONTRACT_ID;
-  const open = project.status === "open";
+  const open = roundStatus === "open";
 
   // ---- amount arithmetic --------------------------------------------------
   const shares =

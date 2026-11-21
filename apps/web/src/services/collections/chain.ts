@@ -306,7 +306,11 @@ export async function commitToRaise(
 ): Promise<ContractCallResult<void>> {
   if (!hasRaiseContract()) throw new NotDeployedError("The raise contract");
 
-  return nearContractService.callOn(accountId, privateKey, {
+  // The raise can refuse money (round closed, flat full, wrong token): it
+  // then sends it straight back and the transfer itself still "succeeds".
+  // Only the investor's recorded commitment says whether it was kept.
+  const before = await getCommitmentToUnit(params.projectSlug, accountId, params.unitCode).catch(() => null);
+  const sent = await nearContractService.callOn(accountId, privateKey, {
     contractId: params.stablecoin,
     methodName: "ft_transfer_call",
     args: {
@@ -323,6 +327,20 @@ export async function commitToRaise(
     attachedDeposit: ONE_YOCTO,
     dedupeKey: `commit:${accountId}:${params.projectSlug}:${params.unitCode}:${params.amountAtomic}`,
   });
+  if (!sent.success || before === null) return sent;
+  const after = await getCommitmentToUnit(params.projectSlug, accountId, params.unitCode).catch(() => null);
+  if (after !== null && after <= before) {
+    const state = await getRaiseChainState(params.projectSlug).catch(() => null);
+    const closed = state && state.status !== "Open";
+    return {
+      success: false,
+      transactionHash: sent.transactionHash,
+      error: closed
+        ? "This round has closed, so the raise didn't take your money. It's back in your wallet."
+        : "The raise didn't take your money (this flat may be full). It's back in your wallet.",
+    };
+  }
+  return sent;
 }
 
 // ---- stake registry --------------------------------------------------------
@@ -565,14 +583,44 @@ export async function releasePhase(
 /** The raise as the contract has it: status, raised and target (atomic). */
 export async function getRaiseChainState(
   projectSlug: string
-): Promise<{ status: string; raised: string; target: string } | null> {
+): Promise<{ status: string; raised: string; target: string; deadlineMs: number | null } | null> {
   if (!hasRaiseContract()) return null;
   const project = await nearContractService.viewOn<{
     status: string;
     raised: string | number;
     target: string | number;
+    deadline_ns?: string | number;
   } | null>(raiseOf(projectSlug), "get_project", { project_id: projectSlug });
-  return project ? { status: project.status, raised: String(project.raised), target: String(project.target) } : null;
+  return project
+    ? {
+        status: effectiveRaiseStatus(project.status, project.raised, project.target, project.deadline_ns),
+        raised: String(project.raised),
+        target: String(project.target),
+        deadlineMs: project.deadline_ns != null ? Math.floor(Number(project.deadline_ns) / 1_000_000) : null,
+      }
+    : null;
+}
+
+/**
+ * A round's status as the contract will record it once closed.
+ *
+ * The contract keeps a round "Open" until someone calls close_raise, even
+ * after its deadline, and the backend copies that. So a round a day past
+ * its deadline still offered Invest now, and the money sent was returned
+ * by the contract while the app said "You're in". Past the deadline a round
+ * is Funded if it reached its target, otherwise Failed.
+ */
+export function effectiveRaiseStatus(
+  status: string,
+  raised: string | number | bigint,
+  target: string | number | bigint,
+  deadlineNs?: string | number | null,
+  now: number = Date.now()
+): string {
+  if (status !== "Open" || deadlineNs == null) return status;
+  const deadlineMs = Number(deadlineNs) / 1_000_000;
+  if (now < deadlineMs) return status;
+  return BigInt(String(raised)) >= BigInt(String(target)) ? "Funded" : "Failed";
 }
 
 /**
