@@ -144,7 +144,7 @@ export function ProjectTimeline({ project }: { project: CollectionProjectDetail 
 
   return (
     <div>
-      <h2 className="mb-3 text-sm font-semibold text-primaryText">Where this building is</h2>
+      <h2 className="mb-3 text-xl font-semibold text-primaryText">Where this building is</h2>
       <ol className="flex items-start">
         {STAGES.map((s, i) => (
           <li key={s} className="flex flex-1 flex-col items-center text-center">
@@ -218,7 +218,7 @@ export function ManagerSection({ project }: { project: CollectionProjectDetail }
   if (noms.length === 0 && !project.manager) return null;
   return (
     <section className="space-y-2">
-      <h2 className="inline-flex items-center gap-1 text-sm font-semibold text-primaryText">
+      <h2 className="inline-flex items-center gap-1 text-xl font-semibold text-primaryText">
         Property manager
         <InfoTip label="About the manager" readMore={{ href: "/help/phases-and-objections" }}>{INFO.manager}</InfoTip>
       </h2>

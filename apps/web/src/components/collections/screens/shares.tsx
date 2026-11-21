@@ -202,7 +202,7 @@ export default function Shares() {
 
         {flats && flats.length > 0 ? (
           <section className="space-y-3">
-            <h2 className="inline-flex items-center gap-1 text-base font-semibold text-primaryText">
+            <h2 className="inline-flex items-center gap-1 text-xl font-semibold text-primaryText">
               Offers to buy
               <InfoTip label="About offers">
                 A buyer&apos;s money waits in the flat&apos;s vault at their price. Any holder can sell into it, and the

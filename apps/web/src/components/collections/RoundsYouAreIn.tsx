@@ -113,7 +113,7 @@ export default function RoundsYouAreIn({ accountId }: { accountId: string | null
 
   return (
     <section className="space-y-3">
-      <h2 className="inline-flex items-center gap-1 text-base font-semibold text-primaryText">
+      <h2 className="inline-flex items-center gap-1 text-xl font-semibold text-primaryText">
         Rounds you&apos;re in
         <InfoTip label="About rounds" readMore={{ href: "/help/how-a-raise-works" }}>
           Money you put into a round stays in the raise contract, not with the builder. If the round does not fill

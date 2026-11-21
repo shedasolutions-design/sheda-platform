@@ -241,7 +241,7 @@ function InvestCard({ view }: { view: RaiseView }) {
       </Link>
       <div className="space-y-3 p-4">
         <div>
-          <h2 className="text-base font-semibold text-primaryText">{project.name}</h2>
+          <h2 className="text-xl font-semibold text-primaryText">{project.name}</h2>
           <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-secondaryText">
             <span className="inline-flex items-center gap-1">
               <MapPin size={13} /> {project.location}

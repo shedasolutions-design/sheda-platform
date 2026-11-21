@@ -280,7 +280,7 @@ function HoldingCard({
       <div className="space-y-3 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="font-semibold text-primaryText">{title}</h2>
+            <h2 className="text-xl font-semibold text-primaryText">{title}</h2>
             {meta?.location ? <p className="text-xs text-secondaryText">{meta.location}</p> : null}
           </div>
           {cost > 0n ? (

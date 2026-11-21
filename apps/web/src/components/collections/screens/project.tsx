@@ -166,7 +166,7 @@ export default function ProjectDetail() {
           <>
             {project.description ? (
               <div>
-                <h2 className="mb-1 text-sm font-semibold text-primaryText">Description</h2>
+                <h2 className="mb-1 text-xl font-semibold text-primaryText">Description</h2>
                 <MoreText text={project.description} className="text-sm leading-relaxed text-secondaryText" />
               </div>
             ) : null}
@@ -181,7 +181,7 @@ export default function ProjectDetail() {
 
             {project.latitude != null && project.longitude != null ? (
               <section className="space-y-2">
-                <h2 className="text-sm font-semibold text-primaryText">Location</h2>
+                <h2 className="text-xl font-semibold text-primaryText">Location</h2>
                 <OsmMap lat={project.latitude} lon={project.longitude} label={project.name} />
                 <p className="text-xs text-secondaryText">{project.address || project.location}</p>
               </section>
@@ -190,7 +190,7 @@ export default function ProjectDetail() {
             <ManagerSection project={project} />
 
             <section className="space-y-2">
-              <h2 className="text-sm font-semibold text-primaryText">Project pack and documents</h2>
+              <h2 className="text-xl font-semibold text-primaryText">Project pack and documents</h2>
               <ProjectPackCard project={project} />
               {project.documents.some((d) => !d.is_pack) ? (
                 <DocumentList documents={project.documents.filter((d) => !d.is_pack)} />
@@ -449,7 +449,7 @@ function RentEstimator({
   if (!unit) {
     return (
       <div className="rounded-2xl border border-borderColor p-4">
-        <h2 className="text-sm font-semibold text-primaryText">Rent you could earn</h2>
+        <h2 className="text-xl font-semibold text-primaryText">Rent you could earn</h2>
         <p className="mt-1 text-sm text-secondaryText">The builder has not given an expected rent yet.</p>
         {isOwner ? <RentEditor project={project} onChanged={onChanged} /> : null}
       </div>
@@ -471,7 +471,7 @@ function RentEstimator({
   return (
     <div className="rounded-2xl border border-borderColor p-4">
       <div className="flex items-center gap-1">
-        <h2 className="text-sm font-semibold text-primaryText">Rent you could earn</h2>
+        <h2 className="text-xl font-semibold text-primaryText">Rent you could earn</h2>
         <InfoTip label="How this estimate works">
           Uses the builder&apos;s expected rent for the whole flat, from their research on rents nearby (see the
           documents). Your part is your share of the flat, after the vault&apos;s fees ({feeBps / 100}%). Rent
