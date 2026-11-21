@@ -111,9 +111,24 @@ export default function LoginPage() {
       isSubmitting.current = true;
       clearErrors();
       setHasAttemptedLogin(true);
-      login(data.identifier, data.password);
+      login(data.identifier, data.password)
+        .then((check) => {
+          // Password right, but this device is new to the account: the code
+          // emailed to it finishes the sign-in on the next screen.
+          if (check && "challenge" in check) {
+            isSubmitting.current = false;
+            setHasAttemptedLogin(false);
+            const q = new URLSearchParams({ mode: "device", challenge: check.challenge, hint: check.email_hint });
+            const next = new URLSearchParams(window.location.search).get("next");
+            if (next) q.set("next", next);
+            router.push(`/otp?${q.toString()}`);
+          }
+        })
+        .catch(() => {
+          /* shown by the error effect above */
+        });
     },
-    [login, clearErrors]
+    [login, clearErrors, router]
   );
 
   const handleGoogleSignIn = useCallback(async () => {

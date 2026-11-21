@@ -17,6 +17,7 @@ import {
   ContractResponse,
   AgentFeed,
   FileShow,
+  DeviceCheck,
 } from "../services/api";
 
 // Hook return types
@@ -27,12 +28,20 @@ interface UseAuthReturn {
   isInitializing: boolean;
   error: string | null;
   signup: (userData: UserCreate) => Promise<void>;
-  login: (identifier: string, password: string) => Promise<void>;
+  /** Resolves with a DeviceCheck when this device must enter an emailed code first. */
+  login: (identifier: string, password: string) => Promise<DeviceCheck | void>;
+  completeDeviceSignIn: (challenge: string, otp: string) => Promise<void>;
+  resendDeviceCode: (challenge: string) => Promise<void>;
+  confirmEmail: (otp: string) => Promise<void>;
   logout: (options?: { loading?: boolean }) => Promise<void>;
   verifyAccount: () => Promise<void>;
   resetPassword: (password: string) => Promise<void>;
   sendOtp: (email: string) => Promise<void>;
   verifyOtp: (email: string, otp: string | number) => Promise<void>;
+  /** Password reset, signed out: emails a code to the account's address. */
+  forgotPassword: (email: string) => Promise<void>;
+  /** Password reset, signed out: checks the code and holds a short-lived token for the new password. */
+  verifyForgotPassword: (email: string, otp: string) => Promise<void>;
   refreshToken: () => Promise<void>;
   switchAccount: (accountType: "client" | "agent") => Promise<void>;
   getMe: () => Promise<any>;
@@ -136,9 +145,14 @@ export function useAuth(): UseAuthReturn {
     await api.logout(options);
   }, [api.logout, disconnectWallet]);
   const verifyAccount = useCallback(() => api.verifyAccount(), [api.verifyAccount]);
+  const completeDeviceSignIn = useCallback((challenge: string, otp: string) => api.completeDeviceSignIn(challenge, otp), [api.completeDeviceSignIn]);
+  const resendDeviceCode = useCallback((challenge: string) => api.resendDeviceCode(challenge), [api.resendDeviceCode]);
+  const confirmEmail = useCallback((otp: string) => api.confirmEmail(otp), [api.confirmEmail]);
   const resetPassword = useCallback((password: string) => api.resetPassword(password), [api.resetPassword]);
   const sendOtp = useCallback((email: string) => api.sendOtp(email), [api.sendOtp]);
   const verifyOtp = useCallback((email: string, otp: string | number) => api.verifyOtp(email, otp), [api.verifyOtp]);
+  const forgotPassword = useCallback((email: string) => api.forgotPassword(email), [api.forgotPassword]);
+  const verifyForgotPassword = useCallback((email: string, otp: string) => api.verifyForgotPassword(email, otp), [api.verifyForgotPassword]);
   const refreshToken = useCallback(() => api.refreshToken(), [api.refreshToken]);
   const switchAccount = useCallback((accountType: "client" | "agent") => api.switchAccount(accountType), [api.switchAccount]);
   const getMe = useCallback(() => api.getMe(), [api.getMe]);
@@ -156,9 +170,14 @@ export function useAuth(): UseAuthReturn {
     login,
     logout,
     verifyAccount,
+    completeDeviceSignIn,
+    resendDeviceCode,
+    confirmEmail,
     resetPassword,
     sendOtp,
     verifyOtp,
+    forgotPassword,
+    verifyForgotPassword,
     refreshToken,
     switchAccount,
     getMe,

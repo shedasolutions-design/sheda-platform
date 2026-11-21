@@ -56,6 +56,7 @@ import apiService, {
   MintedPropertyShow,
   MintedPropertyLinkResponse,
   API_BASE_URL,
+  type DeviceCheck,
 } from "../services/api";
 import {
   getUserFriendlyError,
@@ -379,7 +380,11 @@ function apiReducer(state: ApiState, action: ApiAction): ApiState {
 interface ApiContextType extends ApiState {
   // Authentication methods
   signup: (userData: UserCreate) => Promise<void>;
-  login: (identifier: string, password: string) => Promise<void>;
+  /** Resolves with a DeviceCheck when this device must enter an emailed code first. */
+  login: (identifier: string, password: string) => Promise<DeviceCheck | void>;
+  completeDeviceSignIn: (challenge: string, otp: string) => Promise<void>;
+  resendDeviceCode: (challenge: string) => Promise<void>;
+  confirmEmail: (otp: string) => Promise<void>;
   logout: (options?: { loading?: boolean }) => Promise<void>;
   verifyAccount: () => Promise<void>;
   resetPassword: (password: string) => Promise<void>;
@@ -1104,6 +1109,25 @@ export function ApiProvider({ children }: ApiProviderProps) {
     console.log("✅ Signup completed successfully (OTP verification disabled)");
   }, [apiCall, dispatch]);
 
+  // A new session: token stored, the user loaded, and only then signed in.
+  // Shared by a plain sign-in and one finished with a new-device code.
+  const finishSignIn = useCallback(async (token: string) => {
+    await apiService.setToken(token);
+    await AsyncStorage.setItem("auth_token", token);
+    dispatch({ type: "SET_TOKEN", payload: token });
+    try {
+      await getMe();
+      dispatch({ type: "SET_AUTHENTICATED", payload: true });
+    } catch (userError: any) {
+      console.error("❌ Failed to get user data:", userError);
+      await apiService.setToken("");
+      await AsyncStorage.removeItem("auth_token");
+      dispatch({ type: "SET_TOKEN", payload: null });
+      dispatch({ type: "SET_AUTHENTICATED", payload: false });
+      throw new Error("Failed to verify user session. Please try again.");
+    }
+  }, [dispatch, getMe]);
+
   const login = useCallback(async (identifier: string, password: string) => {
     console.log("🔐 Starting login process...", { identifier });
 
@@ -1122,37 +1146,18 @@ export function ApiProvider({ children }: ApiProviderProps) {
         throw new Error("No response from login service");
       }
 
+      // Password right, device new: the server emailed a code and holds the
+      // sign-in until it comes back. Nothing is stored yet.
+      if (result.device_check?.challenge) {
+        return result.device_check;
+      }
+
       const token = result.access_token;
       if (!token) {
         throw new Error("No access token in response");
       }
 
-      // Set token first
-      await apiService.setToken(token);
-      await AsyncStorage.setItem("auth_token", token);
-      console.log("💾 Token saved to AsyncStorage");
-
-      dispatch({ type: "SET_TOKEN", payload: token });
-
-      // Fetch user data before marking as authenticated
-      try {
-        console.log("📡 Fetching user data...");
-        await getMe();
-
-        // Only mark as authenticated after successfully fetching user data
-        dispatch({ type: "SET_AUTHENTICATED", payload: true });
-        console.log("✅ Login completed successfully");
-      } catch (userError: any) {
-        console.error("❌ Failed to get user data:", userError);
-
-        // Rollback authentication
-        await apiService.setToken("");
-        await AsyncStorage.removeItem("auth_token");
-        dispatch({ type: "SET_TOKEN", payload: null });
-        dispatch({ type: "SET_AUTHENTICATED", payload: false });
-
-        throw new Error("Failed to verify user session. Please try again.");
-      }
+      await finishSignIn(token);
     } catch (error: any) {
       console.error("❌ Login failed:", error);
 
@@ -1172,7 +1177,22 @@ export function ApiProvider({ children }: ApiProviderProps) {
       dispatch({ type: "SET_ERROR", payload: errorMessage });
       throw error;
     }
-  }, [apiCall, dispatch, getMe]);
+  }, [apiCall, dispatch, finishSignIn]);
+
+  const completeDeviceSignIn = useCallback(async (challenge: string, otp: string) => {
+    const result = await apiCall(() => apiService.verifyDevice(challenge, otp));
+    if (!result?.access_token) throw new Error("No access token in response");
+    await finishSignIn(result.access_token);
+  }, [apiCall, finishSignIn]);
+
+  const resendDeviceCode = useCallback(async (challenge: string) => {
+    await apiCall(() => apiService.resendDeviceCode(challenge));
+  }, [apiCall]);
+
+  const confirmEmail = useCallback(async (otp: string) => {
+    await apiCall(() => apiService.confirmEmail(otp));
+    await getMe({ silent: true }).catch(() => {});
+  }, [apiCall, getMe]);
 
   const logout = useCallback(async (options?: { loading?: boolean }) => {
     console.log("🚪 Starting logout process...");
@@ -1978,6 +1998,9 @@ export function ApiProvider({ children }: ApiProviderProps) {
     isInitializing: state.isInitializing,
     signup,
     login,
+    completeDeviceSignIn,
+    resendDeviceCode,
+    confirmEmail,
     logout,
     verifyAccount,
     resetPassword,
@@ -2056,6 +2079,9 @@ export function ApiProvider({ children }: ApiProviderProps) {
     state,
     signup,
     login,
+    completeDeviceSignIn,
+    resendDeviceCode,
+    confirmEmail,
     logout,
     verifyAccount,
     resetPassword,

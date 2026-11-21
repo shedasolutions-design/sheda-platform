@@ -59,6 +59,7 @@ export default function SignupPage() {
     handleSubmit,
     setError: setFormError,
     clearErrors,
+    getValues,
     formState: { errors },
   } = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
@@ -77,19 +78,22 @@ export default function SignupPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A new account goes straight to automatic wallet provisioning. The
-  // provision page owns the creation work and sends the user on to Home.
+  // A new account first confirms its email with the code just sent to it,
+  // then goes on to automatic wallet provisioning (the code screen sends it
+  // there). The email is where deal updates and reset codes go, so it is
+  // checked before anything depends on it.
   useEffect(() => {
     if (isAuthenticated && hasAttemptedSignup) {
       isSubmitting.current = false;
-      showModal("success", "Account Created!", "Setting up your wallet…");
+      showModal("success", "Account Created!", "Check your email for a code…");
       const timer = setTimeout(() => {
         hideModal();
-        router.replace("/wallet-setup/provision");
+        const email = getValues("email");
+        router.replace(`/otp?email=${encodeURIComponent(email)}&returnTo=wallet-setup`);
       }, 800);
       return () => clearTimeout(timer);
     }
-  }, [isAuthenticated, hasAttemptedSignup, router, showModal, hideModal]);
+  }, [isAuthenticated, hasAttemptedSignup, router, showModal, hideModal, getValues]);
 
   useEffect(() => {
     if (!error || !hasAttemptedSignup) return;

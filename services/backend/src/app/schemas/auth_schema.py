@@ -23,12 +23,35 @@ class LoginData(BaseModel):
     profile: Optional[ProfileEnum] = None
 
 
+class DeviceCheck(BaseModel):
+    """Sign-in held back until the code emailed to the account is entered."""
+
+    challenge: str
+    email_hint: str
+
+
 class Token(BaseModel):
     access_token: str
     token_type: Optional[str] = "Bearer"
     # Additive and optional: existing clients ignore it, new ones use it to
     # route without decoding the JWT.
     active_profile: Optional[ProfileEnum] = None
+    # Set (with an empty access_token) when this device needs a code first.
+    device_check: Optional[DeviceCheck] = None
+
+
+class DeviceCodeRequest(BaseModel):
+    challenge: str
+    otp: str
+
+
+class DeviceResendRequest(BaseModel):
+    challenge: str
+
+
+class ConfirmEmailRequest(BaseModel):
+    otp: str
+    device_id: Optional[str] = None
 
 
 from app.schemas.user_schema import UserShow

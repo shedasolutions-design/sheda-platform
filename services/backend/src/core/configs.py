@@ -185,6 +185,14 @@ class Settings(BaseSettings):
     API_V_STR: str = Field(default="/api/v1", description="API version prefix")
 
     # SECTION Feature flags
+    NEW_DEVICE_CODE: bool = Field(
+        default=True,
+        description=(
+            "Ask for a code by email when someone signs in on a device the "
+            "account has not used in 30 days. Off, sign-in is password only, "
+            "as before. Also off whenever email is not configured."
+        ),
+    )
     NEW_SIGNIN_CHOOSER: bool = Field(
         default=True,
         description=(

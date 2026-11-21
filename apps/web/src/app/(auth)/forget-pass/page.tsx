@@ -16,7 +16,7 @@ export default function ForgotPasswordPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
-  const { sendOtp, isLoading, error, clearError } = useAuth();
+  const { forgotPassword, isLoading, error, clearError } = useAuth();
   const isSubmitting = useRef(false);
   const { feedback, show, hide, isConnectionError } = useFeedback();
 
@@ -50,7 +50,7 @@ export default function ForgotPasswordPage() {
     setEmailError("");
     isSubmitting.current = true;
     try {
-      await sendOtp(trimmed);
+      await forgotPassword(trimmed);
       show("success", "Code Sent!", `We've sent a verification code to ${trimmed}`);
       setTimeout(() => {
         hide();
@@ -61,7 +61,7 @@ export default function ForgotPasswordPage() {
     } finally {
       isSubmitting.current = false;
     }
-  }, [email, sendOtp, show, hide, router]);
+  }, [email, forgotPassword, show, hide, router]);
 
   const showLoading = isLoading && isSubmitting.current;
 

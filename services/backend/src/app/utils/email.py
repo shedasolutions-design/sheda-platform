@@ -189,22 +189,45 @@ email_sender = EmailSender(
 )
 
 
-async def create_send_otp(email: str, length: int = 4) -> int:
+OTP_TTL_MINUTES = 5
+
+# What each code is for, in the words the email uses.
+OTP_PURPOSES = {
+    "verify": (
+        "Your Sheda verification code",
+        "Use this code to verify your email and continue in Sheda.",
+        "If you didn't create a Sheda account, you can ignore this email.",
+    ),
+    "signin": (
+        "Your Sheda sign-in code",
+        "Someone is signing in to your Sheda account on a new device. If it's you, enter this code to finish.",
+        "If this wasn't you, don't share the code and change your password in Sheda.",
+    ),
+    "reset": (
+        "Reset your Sheda password",
+        "Use this code to choose a new password for your Sheda account.",
+        "If you didn't ask to reset your password, you can ignore this email. Your password stays the same.",
+    ),
+}
+
+
+async def create_send_otp(email: str, length: int = 4, purpose: str = "verify") -> int:
     # secrets, not random: a login code must not be predictable from earlier ones.
     otp = "".join(str(secrets.randbelow(10)) for _ in range(length))
-    await redis.setex(settings.OTP_PREFIX.format(email), 300, otp)
-    logger.info(f"otp saved to redis for {settings.verification_expire_delta} minutes")
+    await redis.setex(settings.OTP_PREFIX.format(email), OTP_TTL_MINUTES * 60, otp)
+    logger.info(f"otp saved for {OTP_TTL_MINUTES} minutes ({purpose})")
+    subject, lead, footnote = OTP_PURPOSES.get(purpose, OTP_PURPOSES["verify"])
     html, plain = branded_email(
-        "Your Sheda verification code",
-        ["Use this code to verify your email and continue in Sheda."],
+        subject,
+        [lead],
         code=otp,
-        code_note=f"It expires in {settings.verification_expire_delta} minutes.",
+        code_note=f"It expires in {OTP_TTL_MINUTES} minutes.",
         notice="Never share this code. Sheda staff will never ask you for it.",
-        footnote="If you didn't ask for this code, you can ignore this email.",
+        footnote=footnote,
         preheader=f"Your code is {otp}",
     )
     send_otp = await email_sender.send_email(
-        text=html, to_email=email, subject="Your Sheda verification code", text_type="html", alt_text=plain
+        text=html, to_email=email, subject=subject, text_type="html", alt_text=plain
     )
     if settings.DEBUG_MODE:
         logger.info(f"OTP: {otp}")
