@@ -121,6 +121,9 @@ FileDir = Literal["profile", "property"]
 
 class AgentFeed(BaseModel):
     avatar_url: Optional[Union[AnyUrl, str]] = None
+    # The seller's name on their listings. Missing, the app fell back to
+    # "User" for anyone whose username is their email.
+    fullname: Optional[str] = None
     username: Optional[str] = None
     # Contact details are only filled in for someone with a viewing booked
     # with this seller; see routers/listing.agent_profile.
