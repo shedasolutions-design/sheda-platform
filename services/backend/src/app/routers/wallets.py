@@ -32,6 +32,30 @@ async def get_user_by_wallet_id(
     )
 
 
+@router.get("/wallets/mine", status_code=status.HTTP_200_OK, response_model=dict)
+async def my_wallets(current_user: ActiveUser, db: DBSession):
+    """The wallets registered to this person (either profile), oldest first.
+
+    The app uses it to recognise a returning person on a browser without
+    their wallet, and to offer restoring that wallet rather than creating
+    another. The profile's near_account_id is not enough on its own: when the
+    named account could not be created, the wallet actually made (and used
+    for every deal since) is a different one, and only this record has it.
+    """
+    from sqlalchemy import select
+
+    from app.models.transaction import WalletMapping
+    from app.models.user import BaseUser
+
+    rows = await db.execute(
+        select(WalletMapping.wallet_id)
+        .join(BaseUser, BaseUser.id == WalletMapping.user_id)
+        .where(BaseUser.email == current_user.email)
+        .order_by(WalletMapping.created_at)
+    )
+    return {"wallets": [w for (w,) in rows.all()]}
+
+
 @router.post(
     "/wallets/register",
     response_model=WalletLookupResponse,

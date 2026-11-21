@@ -11,6 +11,7 @@ import BackupPrompt from "@/components/BackupPrompt";
 import { useApi } from "@/contexts/ApiContext";
 import { useWallet } from "@/contexts/WalletContext";
 import nearWalletService from "@/services/nearWallet";
+import apiService from "@/services/api";
 import { getQueryParam } from "@/lib/navigation";
 
 /**
@@ -35,26 +36,48 @@ export default function WalletSetupPage() {
   const [showCreateWarning, setShowCreateWarning] = useState(false);
   // null while checking.
   const [returning, setReturning] = useState<boolean | null>(null);
+  // The wallet this person already has: the one registered to the account
+  // (the wallet actually made, and used for every deal), else the profile's.
+  const [profileWallet, setProfileWallet] = useState("");
 
-  const profileWallet = user?.near_account_id || "";
+  const userId = user?.id;
+  const namedWallet = user?.near_account_id || "";
 
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     let alive = true;
-    if (!profileWallet) {
-      Promise.resolve().then(() => alive && setReturning(false));
-    } else {
-      nearWalletService
-        .accountExists(profileWallet)
-        .then((exists) => alive && setReturning(exists))
-        // Can't tell (network): assume it exists. Offering "create" to someone
-        // who already has a wallet is the mistake this page exists to prevent.
-        .catch(() => alive && setReturning(true));
-    }
+    (async () => {
+      const registered = await apiService
+        .getMyWallets()
+        .then((r) => (r.ok && r.data ? r.data.wallets : []))
+        .catch(() => [] as string[]);
+      const candidates = Array.from(new Set([...registered, namedWallet].filter(Boolean)));
+      for (const id of candidates) {
+        try {
+          if (await nearWalletService.accountExists(id)) {
+            if (alive) {
+              setProfileWallet(id);
+              setReturning(true);
+            }
+            return;
+          }
+        } catch {
+          // Can't tell (network): assume it exists. Offering "create" to
+          // someone who already has a wallet is the mistake this page
+          // exists to prevent.
+          if (alive) {
+            setProfileWallet(id);
+            setReturning(true);
+          }
+          return;
+        }
+      }
+      if (alive) setReturning(false);
+    })();
     return () => {
       alive = false;
     };
-  }, [user, profileWallet]);
+  }, [userId, namedWallet]);
 
   // Arriving from Google sign-in (already connected to the backups): open
   // the restore straight away, once.

@@ -1267,6 +1267,11 @@ class ApiService {
     });
   }
 
+  /** Wallets registered to this person (either profile), oldest first. */
+  async getMyWallets(): Promise<ApiResponse<{ wallets: string[] }>> {
+    return this.request<{ wallets: string[] }>("/api/v1/users/wallets/mine");
+  }
+
   /** Finish a sign-in held for a new device, with the emailed code. */
   async verifyDevice(challenge: string, otp: string): Promise<ApiResponse<Token>> {
     return this.request<Token>("/api/v1/auth/login/verify-device", {
