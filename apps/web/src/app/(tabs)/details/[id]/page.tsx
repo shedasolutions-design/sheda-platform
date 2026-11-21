@@ -574,6 +574,12 @@ export default function PropertyDetailsPage() {
       {/* Seller */}
       <ProfileVisibilityCard
         profile={profile}
+        href={
+          raw?.agent_id
+            ? `/user-profile?${new URLSearchParams({ userId: String(raw.agent_id), name: profile.displayName }).toString()}`
+            : undefined
+        }
+        linkLabel="View seller"
         rightAction={
           <div className="flex gap-2">
             <button

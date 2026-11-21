@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import type { ProfileCardVariant, SafeUserProfile } from "@/types/profile";
 import Stars from "./Stars";
@@ -13,10 +14,16 @@ export default function ProfileVisibilityCard({
   profile,
   variant = "details",
   rightAction,
+  href,
+  linkLabel,
 }: {
   profile: SafeUserProfile;
   variant?: ProfileCardVariant;
   rightAction?: ReactNode;
+  /** Opens the person's profile when the card is tapped. */
+  href?: string;
+  /** Shown under the name, e.g. "View seller". */
+  linkLabel?: string;
 }) {
   const compact = variant === "chat";
   const size = compact ? 38 : 44;
@@ -30,8 +37,14 @@ export default function ProfileVisibilityCard({
       <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">Unverified</span>
     );
 
+  const Who = href ? Link : "div";
   return (
     <div className={`flex items-center gap-3 ${compact ? "px-3 py-2" : "px-5 py-4"}`}>
+      <Who
+        href={href as string}
+        className={`flex min-w-0 flex-1 items-center gap-3 ${href ? "rounded-lg hover:opacity-80" : ""}`}
+        aria-label={href ? `${linkLabel || "View profile"}: ${profile.displayName}` : undefined}
+      >
       <div className="relative shrink-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -73,7 +86,9 @@ export default function ProfileVisibilityCard({
         ) : (
           <div className="mt-0.5">{kyc}</div>
         )}
+        {href && linkLabel && !compact && <p className="mt-1 text-xs font-medium text-primary">{linkLabel} →</p>}
       </div>
+      </Who>
 
       {rightAction && <div className="shrink-0">{rightAction}</div>}
     </div>

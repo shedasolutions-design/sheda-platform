@@ -297,7 +297,12 @@ function Chat() {
       <header className="relative flex items-center border-b border-borderColor px-2 py-1">
         <BackLink fallback="/inbox" />
         <div className="min-w-0 flex-1">
-          <ProfileVisibilityCard profile={profile} variant="chat" />
+          <ProfileVisibilityCard
+            profile={profile}
+            variant="chat"
+            href={receiverId ? `/user-profile?${new URLSearchParams({ userId: String(receiverId), name: label }).toString()}` : undefined}
+            linkLabel={`View ${otherRole.toLowerCase()}`}
+          />
         </div>
         <button type="button" onClick={() => setMenu((m) => !m)} aria-label="Conversation options" aria-expanded={menu} className="rounded-lg p-2 hover:bg-cardBackground">
           <MoreVertical size={20} />

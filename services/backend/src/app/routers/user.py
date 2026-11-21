@@ -4,7 +4,6 @@ from app.services.user_service import (
     ActiveUser,
     ActiveVerifiedClient,
     ActiveAgent,
-    ActiveVerifiedUser,
     get_current_user,
 )
 from app.services.profile import (
@@ -112,7 +111,7 @@ async def username_check(
 
 
 @router.get("/{user_id}", response_model=UserShow, status_code=status.HTTP_200_OK)
-async def get_user_by_id(user_id: int, current_user: ActiveVerifiedUser, db: DBSession):
+async def get_user_by_id(user_id: int, current_user: ActiveUser, db: DBSession):
     """
     Someone else's profile. Ids are sequential, so this used to let any
     signed-in user walk 1, 2, 3... and collect every email, phone number and
@@ -123,11 +122,41 @@ async def get_user_by_id(user_id: int, current_user: ActiveVerifiedUser, db: DBS
     from sqlalchemy import and_, or_, select
 
     from app.models.property import Appointment
+    from app.models.user import Agent
 
+    # Any signed-in account may look: it used to need a verified email, and
+    # most accounts made before codes existed never had one, so "View seller"
+    # and "View buyer" failed for them. What's private (email, phone) is
+    # still held back below unless the two have a viewing together.
     user = await db.get(BaseUser, user_id)
-    if user is None:
+    if user is None or user.is_deleted or not user.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    shown = UserShow.model_validate(user, from_attributes=True)
+    # Built from the person's own columns only. Validating the row itself
+    # read its appointments, payment accounts and viewing hours: lazily, which
+    # the async session refuses (every request failed with a 500), and they
+    # are not anyone else's business anyway (bank details among them).
+    public = {
+        "id": user.id,
+        "username": user.username,
+        "fullname": user.fullname,
+        "avatar_url": user.avatar_url,
+        "location": user.location,
+        "email": user.email,
+        "phone_number": user.phone_number,
+        "near_account_id": user.near_account_id,
+        # A seller's agency name lives on the agent table, which the generic
+        # get() above doesn't load: asked for directly, not read lazily.
+        "agency_name": (
+            await db.execute(select(Agent.agency_name).where(Agent.id == user.id))
+        ).scalar_one_or_none(),
+        "is_active": user.is_active,
+        "is_deleted": user.is_deleted,
+        "created_at": user.created_at,
+        "verified": user.verified,
+        "kyc_status": user.kyc_status,
+        "account_type": user.account_type,
+    }
+    shown = UserShow.model_validate(public)
     if user.id == current_user.id:
         return shown
 
