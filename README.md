@@ -73,6 +73,7 @@ Sheda puts the parts that need to be trustworthy on chain, and keeps everything 
 - A wallet built into the app. No extension, no seed phrase to understand, no "connect your wallet" step. Account creation, signing and recovery are handled for you.
 - Prices in **14 currencies** across four continents, settled in Circle USDC.
 - Identity checks, ratings, in-app chat and notifications, because a marketplace is a place where people meet before it is anything else.
+- Accounts that protect themselves: the email is confirmed with a code at sign-up, a new device needs a code before it can sign in, and anything sensitive (viewing wallet keys, a first transaction PIN, a new email address, closing the account) asks for proof it's the owner. People pick a username, suggested from their name.
 
 The blockchain is deliberately not the product. It is what makes the escrow releasable by rule rather than by permission, and the documents impossible to quietly change.
 
@@ -217,6 +218,22 @@ account is empty. Switching it is two Vercel settings and a rebuild:
   `NEAR_NETWORK`, `ORIGINS` (the only sites allowed to call it) and its own
   `SECRET_KEY`/`ADMIN_SECRET_KEY`.
 - **DNS:** sheda.app is on Vercel DNS. `api` and `api-testnet` are CNAMEs to Railway.
+  Mail records are there too: MX to ImprovMX, one SPF record covering ImprovMX
+  and Brevo, Brevo's DKIM keys and a DMARC policy. Keep SPF a single record:
+  a new sender goes inside it, not beside it.
+- **Email:** Brevo sends, as "Sheda Solutions" from `notifications@sheda.app`,
+  with replies going to `support@sheda.app`. ImprovMX forwards `support@` to the
+  team's inboxes (configured in the ImprovMX dashboard, not here); the team
+  replies *as* `support@` through Brevo SMTP. The backend reads
+  `SMTP_SEND_FROM_MAIL`, `EMAIL_FROM_NAME` and `EMAIL_REPLY_TO`, so changing
+  the sender is a Railway setting. Every email uses one branded layout
+  (`services/backend/src/templates/email_layout.html`) with a plain-text copy.
+- **Sign-in codes:** `NEW_DEVICE_CODE` on the backend turns the new-device
+  code on or off without a deploy. It is off by itself when email isn't
+  configured, since a code that can't arrive would lock everyone out.
+- **Analytics:** Vercel Web Analytics (`@vercel/analytics`, cookie-free, page
+  views only). It records once Analytics is enabled on the `sheda-web` project
+  in the Vercel dashboard.
 - **Google:** one OAuth web client for sign-in; its redirect URIs are
   `https://market.sheda.app/google-auth` and `https://testing.sheda.app/google-auth`.
   Firebase project `sheda-app` holds the encrypted wallet backups.
@@ -271,7 +288,7 @@ cargo clippy -p sheda-collection-raise -p sheda-collection-vault \
 cargo clippy -p sheda-contract --all-targets -- -W clippy::all
 cargo build --workspace --target wasm32-unknown-unknown --release
 
-# Backend: 155 tests; API docs at /sheda-docs, admin panel at /sheda-backend
+# Backend: 193 tests; API docs at /sheda-docs, admin panel at /sheda-backend
 cd services/backend
 cp .env.example .env.local && pip install -r requirements-server.txt
 alembic upgrade head && uvicorn main:app --reload --app-dir src
@@ -316,6 +333,12 @@ development needs `eval` and live-reload sockets they would block.
 
 **The browser only talks to servers we name.** The wallet's keys live in the browser, so `next.config.ts` sets a Content-Security-Policy listing every server the app calls. A new service has to be added there, or the browser blocks it.
 
+**A code proves the inbox; it never replaces the session.** Checking an emailed code used to hand back a five-minute, code-only token in place of the person's session, so they were signed out of everything soon after. Codes for actions inside the app go through `/auth/verify-code`, which answers yes or no and leaves the session alone. Each code email says what it is for (sign-in, reset, new email, confirming a change), because a code that arrives unexplained is a phishing lesson.
+
+**A returning person restores their wallet; they never quietly get a new one.** On a browser without the wallet, setup asks the backend which wallet is registered to the account (`/users/wallets/mine`, which can differ from the profile's name when the named account couldn't be created) and offers restore. Creating another wallet sits behind a warning, because a new wallet starts empty and the deals stay with the old one.
+
+**Logging out takes the wallet off the browser.** Getting back in needs the Google backup and its password, or the recovery phrase. So the logout dialog checks the wallet is backed up first, and nobody can reset a backup password, so the app nudges a test of it every 90 days while the wallet is still there to re-encrypt.
+
 **Every record lookup checks it is yours.** Ids are sequential, so an endpoint that returns a record by id without checking the caller hands out everyone's. Contact details go only to the person and to someone they have a viewing with.
 
 ---
@@ -326,7 +349,8 @@ development needs `eval` and live-reload sockets they would block.
 | --- | --- |
 | Web app: every screen, on market.sheda.app and testing.sheda.app | Working |
 | Marketplace: listings, inspections, offers, escrow, leases, documents, disputes | Working |
-| Built-in wallet: created and funded automatically at sign-up; import, recovery, Google backup | Working |
+| Built-in wallet: created and funded automatically at sign-up; import, recovery, Google backup | Working. A returning person is offered restore (one step after Google sign-in, plus the backup password), not a new wallet. Backup password can be tested or changed; logout checks the wallet is backed up. |
+| Accounts: email confirmed at sign-up, code for a new device, codes for sensitive changes, usernames | Working on testnet (Nov 2026) |
 | Cross-chain deposits and withdrawals via **NEAR Intents** (1Click API): bring funds in from Solana, Ethereum, Bitcoin, BSC and more, or send them out, with a live quote and status (`apps/web/src/services/nearIntents.ts`, `components/wallet/IntentsFlows.tsx`) | Built into the wallet's Deposit and Withdraw. **Mainnet only**, because NEAR Intents has no testnet: on testnet the option is shown but disabled. |
 | Invest: browse, rank, open a raise, four-step investing, manager vote, withdraw, claim shares, claim rent, share market, Invest updates | Working on testnet (raise v5 live; v4 flats upgraded) |
 | Admin panel: dashboard, every table, Smart contracts | Working |
@@ -337,8 +361,8 @@ development needs `eval` and live-reload sockets they would block.
 | Manager screens | **Working.** A manager sees managed raises, requests, and signs off a phase from the Sign-offs screen; the client cannot sign with the wrong account. |
 | Chain-event indexer | **Working for raise and stake facts.** `services/backend/scripts/sync_collections_chain.py` rebuilds builder and manager chain records. Occupancy and rent-period counts need the lease/vault event pipeline and stay at zero until it exists. |
 | Invest updates | **Working.** The backend reads followed raises from the chain every 10 minutes (and when someone opens notifications), and turns each change into an in-app update and an email. `POST /api/v1/collections/admin/lifecycle-sweep` with `X-Cron-Key` runs it on demand. |
-| Security | Code review done (Nov 2026): data leaks, upload overwrites and unchecked payment actions fixed; admin lockout and authenticator codes; browser security rules. **External contract audit not done.** |
-| Email | **Working** through Brevo on testnet and mainnet: sign-up codes, deal updates and Invest updates. |
+| Security | Code review done (Nov 2026): data leaks, upload overwrites and unchecked payment actions fixed; admin lockout and authenticator codes; browser security rules. Account review (21 Nov 2026): every sensitive change now needs a password or an emailed code. **External contract audit not done.** |
+| Email | **Working** through Brevo: sign-in and sign-up codes, password resets, deal updates and Invest updates, in one branded layout. The testnet backend sends from `notifications@sheda.app` with replies to `support@sheda.app`; the mainnet backend moves over when mainnet launches. |
 
 Still ahead on the Sheda roadmap: real estate services integration (management, legal, insurance), and on-chain importation of existing property.
 
