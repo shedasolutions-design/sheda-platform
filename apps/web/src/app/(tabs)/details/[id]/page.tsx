@@ -41,6 +41,7 @@ import HouseCard from "@/components/property/HouseCard";
 import Reviews from "@/components/property/Reviews";
 import Stars from "@/components/common/Stars";
 import TokenSelectionModal from "@/components/common/TokenSelectionModal";
+import ThingsToKnow from "@/components/common/ThingsToKnow";
 import { useApi } from "@/contexts/ApiContext";
 import { useWallet } from "@/contexts/WalletContext";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
@@ -740,52 +741,28 @@ export default function PropertyDetailsPage() {
         <p className="mt-2 text-xs text-secondaryText">You&apos;ll get the exact address from the seller when you book your appointment.</p>
       </section>
 
-      <section className="border-t border-borderColor px-5 py-6">
-        <h2 className="mb-1 text-xl font-semibold">Things to know</h2>
-        <ul className="divide-y divide-borderColor">
-          {[
+      <div className="border-t border-borderColor px-5 py-6">
+        <ThingsToKnow
+          items={[
             {
               Icon: CalendarCheck,
               title: isRent ? "How renting works" : "How buying works",
               line: "Pay into escrow, then book an appointment to inspect.",
-              slug: "how-buying-works",
+              help: "how-buying-works",
             },
-            {
-              Icon: ShieldCheck,
-              title: "Your money is protected",
-              line: "Held in escrow until you accept the agreement.",
-              slug: "escrow",
-            },
+            { Icon: ShieldCheck, title: "Your money is protected", line: "Held in escrow until you accept the agreement.", help: "escrow" },
             {
               Icon: RotateCcw,
               title: "Cancellations",
               line: "Cancel for a full refund any time before you accept the agreement.",
-              slug: "cancellations-and-refunds",
+              help: "cancellations-and-refunds",
             },
             ...(isRent
-              ? [
-                  {
-                    Icon: Lock,
-                    title: "Refundable deposit",
-                    line: "Comes back after the lease, unless a damage claim is upheld.",
-                    slug: "renting-and-deposits",
-                  },
-                ]
+              ? [{ Icon: Lock, title: "Refundable deposit", line: "Comes back after the lease, unless a damage claim is upheld.", help: "renting-and-deposits" }]
               : []),
-          ].map(({ Icon, title, line, slug }) => (
-            <li key={slug}>
-              <Link href={`/help/${slug}`} className="flex items-center gap-4 py-4 hover:bg-cardBackground">
-                <Icon size={24} strokeWidth={1.6} className="shrink-0 text-primary" />
-                <span className="min-w-0 flex-1">
-                  <span className="block font-medium">{title}</span>
-                  <span className="block text-sm text-secondaryText">{line}</span>
-                </span>
-                <ChevronRight size={18} className="shrink-0 text-secondaryText" />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
+          ]}
+        />
+      </div>
 
       <section className="border-t border-borderColor px-5 py-6">
         <div className="mb-3 flex items-center justify-between">

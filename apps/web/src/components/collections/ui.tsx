@@ -40,17 +40,19 @@ export const C = {
   criticalLight: "#FBECEC",
 } as const;
 
+// The marketplace's type scale. Invest used 13px body text and 10-11px
+// labels, which made every screen read cramped next to the rest of Sheda.
 export const TYPE = {
-  display: { fontSize: 23, lineHeight: 29 },
-  title: { fontSize: 17, lineHeight: 23 },
-  heading: { fontSize: 14, lineHeight: 20 },
-  body: { fontSize: 13, lineHeight: 19 },
-  label: { fontSize: 11, lineHeight: 15 },
-  micro: { fontSize: 10, lineHeight: 14 },
+  display: { fontSize: 26, lineHeight: 32 },
+  title: { fontSize: 20, lineHeight: 26 },
+  heading: { fontSize: 16, lineHeight: 22 },
+  body: { fontSize: 15, lineHeight: 23 },
+  label: { fontSize: 13, lineHeight: 18 },
+  micro: { fontSize: 12, lineHeight: 16 },
 } as const;
 
-export const RADIUS = 12;
-export const RADIUS_INNER = 9;
+export const RADIUS = 18;
+export const RADIUS_INNER = 12;
 export const GUTTER = 20;
 
 export type Tone = "plain" | "positive" | "caution" | "critical" | "brand";
@@ -73,7 +75,7 @@ const BG: Record<Tone, string> = {
 
 export function Screen({
   children,
-  gap = 22,
+  gap = 28,
   refreshControl,
 }: {
   children: ReactNode;
@@ -123,7 +125,7 @@ export function Section({
   gap?: number;
 }) {
   return (
-    <View style={{ gap: 11 }}>
+    <View style={{ gap: 14 }}>
       {title ? (
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
           <InterSemiBold style={{ ...TYPE.title, color: C.text }}>{title}</InterSemiBold>
@@ -148,10 +150,10 @@ export function Card({
     <View
       style={{
         backgroundColor: C.background,
-        borderWidth: 1,
-        borderColor: C.border,
+        // A soft shadow instead of a hard outline, as the marketplace cards.
+        boxShadow: "0 4px 18px rgba(0,0,0,0.07)",
         borderRadius: RADIUS,
-        padding: padded ? 15 : 0,
+        padding: padded ? 18 : 0,
         overflow: "hidden",
         ...style,
       }}
@@ -167,8 +169,8 @@ export function Badge({ label, tone = "plain" }: { label: string; tone?: Tone })
       style={{
         backgroundColor: BG[tone],
         borderRadius: 999,
-        paddingHorizontal: 9,
-        paddingVertical: 4,
+        paddingHorizontal: 11,
+        paddingVertical: 5,
         alignSelf: "flex-start",
       }}
     >
@@ -195,8 +197,8 @@ export function StatTile({
         minWidth: 0,
         backgroundColor: BG[tone],
         borderRadius: RADIUS_INNER,
-        padding: 11,
-        gap: 2,
+        padding: 14,
+        gap: 3,
       }}
     >
       <InterRegular style={{ ...TYPE.micro, color: C.textSecondary }}>{label}</InterRegular>
@@ -279,10 +281,8 @@ export function Avatar({ name, size = 44 }: { name: string; size?: number }) {
       style={{
         width: size,
         height: size,
-        borderRadius: RADIUS_INNER,
+        borderRadius: size / 2,
         backgroundColor: C.primaryTint,
-        borderWidth: 1,
-        borderColor: C.border,
         alignItems: "center",
         justifyContent: "center",
       }}
@@ -317,11 +317,11 @@ export function ListRow({
       style={{
         flexDirection: "row",
         alignItems: "center",
-        gap: 12,
-        borderWidth: 1,
-        borderColor: C.border,
+        gap: 14,
         borderRadius: RADIUS,
-        padding: 13,
+        padding: 16,
+        backgroundColor: C.background,
+        boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
       }}
     >
       {leading}

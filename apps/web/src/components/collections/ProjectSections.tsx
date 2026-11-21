@@ -3,7 +3,22 @@
 /* eslint-disable @next/next/no-img-element -- logos and photos come from arbitrary hosts */
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { BadgeCheck, Bell, BellRing, ChevronDown, FileText, Fingerprint, ShieldAlert } from "lucide-react";
+import {
+  AlertTriangle,
+  BadgeCheck,
+  Bell,
+  BellRing,
+  FileText,
+  Fingerprint,
+  KeyRound,
+  LogOut,
+  Percent,
+  Repeat,
+  ShieldAlert,
+  ShieldCheck,
+  UserCog,
+} from "lucide-react";
+import ThingsToKnow from "@/components/common/ThingsToKnow";
 import InfoTip, { MoreText } from "@/components/ui/InfoTip";
 import BrandNote from "@/components/ui/Note";
 import apiService, {
@@ -13,7 +28,7 @@ import apiService, {
   type CollectionProjectUpdate,
 } from "@/services/api";
 import { getFlatStage, type FlatStage } from "@/services/collections/chain";
-import { INFO, INVEST_RISKS } from "@/services/collections/copy";
+import { INFO } from "@/services/collections/copy";
 import { RAISE_CAN_WITHDRAW } from "@/config/collections";
 
 // ---- builder ---------------------------------------------------------------
@@ -265,66 +280,40 @@ export function ProjectPackCard({ project }: { project: CollectionProjectDetail 
   );
 }
 
-// ---- more information ------------------------------------------------------
+// ---- things to know ---------------------------------------------------------
 
-function Accordion({ title, children }: { title: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="border-b border-borderColor last:border-b-0">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex w-full items-center justify-between py-3 text-left text-sm font-medium text-primaryText"
-      >
-        {title}
-        <ChevronDown size={16} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open ? <div className="pb-3 text-sm leading-relaxed text-secondaryText">{children}</div> : null}
-    </div>
-  );
-}
-
+/**
+ * The short version of how this raise works, each opening the full article.
+ * It was seven stacked dropdowns of paragraphs.
+ */
 export function MoreInformation({ project }: { project: CollectionProjectDetail }) {
-  const shares = project.unit_list[0]?.total_shares;
+  const completed = project.project_type === "completed";
   return (
-    <section>
-      <h2 className="mb-1 text-sm font-semibold text-primaryText">More information</h2>
-      <div className="rounded-2xl border border-borderColor px-4">
-        <Accordion title="What you own">
-          Each flat is divided into equal shares held in its own vault on the blockchain. Owning shares means owning
-          that part of the flat&apos;s rent, and a say in who manages it.
-          {shares ? ` Holding all ${Number(shares).toLocaleString()} shares of a flat lets you take the whole flat.` : ""}
-        </Accordion>
-        <Accordion title="How your money is protected">
-          {INFO.escrow} Once it fills, money goes to the builder{" "}
-          {project.project_type === "completed"
-            ? "after the manager confirms they have taken over the building."
-            : "phase by phase, only after the manager inspects each phase and holders have had time to object."}
-        </Accordion>
-        <Accordion title="Rent and fees">{INFO.fees}</Accordion>
-        <Accordion title="Management">
-          {INFO.manager} Holders can replace the manager if more than half of a flat&apos;s shares vote to.
-        </Accordion>
-        <Accordion title="Selling your shares">{INFO.resale}</Accordion>
-        <Accordion title="Leaving a round">
-          {RAISE_CAN_WITHDRAW
-            ? "While a round is filling you can take your money out, except in its last 7 days. "
-            : ""}
-          If a round does not fill by its deadline, everyone gets everything back from Portfolio.
-        </Accordion>
-        <Accordion title="Risks">
-          <ul className="list-disc space-y-1 pl-4">
-            {INVEST_RISKS.slice(0, 4).map((r) => (
-              <li key={r.title}>{r.title}</li>
-            ))}
-          </ul>
-          <Link href="/collections/risks" className="mt-2 inline-block font-medium text-primary">
-            Read all the risks
-          </Link>
-        </Accordion>
-      </div>
-    </section>
+    <ThingsToKnow
+      items={[
+        { Icon: KeyRound, title: "What you own", line: "Shares in one flat, and that share of its rent.", help: "how-a-raise-works" },
+        {
+          Icon: ShieldCheck,
+          title: "How your money is protected",
+          line: completed
+            ? "Held by the raise contract until the manager takes over the building."
+            : "Paid to the builder phase by phase, after inspection.",
+          help: "phases-and-objections",
+        },
+        { Icon: Percent, title: "Rent and fees", line: "Manager's fee, a 5% repair reserve and Sheda's 2%.", help: "fees" },
+        { Icon: UserCog, title: "Management", line: "Holders can replace the manager with over half the shares.", help: "how-a-raise-works" },
+        { Icon: Repeat, title: "Selling your shares", line: "Offer them to other people on Sheda at any time.", help: "fees" },
+        {
+          Icon: LogOut,
+          title: "Leaving a round",
+          line: RAISE_CAN_WITHDRAW
+            ? "Take your money out while it fills, except in the last 7 days."
+            : "If a round doesn't fill, everyone gets everything back.",
+          help: "how-a-raise-works",
+        },
+        { Icon: AlertTriangle, title: "Risks", line: "Read these before you invest.", help: "invest-risks" },
+      ]}
+    />
   );
 }
 
