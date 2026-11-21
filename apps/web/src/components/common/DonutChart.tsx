@@ -43,7 +43,7 @@ export default function DonutChart({ data, size = 120 }: { data: DonutSlice[]; s
               <span className="mr-3 h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: d.color }} />
               {d.label}
             </dt>
-            <dd className="min-w-0 break-words text-right font-bold">{typeof d.value === "string" ? d.value : d.value.toLocaleString()}</dd>
+            <dd className="shrink-0 whitespace-nowrap text-right font-bold">{typeof d.value === "string" ? d.value : d.value.toLocaleString()}</dd>
           </div>
         ))}
       </dl>

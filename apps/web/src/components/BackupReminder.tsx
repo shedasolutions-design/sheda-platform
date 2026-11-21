@@ -37,13 +37,17 @@ export default function BackupReminder() {
   return (
     <div role="alert" className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 md:items-center">
       <ShieldAlert size={18} className="mt-0.5 shrink-0 md:mt-0" aria-hidden="true" />
-      <p className="flex-1">
-        <strong>Back up your wallet.</strong> It&apos;s only saved in this browser. If its data is cleared, your wallet and anything in it
-        are lost.
-      </p>
-      <Link href="/wallet-recovery" className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 font-medium text-white hover:bg-amber-700">
-        Back up now
-      </Link>
+      {/* The button drops under the text on narrow screens rather than
+          squeezing the text into a one-word column beside it. */}
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2">
+        <p className="min-w-0 flex-1 basis-56">
+          <strong>Back up your wallet.</strong> It&apos;s only saved in this browser. If its data is cleared, your wallet and anything in it
+          are lost.
+        </p>
+        <Link href="/wallet-recovery" className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 font-medium text-white hover:bg-amber-700">
+          Back up now
+        </Link>
+      </div>
       <button
         type="button"
         aria-label="Remind me later"
