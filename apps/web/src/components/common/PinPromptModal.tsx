@@ -6,6 +6,7 @@ import Button from "@/components/ui/Button";
 import CodeInput from "@/components/ui/CodeInput";
 import Spinner from "@/components/ui/Spinner";
 import { useApi } from "@/contexts/ApiContext";
+import apiService from "@/services/api";
 import secureStorageService from "@/services/secureStorage";
 
 // Internal steps the modal can be in, regardless of which entry mode it started from.
@@ -33,8 +34,8 @@ const STEP_COPY: Record<Step, { title: string; description: string }> = {
     description: "Confirm your current PIN before setting a new one.",
   },
   "reset-otp": {
-    title: "Verify Your Email",
-    description: "We've sent a code to your email. Enter it below to reset your PIN.",
+    title: "Confirm it's you",
+    description: "We've sent a code to your email. Enter it to set your PIN.",
   },
   setup: {
     title: "Set Your Transaction PIN",
@@ -42,11 +43,13 @@ const STEP_COPY: Record<Step, { title: string; description: string }> = {
   },
 };
 
+// A new PIN can reveal the wallet's keys, so setting the first one needs the
+// emailed code: an unlocked browser alone must not be enough.
 const initialStep = (mode: PinPromptModalProps["mode"]): Step =>
-  mode === "change" ? "verify-old" : mode === "setup" ? "setup" : "verify";
+  mode === "change" ? "verify-old" : mode === "setup" ? "reset-otp" : "verify";
 
 export default function PinPromptModal({ visible, accountId, mode, onDone }: PinPromptModalProps) {
-  const { user, sendOtp, verifyOtp } = useApi();
+  const { user } = useApi();
   const [step, setStep] = useState<Step>(initialStep(mode));
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
@@ -70,9 +73,14 @@ export default function PinPromptModal({ visible, accountId, mode, onDone }: Pin
   useEffect(() => {
     if (step === "reset-otp" && !otpSentForStep.current && user?.email) {
       otpSentForStep.current = true;
-      sendOtp(user.email).catch(() => setError("Could not send the code. Try again."));
+      apiService
+        .sendActionCode()
+        .then((r) => {
+          if (!r.ok) setError("Could not send the code. Try again.");
+        })
+        .catch(() => setError("Could not send the code. Try again."));
     }
-  }, [step, user?.email, sendOtp]);
+  }, [step, user?.email]);
 
   const handleVerify = async (enteredPin: string) => {
     setBusy(true);
@@ -103,7 +111,10 @@ export default function PinPromptModal({ visible, accountId, mode, onDone }: Pin
     setBusy(true);
     setError(null);
     try {
-      await verifyOtp(user.email, enteredOtp);
+      // Checked without touching the session. verify-otp used to replace it
+      // with a five-minute code-only token, so everything failed soon after.
+      const r = await apiService.verifyCode(enteredOtp);
+      if (!r.ok) throw new Error("bad code");
       setStep("setup");
       setOtp("");
     } catch {

@@ -11,6 +11,9 @@ import { useWallet } from "@/contexts/WalletContext";
 import { useApi } from "@/contexts/ApiContext";
 import { useCopy } from "@/hooks/useCopy";
 import apiService from "@/services/api";
+import { getLastChecked } from "@/utilities/backupCheck";
+import { getQueryParam } from "@/lib/navigation";
+import EmailCodeModal from "@/components/common/EmailCodeModal";
 
 function Secret({ label, value }: { label: string; value: string }) {
   const [shown, setShown] = useState(false);
@@ -47,8 +50,19 @@ function WalletRecovery() {
   const { walletState, getStoredSeedPhrase, getPrivateKeyFromStoredSeedPhrase, hasTransactionPin, getAuthorizedPrivateKey, isCloudBackupAvailable, hasCloudBackup, isWalletSafe, markPhraseSaved } = useWallet();
   const [showBackup, setShowBackup] = useState(false);
   const [backedUp, setBackedUp] = useState(false);
+  const [showCheck, setShowCheck] = useState(false);
+  const [lastChecked, setLastChecked] = useState<number | null>(null);
   const { user } = useApi();
   const accountId = walletState.account?.accountId;
+
+  // When the backup password last worked, and arriving from the Wallet
+  // page's reminder (?check=1) opens the test straight away.
+  const [checkOpenedFor, setCheckOpenedFor] = useState<string | null>(null);
+  if (accountId && checkOpenedFor !== accountId) {
+    setCheckOpenedFor(accountId);
+    setLastChecked(getLastChecked(accountId));
+    if (getQueryParam("check") === "1") setShowCheck(true);
+  }
   const [usesPin, setUsesPin] = useState<boolean | null>(null);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,6 +70,7 @@ function WalletRecovery() {
   const [seed, setSeed] = useState<string | null>(null);
   const [key, setKey] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
+  const [askCode, setAskCode] = useState(false);
 
   useEffect(() => {
     if (!accountId) return;
@@ -90,7 +105,9 @@ function WalletRecovery() {
         setError("Couldn't confirm who you are. Sign in again and retry.");
         return;
       }
-      const res = await apiService.login(user.email, password);
+      // Checks the password only. Signing in again here (as it did) emailed a
+      // new-device code on browsers the server didn't remember.
+      const res = await apiService.confirmPassword(password);
       if (!res.ok) {
         setError(
           res.status && res.status < 500 ? "That password is incorrect." : "We couldn't reach the server. Check your connection and try again."
@@ -136,12 +153,28 @@ function WalletRecovery() {
                 </h2>
                 <p className="mb-3 text-sm text-secondaryText">
                   {hasCloudBackup || backedUp
-                    ? "This wallet is backed up to your Google account. You can back it up again, for example with a new passphrase."
+                    ? "This wallet is backed up to your Google account, locked with your backup password. Nobody can reset that password, not even Sheda, so test it now and then. If you've forgotten it, set a new one while this device has your wallet."
                     : "Save an encrypted copy of this wallet to your Google account, so you can restore it on a new device. It's locked with a passphrase only you know."}
                 </p>
-                <Button variant={hasCloudBackup || backedUp ? "outline" : "primary"} full onClick={() => setShowBackup(true)}>
-                  {hasCloudBackup || backedUp ? "Back up again" : "Back up to Google"}
-                </Button>
+                {hasCloudBackup || backedUp ? (
+                  <div className="flex flex-col gap-2">
+                    <Button full onClick={() => setShowCheck(true)}>
+                      Test my backup password
+                    </Button>
+                    <Button variant="outline" full onClick={() => setShowBackup(true)}>
+                      Change backup password
+                    </Button>
+                    <p className="text-center text-xs text-secondaryText">
+                      {lastChecked
+                        ? `Password last confirmed ${new Date(lastChecked).toLocaleDateString()}`
+                        : "Not tested on this device yet"}
+                    </p>
+                  </div>
+                ) : (
+                  <Button full onClick={() => setShowBackup(true)}>
+                    Back up to Google
+                  </Button>
+                )}
               </section>
             )}
 
@@ -169,6 +202,14 @@ function WalletRecovery() {
                 <Button type="submit" full className="mt-5" loading={busy} disabled={usesPin === null || (usesPin === false && !password)}>
                   <KeyRound size={16} /> {usesPin ? "Enter PIN" : "View keys"}
                 </Button>
+                {/* Google sign-ups have no Sheda password, and PINs get forgotten. */}
+                <button
+                  type="button"
+                  onClick={() => setAskCode(true)}
+                  className="mx-auto mt-4 block text-sm text-primary hover:underline"
+                >
+                  Email me a code instead
+                </button>
               </form>
             ) : (
               <>
@@ -191,6 +232,22 @@ function WalletRecovery() {
         )}
       </div>
       {accountId && (
+        <EmailCodeModal
+          open={askCode}
+          title="Confirm it's you"
+          reason="Your recovery phrase and private key give full control of your wallet."
+          email={user?.email}
+          confirmLabel="View keys"
+          onClose={() => setAskCode(false)}
+          onCode={async (code) => {
+            const res = await apiService.verifyCode(code);
+            if (!res.ok) throw new Error("That code didn't work. Please check it and try again.");
+            setAskCode(false);
+            await loadSecrets(accountId);
+          }}
+        />
+      )}
+      {accountId && (
         <BackupPrompt
           visible={showBackup}
           mode="backup"
@@ -199,7 +256,18 @@ function WalletRecovery() {
           onDone={() => {
             setBackedUp(true);
             setShowBackup(false);
+            setLastChecked(Date.now());
           }}
+        />
+      )}
+      {accountId && (
+        <BackupPrompt
+          visible={showCheck}
+          mode="check"
+          accountId={accountId}
+          onClose={() => setShowCheck(false)}
+          // Stays open on success, so the person sees it worked.
+          onDone={() => setLastChecked(Date.now())}
         />
       )}
     </>

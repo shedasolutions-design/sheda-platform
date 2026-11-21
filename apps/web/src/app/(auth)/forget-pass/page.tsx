@@ -9,6 +9,7 @@ import FeedbackModal from "@/components/ui/FeedbackModal";
 import BackLink from "@/components/ui/BackLink";
 import { useAuth } from "@/hooks/useShedaApi";
 import { useFeedback } from "@/hooks/useFeedback";
+import { getQueryParam } from "@/lib/navigation";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -19,6 +20,12 @@ export default function ForgotPasswordPage() {
   const { forgotPassword, isLoading, error, clearError } = useAuth();
   const isSubmitting = useRef(false);
   const { feedback, show, hide, isConnectionError } = useFeedback();
+
+  // Arriving from Settings > Change password, the address is already known.
+  useEffect(() => {
+    const known = getQueryParam("email");
+    if (known) setEmail(known);
+  }, []);
 
   useEffect(() => {
     if (!error) return;

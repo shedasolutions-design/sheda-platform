@@ -33,14 +33,20 @@ function Activities() {
   // The seller's listings come from their own endpoint. The profile's
   // `listing` field is not filled in, so the counts below read 0 for a seller
   // with a live listing.
+  // Seller data only once the mode is known: a buyer is redirected to Saved,
+  // and asking for their listings and schedule first returned "User not
+  // found" errors from endpoints that only exist for sellers.
+  const sellerReady = !isLoading && isSeller;
   useEffect(() => {
+    if (!sellerReady) return;
     getMyListings({ silent: true }).catch(() => {});
-  }, [getMyListings]);
+  }, [getMyListings, sellerReady]);
   useEffect(() => {
+    if (!sellerReady) return;
     getSchedule()
       .catch(() => {})
       .finally(() => setScheduleChecked(true));
-  }, [getSchedule]);
+  }, [getSchedule, sellerReady]);
 
   // Without published hours, every viewing request is refused.
   const noViewingHours = scheduleChecked && (schedule?.length ?? 0) === 0;

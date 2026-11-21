@@ -43,3 +43,13 @@ async def test_registration_still_wins(db: AsyncSession):
 
 async def test_unknown_wallet_is_none(db: AsyncSession):
     assert await get_user_by_wallet("nobody.testnet", db) is None
+
+
+async def test_my_wallets_covers_both_profiles(db: AsyncSession):
+    """A wallet registered from the seller profile is found from the buyer one."""
+    from app.routers.wallets import my_wallets
+
+    client, agent = await _pair(db, "named.shedauser.testnet")
+    db.add(WalletMapping(user_id=agent.id, wallet_id="e99f4626implicit"))
+    await db.commit()
+    assert await my_wallets(current_user=client, db=db) == {"wallets": ["e99f4626implicit"]}

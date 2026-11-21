@@ -203,6 +203,16 @@ OTP_PURPOSES = {
         "Someone is signing in to your Sheda account on a new device. If it's you, enter this code to finish.",
         "If this wasn't you, don't share the code and change your password in Sheda.",
     ),
+    "action": (
+        "Confirm it's you on Sheda",
+        "Use this code to confirm a change to your Sheda account, such as your transaction PIN, viewing your wallet keys or deleting your account.",
+        "If you didn't ask for this, don't share the code, and change your password in Sheda.",
+    ),
+    "email_change": (
+        "Confirm your new email for Sheda",
+        "Use this code to make this your Sheda email address.",
+        "If you didn't ask to change your Sheda email, you can ignore this email. Nothing changes.",
+    ),
     "reset": (
         "Reset your Sheda password",
         "Use this code to choose a new password for your Sheda account.",

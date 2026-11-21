@@ -46,7 +46,7 @@ interface UseAuthReturn {
   switchAccount: (accountType: "client" | "agent") => Promise<void>;
   getMe: () => Promise<any>;
   updateMe: (userData: UserUpdate) => Promise<void>;
-  deleteAccount: () => Promise<void>;
+  deleteAccount: (code: string) => Promise<void>;
   clearError: () => void;
 }
 
@@ -157,7 +157,7 @@ export function useAuth(): UseAuthReturn {
   const switchAccount = useCallback((accountType: "client" | "agent") => api.switchAccount(accountType), [api.switchAccount]);
   const getMe = useCallback(() => api.getMe(), [api.getMe]);
   const updateMe = useCallback((userData: UserUpdate) => api.updateMe(userData), [api.updateMe]);
-  const deleteAccount = useCallback(() => api.deleteAccount(), [api.deleteAccount]);
+  const deleteAccount = useCallback((code: string) => api.deleteAccount(code), [api.deleteAccount]);
   const clearError = useCallback(() => api.clearError(), [api.clearError]);
 
   return {

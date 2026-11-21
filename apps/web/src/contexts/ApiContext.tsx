@@ -397,7 +397,7 @@ interface ApiContextType extends ApiState {
   // User methods
   getMe: (options?: RequestInit & { timeout?: number; silent?: boolean }) => Promise<UserShow | null>;
   updateMe: (userData: UserUpdate) => Promise<void>;
-  deleteAccount: () => Promise<void>;
+  deleteAccount: (code: string) => Promise<void>;
 
   // Property methods
   getProperties: (limit?: number, cursor?: number, options?: RequestInit & { timeout?: number, silent?: boolean }) => Promise<void>;
@@ -1478,18 +1478,15 @@ export function ApiProvider({ children }: ApiProviderProps) {
     await getMe({ silent: true }).catch(() => { });
   }, [apiCall, getMe, state.user, state.agentCache, dispatch]);
 
-  const deleteAccount = useCallback(async () => {
-    console.log("🗑️ Starting account deletion...");
-
-    // Disconnect WebSocket first
-    disconnectWebSocket();
-
-    try {
-      await apiCall(() => apiService.deleteAccount());
-      console.log("✅ Account deletion API call successful");
-    } catch (error) {
-      console.log("⚠️ Account deletion API call failed, but proceeding with local cleanup", error);
+  const deleteAccount = useCallback(async (code: string) => {
+    // The server must agree first. Cleaning up locally after a refusal (a
+    // wrong code, say) looked exactly like a deleted account that wasn't.
+    const res = await apiService.deleteAccount(code);
+    if (!res.ok) {
+      const detail = (res.error as { detail?: unknown } | undefined)?.detail;
+      throw new Error(typeof detail === "string" ? detail : "We couldn't close your account. Please try again.");
     }
+    disconnectWebSocket();
 
     // Clear AsyncStorage
     await AsyncStorage.multiRemove(["auth_token", "user_data", ANSWERED_THIS_SIGNIN_KEY]);

@@ -6,11 +6,12 @@ import Button from "@/components/ui/Button";
 import TextField from "@/components/ui/TextField";
 import { useWallet } from "@/contexts/WalletContext";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
-import type { BackupRecord } from "@/services/cloudBackup";
-import { checkPassphrase, MIN_PASSPHRASE_LENGTH } from "@/services/walletCrypto";
+import { getCachedSession, restoreBackup, type BackupRecord } from "@/services/cloudBackup";
+import { checkPassphrase, decryptSecret, MIN_PASSPHRASE_LENGTH } from "@/services/walletCrypto";
+import { markChecked } from "@/utilities/backupCheck";
 
 /**
- * Encrypted-backup UI, in two modes:
+ * Encrypted-backup UI, in three modes (backup, restore, check):
  *
  *   "backup"   offered right after a wallet is created or imported.
  *   "restore"  offered on a new browser when a backup exists for the Google
@@ -26,9 +27,20 @@ import { checkPassphrase, MIN_PASSPHRASE_LENGTH } from "@/services/walletCrypto"
  */
 export interface BackupPromptProps {
   visible: boolean;
-  mode: "backup" | "restore";
+  /**
+   * backup: encrypt and upload (also how the backup password is changed:
+   * the new backup replaces the old one). restore: pick one and import it.
+   * check: confirm the backup password still unlocks this wallet's backup.
+   */
+  mode: "backup" | "restore" | "check";
   /** Wallet being backed up. Ignored in restore mode (the user picks). */
   accountId?: string;
+  /**
+   * Restore mode: the wallet on the person's Sheda profile. Its backup is
+   * listed first, picked by default and labelled, so a returning person
+   * restores the wallet their deals were made with rather than another one.
+   */
+  preferredAccountId?: string;
   onClose: () => void;
   onDone?: () => void;
 }
@@ -36,7 +48,7 @@ export interface BackupPromptProps {
 const STRENGTH_LABEL = ["Too weak", "Weak", "Fair", "Good", "Strong"];
 const STRENGTH_COLOR = ["text-red-600", "text-red-600", "text-amber-600", "text-emerald-600", "text-emerald-600"];
 
-export default function BackupPrompt({ visible, mode, accountId, onClose, onDone }: BackupPromptProps) {
+export default function BackupPrompt({ visible, mode, accountId, preferredAccountId, onClose, onDone }: BackupPromptProps) {
   const {
     isCloudBackupAvailable,
     connectBackupAccount,
@@ -55,8 +67,52 @@ export default function BackupPrompt({ visible, mode, accountId, onClose, onDone
   const [backups, setBackups] = useState<BackupRecord[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
 
+  // A failed check can turn into setting a new password, in place.
+  const [active, setActive] = useState(mode);
+  const [checkFailed, setCheckFailed] = useState(false);
+  const [checkPassed, setCheckPassed] = useState(false);
+
   const strength = checkPassphrase(passphrase);
-  const isBackup = mode === "backup";
+  const isBackup = active === "backup";
+  const isCheck = active === "check";
+
+  const showBackups = (found: BackupRecord[]) => {
+    // The profile's own wallet first; the rest keep newest-first order.
+    const ordered = preferredAccountId
+      ? [...found.filter((b) => b.accountId === preferredAccountId), ...found.filter((b) => b.accountId !== preferredAccountId)]
+      : found;
+    setBackups(ordered);
+    setSelected(ordered[0]?.accountId ?? null);
+    setStatus(ordered.length ? null : "No backups found for this Google account.");
+  };
+
+  // Already connected to Google (signing in with Google just did it): go
+  // straight to the list, no second Google step.
+  useEffect(() => {
+    if (!visible || !isCloudBackupAvailable) return;
+    let alive = true;
+    (async () => {
+      const session = await getCachedSession().catch(() => null);
+      if (!session || !alive) return;
+      setConnected(true);
+      if (mode !== "restore") return;
+      setStatus("Looking for backups…");
+      try {
+        const found = await listCloudBackups();
+        if (alive) showBackups(found);
+      } catch (err) {
+        if (alive) {
+          setConnected(false);
+          setStatus(null);
+          setErrorText(err instanceof Error ? err.message : "Could not load your backups.");
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, mode, isCloudBackupAvailable]);
 
   // Clear every secret-adjacent field whenever the dialog closes.
   useEffect(() => {
@@ -69,8 +125,11 @@ export default function BackupPrompt({ visible, mode, accountId, onClose, onDone
       setBackups([]);
       setSelected(null);
       setConnected(false);
+      setCheckFailed(false);
+      setCheckPassed(false);
     }
-  }, [visible]);
+    setActive(mode);
+  }, [visible, mode]);
 
   const handleConnectGoogle = async () => {
     setErrorText(null);
@@ -80,12 +139,9 @@ export default function BackupPrompt({ visible, mode, accountId, onClose, onDone
       const idToken = await signInWithGooglePopup();
       await connectBackupAccount(idToken);
       setConnected(true);
-      if (mode === "restore") {
+      if (active === "restore") {
         setStatus("Looking for backups…");
-        const found = await listCloudBackups();
-        setBackups(found);
-        setSelected(found[0]?.accountId ?? null);
-        setStatus(found.length ? null : "No backups found for this Google account.");
+        showBackups(await listCloudBackups());
       } else {
         setStatus(null);
       }
@@ -110,6 +166,8 @@ export default function BackupPrompt({ visible, mode, accountId, onClose, onDone
       // "Remember on this device" is a phone feature: it needs a biometric
       // gate the browser cannot provide, so it is never offered here.
       await backupWallet(accountId, passphrase, { remember: false });
+      // The password was just chosen, so it is known to work now.
+      markChecked(accountId);
       onDone?.();
       onClose();
     } catch (err) {
@@ -130,10 +188,48 @@ export default function BackupPrompt({ visible, mode, accountId, onClose, onDone
     setStatus("Decrypting in this browser…");
     try {
       await restoreFromCloud(selected, passphrase);
+      markChecked(selected);
       onDone?.();
       onClose();
     } catch (err) {
       setErrorText(err instanceof Error ? err.message : "Restore failed.");
+      setStatus(null);
+    } finally {
+      setBusy(false);
+      setPassphrase("");
+    }
+  };
+
+  // Downloads the backup and tries the password here in the browser. The
+  // unlocked secret is dropped straight away: nothing is stored or imported.
+  const handleCheck = async () => {
+    setErrorText(null);
+    setCheckFailed(false);
+    if (!accountId) return setErrorText("No wallet selected.");
+    if (!passphrase) return setErrorText("Enter your backup password.");
+    setBusy(true);
+    setStatus("Checking in this browser…");
+    try {
+      const record = await restoreBackup(accountId);
+      if (!record) {
+        setStatus(null);
+        setCheckFailed(true);
+        return setErrorText("There's no Google backup for this wallet yet. Back it up now.");
+      }
+      try {
+        const secret = await decryptSecret(record.envelope, passphrase);
+        void secret;
+      } catch {
+        setStatus(null);
+        setCheckFailed(true);
+        return setErrorText("That password doesn't unlock this backup.");
+      }
+      markChecked(accountId);
+      setStatus(null);
+      setCheckPassed(true);
+      onDone?.();
+    } catch (err) {
+      setErrorText(err instanceof Error ? err.message : "Could not check the backup.");
       setStatus(null);
     } finally {
       setBusy(false);
@@ -147,12 +243,14 @@ export default function BackupPrompt({ visible, mode, accountId, onClose, onDone
     <Modal
       open={visible}
       onClose={busy ? undefined : onClose}
-      title={isBackup ? "Back up your wallet" : "Restore your wallet"}
+      title={isBackup ? "Back up your wallet" : isCheck ? "Test your backup password" : "Restore your wallet"}
     >
       <p className="mb-5 text-sm text-secondaryText">
         {isBackup
-          ? "Your seed phrase is encrypted in this browser before it's uploaded. Sheda never sees it, and never receives your passphrase."
-          : "Connect the Google account you backed up to, then enter the recovery passphrase you chose."}
+          ? "Your seed phrase is encrypted in this browser before it's uploaded. Sheda never sees it, and never receives your passphrase. A new backup replaces the old one, so your old passphrase stops working."
+          : isCheck
+            ? "Make sure you still remember it, while this device has your wallet. It's checked here in your browser and nothing is changed."
+            : "Connect the Google account you backed up to, then enter the recovery passphrase you chose."}
       </p>
 
       {!connected ? (
@@ -161,7 +259,7 @@ export default function BackupPrompt({ visible, mode, accountId, onClose, onDone
         </Button>
       ) : (
         <div className="flex flex-col gap-4">
-          {mode === "restore" && backups.length > 0 && (
+          {active === "restore" && backups.length > 0 && (
             <fieldset>
               <legend className="mb-2 text-sm font-semibold">Choose a backup</legend>
               {backups.map((b) => (
@@ -178,6 +276,15 @@ export default function BackupPrompt({ visible, mode, accountId, onClose, onDone
                     checked={selected === b.accountId}
                     onChange={() => setSelected(b.accountId)}
                   />
+                  {b.accountId === preferredAccountId ? (
+                    <span className="mb-1 w-fit rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+                      Your Sheda wallet
+                    </span>
+                  ) : preferredAccountId ? (
+                    <span className="mb-1 w-fit rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-secondaryText">
+                      Another wallet, not linked to this account
+                    </span>
+                  ) : null}
                   <span className="break-all font-semibold">{b.accountId}</span>
                   <span className="text-xs text-secondaryText">
                     {b.network ?? "testnet"} ·{" "}
@@ -230,10 +337,35 @@ export default function BackupPrompt({ visible, mode, accountId, onClose, onDone
 
           {errorText && <p className="text-sm text-red-600">{errorText}</p>}
           {status && <p className="text-sm text-secondaryText">{status}</p>}
+          {checkPassed && (
+            <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
+              ✓ That&apos;s the one. Your backup password works.
+            </p>
+          )}
+          {isCheck && checkFailed && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              Forgotten it? This device has your wallet, so you can set a new backup password now. The old one
+              stops working.
+              <Button
+                variant="outline"
+                full
+                className="mt-3"
+                onClick={() => {
+                  setErrorText(null);
+                  setCheckFailed(false);
+                  setActive("backup");
+                }}
+              >
+                Choose a new backup password
+              </Button>
+            </div>
+          )}
 
-          <Button full onClick={isBackup ? handleBackup : handleRestore} loading={busy}>
-            {isBackup ? "Encrypt and back up" : "Restore wallet"}
-          </Button>
+          {!checkPassed && (
+            <Button full onClick={isBackup ? handleBackup : isCheck ? handleCheck : handleRestore} loading={busy}>
+              {isBackup ? "Encrypt and back up" : isCheck ? "Test password" : "Restore wallet"}
+            </Button>
+          )}
         </div>
       )}
 
@@ -246,7 +378,7 @@ export default function BackupPrompt({ visible, mode, accountId, onClose, onDone
         disabled={busy}
         className="mx-auto mt-4 block text-sm text-secondaryText hover:underline disabled:opacity-50"
       >
-        {isBackup ? "Not now" : "Skip"}
+        {checkPassed ? "Done" : isBackup ? "Not now" : "Skip"}
       </button>
     </Modal>
   );

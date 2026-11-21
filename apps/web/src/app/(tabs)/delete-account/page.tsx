@@ -7,6 +7,7 @@ import Button from "@/components/ui/Button";
 import { inputClass } from "@/components/ui/TextField";
 import FeedbackModal, { type FeedbackType } from "@/components/ui/FeedbackModal";
 import { useApi } from "@/contexts/ApiContext";
+import EmailCodeModal from "@/components/common/EmailCodeModal";
 
 interface Modal {
   visible: boolean;
@@ -18,7 +19,8 @@ interface Modal {
 }
 
 function DeleteAccount() {
-  const { deleteAccount } = useApi();
+  const { deleteAccount, user } = useApi();
+  const [askCode, setAskCode] = useState(false);
   const [reason, setReason] = useState("");
   const [modal, setModal] = useState<Modal>({ visible: false, type: "info", title: "" });
   const close = () => setModal((m) => ({ ...m, visible: false }));
@@ -29,15 +31,11 @@ function DeleteAccount() {
       type: "warning",
       title: "Delete Account",
       message: "Are you sure you want to delete your account? This action cannot be undone.",
-      actionLabel: "Delete",
-      onAction: async () => {
-        setModal({ visible: true, type: "loading", title: "Deleting Account", message: "Please wait while we process your request..." });
-        try {
-          await deleteAccount();
-          window.location.assign("/");
-        } catch (error: any) {
-          setModal({ visible: true, type: "error", title: "Error", message: error?.message || "Failed to delete account. Please try again." });
-        }
+      actionLabel: "Continue",
+      // Closing an account needs the emailed code, not just an open session.
+      onAction: () => {
+        close();
+        setAskCode(true);
       },
     });
 
@@ -64,6 +62,18 @@ function DeleteAccount() {
           Delete my account
         </Button>
       </div>
+      <EmailCodeModal
+        open={askCode}
+        title="Confirm it's you"
+        reason="Deleting your account can't be undone."
+        email={user?.email}
+        confirmLabel="Delete my account"
+        onClose={() => setAskCode(false)}
+        onCode={async (code) => {
+          await deleteAccount(code);
+          window.location.assign("/");
+        }}
+      />
       <FeedbackModal
         isVisible={modal.visible}
         type={modal.type}

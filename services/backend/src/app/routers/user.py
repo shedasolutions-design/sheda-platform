@@ -80,6 +80,37 @@ async def get_me(current_user: ActiveUser, db: DBSession):
     return out
 
 
+@router.get("/username-check", status_code=status.HTTP_200_OK, response_model=dict)
+async def username_check(
+    current_user: ActiveUser,
+    db: DBSession,
+    username: str = Query(default="", max_length=64, description="The username wanted, if any"),
+    name: str = Query(default="", max_length=120, description="A full name to suggest usernames from"),
+):
+    """Is this username free, and free ones made from a name.
+
+    Signed in only, so it can't be used to list who is on Sheda. "Free"
+    ignores the person's own rows: their current username counts as free.
+    """
+    from app.services import usernames
+
+    wanted = usernames.normalize(username)
+    result: dict = {"username": wanted or None, "available": None, "problem": None}
+    if wanted:
+        result["problem"] = usernames.problem(wanted)
+        if result["problem"] is None:
+            result["available"] = not await usernames.is_taken(wanted, db, own_email=current_user.email)
+            if not result["available"]:
+                result["problem"] = "That username is taken."
+        else:
+            result["available"] = False
+    source = name or (wanted if not result["available"] else "")
+    result["suggestions"] = (
+        await usernames.suggest(source, db, own_email=current_user.email) if source else []
+    )
+    return result
+
+
 @router.get("/{user_id}", response_model=UserShow, status_code=status.HTTP_200_OK)
 async def get_user_by_id(user_id: int, current_user: ActiveVerifiedUser, db: DBSession):
     """
@@ -137,12 +168,28 @@ async def update_me(
 
 # NOTE - Delete
 @router.delete("/me", status_code=status.HTTP_202_ACCEPTED, response_model=dict)
-async def delete_account(current_user: ActiveUser, db: DBSession):
-    current_user.is_active = False
-    current_user.is_deleted = True
-    db.add(current_user)
+async def delete_account(
+    current_user: ActiveUser,
+    db: DBSession,
+    code: str = Query(default="", max_length=12, description="The code from POST /auth/send-otp?purpose=action"),
+):
+    """Close the account: both profiles, and only with a code from the inbox.
+
+    It was one tap with an open session, and closed only the profile in use,
+    leaving the other one signed in and listed.
+    """
+    from sqlalchemy import update
+
+    from app.utils.utils import verify_otp
+
+    if not code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enter the code we emailed you to confirm.")
+    if not await verify_otp(code, current_user.email):  # type: ignore
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid code. Please check it and try again.")
+    await db.execute(
+        update(BaseUser).where(BaseUser.email == current_user.email).values(is_active=False, is_deleted=True)
+    )
     await db.commit()
-    await db.refresh(current_user)
     return {"message": "Account deleted successfully"}
 
 

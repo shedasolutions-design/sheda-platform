@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import AuthGuard from "@/components/auth/AuthGuard";
@@ -24,7 +25,7 @@ interface Modal {
  */
 function ChangePassword() {
   const router = useRouter();
-  const { changePassword } = useApi();
+  const { changePassword, user } = useApi();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -71,6 +72,18 @@ function ChangePassword() {
         <Button type="submit" full>
           Change password
         </Button>
+        {/* Someone who has forgotten their password, or who signed up with
+            Google and never had a Sheda one, can't fill in "Current
+            password": a code to their email lets them set one instead. */}
+        <p className="text-center text-sm text-secondaryText">
+          Forgot your current password, or signed up with Google?{" "}
+          <Link
+            href={`/forget-pass${user?.email ? `?email=${encodeURIComponent(user.email)}` : ""}`}
+            className="font-medium text-primary underline"
+          >
+            Get a code by email
+          </Link>
+        </p>
       </form>
       <FeedbackModal
         isVisible={modal.visible}

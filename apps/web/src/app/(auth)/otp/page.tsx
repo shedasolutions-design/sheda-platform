@@ -106,10 +106,10 @@ export default function OtpPage() {
           }, 800);
         } else if (flow === "signup") {
           await confirmEmail(code);
-          show("success", "Email Verified!", "Setting up your wallet…");
+          show("success", "Email Verified!", "Next, a few optional details…");
           setTimeout(() => {
             hide();
-            router.replace("/wallet-setup/provision");
+            router.replace("/wallet-setup/profile");
           }, 800);
         } else {
           // Password reset happens signed out, so it has its own routes.
@@ -200,7 +200,7 @@ export default function OtpPage() {
         // sign-in on a new device asks for a code anyway, which verifies it.
         <p className="mt-6 text-center text-xs text-secondaryText">
           Can&apos;t find it? Check spam, or{" "}
-          <Link href="/wallet-setup/provision" replace className="font-medium underline">
+          <Link href="/wallet-setup/profile" replace className="font-medium underline">
             verify later
           </Link>
           .
