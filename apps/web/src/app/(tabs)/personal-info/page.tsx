@@ -11,6 +11,7 @@ import LocationField from "@/components/ui/LocationField";
 import FeedbackModal, { type FeedbackType } from "@/components/ui/FeedbackModal";
 import Avatar from "@/components/common/Avatar";
 import { useApi } from "@/contexts/ApiContext";
+import ChangeEmailModal from "@/components/common/ChangeEmailModal";
 import { useMode } from "@/contexts/ModeContext";
 import AsyncStorage from "@/lib/storage";
 import { fileToAsset } from "@/lib/files";
@@ -27,6 +28,7 @@ function PersonalInfo() {
   const { user, getMe, updateMe, uploadFile } = useApi();
   const { isSeller } = useMode();
   const [location, setLocation] = useState("");
+  const [changingEmail, setChangingEmail] = useState(false);
   const [avatar, setAvatar] = useState("");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -82,7 +84,6 @@ function PersonalInfo() {
       const update: Record<string, unknown> = {
         fullname: fullName,
         phone_number: formatted,
-        email,
         location,
         account_type: user.account_type || "client",
       };
@@ -146,7 +147,13 @@ function PersonalInfo() {
             .
           </p>
           <TextField label="Phone number" type="tel" placeholder="+234..." value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
-          <TextField label="Email" type="email" placeholder="Enter email address" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+          {/* Changed only with a code to the new address: it carries sign-in codes and resets. */}
+          <div>
+            <TextField label="Email" type="email" value={email} readOnly disabled autoComplete="email" />
+            <button type="button" onClick={() => setChangingEmail(true)} className="mt-1 text-sm font-medium text-primary hover:underline">
+              Change email
+            </button>
+          </div>
           <LocationField value={location} onChange={setLocation} />
           <TextField label="KYC status" value={user?.kyc_status || "Pending verification"} disabled readOnly />
           <Button type="submit" full loading={saving} className="mt-2">
@@ -155,6 +162,16 @@ function PersonalInfo() {
         </form>
       </div>
 
+      <ChangeEmailModal
+        open={changingEmail}
+        currentEmail={user?.email}
+        onClose={() => setChangingEmail(false)}
+        onChanged={(next) => {
+          setEmail(next);
+          getMe().catch(() => {});
+          show("success", "Email changed", `Your Sheda email is now ${next}.`);
+        }}
+      />
       <FeedbackModal
         isVisible={modal.visible}
         type={modal.type}

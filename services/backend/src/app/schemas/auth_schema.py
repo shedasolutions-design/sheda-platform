@@ -49,6 +49,18 @@ class DeviceResendRequest(BaseModel):
     challenge: str
 
 
+class ConfirmPasswordRequest(BaseModel):
+    password: str
+
+
+class CodeRequest(BaseModel):
+    otp: str
+
+
+class ChangeEmailStart(BaseModel):
+    new_email: EmailStr
+
+
 class ConfirmEmailRequest(BaseModel):
     otp: str
     device_id: Optional[str] = None

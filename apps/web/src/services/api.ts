@@ -1358,9 +1358,45 @@ class ApiService {
     });
   }
 
-  async deleteAccount(): Promise<ApiResponse<void>> {
-    return this.request<void>("/api/v1/user/me", {
+  /** Closing the account needs the code from sendActionCode(). */
+  async deleteAccount(code: string): Promise<ApiResponse<void>> {
+    return this.request<void>(`/api/v1/user/me?code=${encodeURIComponent(code)}`, {
       method: "DELETE",
+    });
+  }
+
+  /** Email a code to confirm a sensitive change (keys, PIN, closing the account). */
+  async sendActionCode(): Promise<ApiResponse<void>> {
+    return this.request<void>("/api/v1/auth/send-otp?purpose=action", { method: "POST" });
+  }
+
+  /** Check a code from sendActionCode(). Keeps the session as it is. */
+  async verifyCode(otp: string): Promise<ApiResponse<{ ok: boolean }>> {
+    return this.request<{ ok: boolean }>("/api/v1/auth/verify-code", {
+      method: "POST",
+      body: JSON.stringify({ otp }),
+    });
+  }
+
+  /** Re-check the signed-in person's password, without signing in again. */
+  async confirmPassword(password: string): Promise<ApiResponse<{ ok: boolean }>> {
+    return this.request<{ ok: boolean }>("/api/v1/auth/confirm-password", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    });
+  }
+
+  async changeEmailStart(newEmail: string): Promise<ApiResponse<{ detail: string; sent_to: string }>> {
+    return this.request<{ detail: string; sent_to: string }>("/api/v1/auth/change-email/start", {
+      method: "POST",
+      body: JSON.stringify({ new_email: newEmail }),
+    });
+  }
+
+  async changeEmailConfirm(otp: string): Promise<ApiResponse<{ email: string }>> {
+    return this.request<{ email: string }>("/api/v1/auth/change-email/confirm", {
+      method: "POST",
+      body: JSON.stringify({ otp }),
     });
   }
 

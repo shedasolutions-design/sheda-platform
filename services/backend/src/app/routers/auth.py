@@ -35,7 +35,15 @@ from app.services.user_service import (
 from app.utils.utils import verify_otp, blacklist_token, token_exp_time
 from app.utils.email import create_send_otp
 from app.schemas.auth_schema import SignUpShow
-from app.schemas.auth_schema import ConfirmEmailRequest, DeviceCheck, DeviceCodeRequest, DeviceResendRequest
+from app.schemas.auth_schema import (
+    ChangeEmailStart,
+    CodeRequest,
+    ConfirmEmailRequest,
+    ConfirmPasswordRequest,
+    DeviceCheck,
+    DeviceCodeRequest,
+    DeviceResendRequest,
+)
 from app.services import device_check
 
 router = APIRouter(
@@ -147,6 +155,97 @@ async def confirm_email(payload: ConfirmEmailRequest, current_user: ActiveUser, 
     return {"verified": True}
 
 
+@router.post("/confirm-password", status_code=status.HTTP_200_OK, response_model=dict)
+async def confirm_password(payload: ConfirmPasswordRequest, current_user: ActiveUser):
+    """Re-check the password of the person already signed in.
+
+    For screens that ask "enter your password to continue" (viewing wallet
+    keys). They used to call /auth/login, which on a browser the server
+    didn't remember also emailed a sign-in code nobody asked for.
+    """
+    from app.utils.utils import verify_password
+
+    if not verify_password(payload.password, current_user.password):  # type: ignore
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="That password is incorrect.")
+    return {"ok": True}
+
+
+@router.post("/verify-code", status_code=status.HTTP_200_OK, response_model=dict)
+async def verify_code(payload: CodeRequest, current_user: ActiveUser, db: DBSession):
+    """Check a code sent with /auth/send-otp. The session is kept as it is.
+
+    /auth/verify-otp swaps the session for a five-minute code-only token,
+    which signed people out of everything else soon after (PIN reset did).
+    """
+    if not await verify_otp(str(payload.otp), current_user.email):  # type: ignore
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid code. Please check it and try again.")
+    await device_check.mark_email_verified(current_user.email, db)  # type: ignore
+    return {"ok": True}
+
+
+EMAIL_CHANGE_SECONDS = 15 * 60
+
+
+@router.post("/change-email/start", status_code=status.HTTP_202_ACCEPTED, response_model=dict)
+async def change_email_start(payload: ChangeEmailStart, current_user: ActiveUser, db: DBSession):
+    """Send a code to the new address. Nothing changes until it comes back."""
+    from sqlalchemy import func, select
+
+    from core.configs import redis
+
+    new = str(payload.new_email).strip().lower()
+    old = (current_user.email or "").strip().lower()  # type: ignore
+    if new == old:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="That's already your email.")
+    taken = await db.execute(
+        select(BaseUser.id).where(func.lower(BaseUser.email) == new, BaseUser.email != current_user.email).limit(1)
+    )
+    if taken.first() is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with this email already exists.")
+    await redis.setex(f"email_change:{old}", EMAIL_CHANGE_SECONDS, new)
+    if not await create_send_otp(new, purpose="email_change"):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="We couldn't send the code. Please try again.")
+    return {"detail": "Code sent", "sent_to": device_check.mask_email(new)}
+
+
+@router.post("/change-email/confirm", status_code=status.HTTP_200_OK, response_model=dict)
+async def change_email_confirm(payload: CodeRequest, current_user: ActiveUser, db: DBSession):
+    """The code reached the new inbox: switch both profiles to it, tell the old one."""
+    from sqlalchemy import func, select, update
+
+    from core.configs import redis
+    from app.utils.email import branded_email, email_sender
+
+    old_email = current_user.email  # type: ignore
+    key = f"email_change:{(old_email or '').strip().lower()}"
+    new = await redis.get(key)
+    if isinstance(new, bytes):
+        new = new.decode()
+    if not new:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This change has expired. Please start again.")
+    if not await verify_otp(str(payload.otp), new):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid code. Please check it and try again.")
+    taken = await db.execute(
+        select(BaseUser.id).where(func.lower(BaseUser.email) == new, BaseUser.email != old_email).limit(1)
+    )
+    if taken.first() is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with this email already exists.")
+    await db.execute(update(BaseUser).where(BaseUser.email == old_email).values(email=new, verified=True))
+    await db.commit()
+    await redis.delete(key)
+    # The old inbox hears about it, so a change nobody meant is noticed.
+    try:
+        html, text = branded_email(
+            "Your Sheda email was changed",
+            [f"Your Sheda account now uses {device_check.mask_email(new)}. Sign-in codes and updates go there from now on."],
+            notice="If this wasn't you, reply to this email straight away so we can help secure your account.",
+        )
+        await email_sender.send_email(html, old_email, "Your Sheda email was changed", text_type="html", alt_text=text)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Old-address notice not sent: {exc}")
+    return {"email": new}
+
+
 @router.post("/logout", status_code=status.HTTP_202_ACCEPTED)
 async def logout(current_user: GetUser, credential: HTTPBearerDependency):
     return await process_logout(credential.credentials)
@@ -208,8 +307,12 @@ async def reset_pwd(
 
 
 @router.post("/send-otp", response_model=dict, status_code=status.HTTP_202_ACCEPTED)
-async def send_otp(current_user: ActiveUser):
-    otp_sent = await create_send_otp(current_user.email)  # type: ignore
+async def send_otp(
+    current_user: ActiveUser,
+    purpose: str = Query(default="verify", description="verify (the email) or action (confirm a sensitive change)"),
+):
+    purpose = purpose if purpose in ("verify", "action") else "verify"
+    otp_sent = await create_send_otp(current_user.email, purpose=purpose)  # type: ignore
     if not otp_sent:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Unable to send OTP"

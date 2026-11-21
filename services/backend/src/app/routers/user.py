@@ -168,12 +168,28 @@ async def update_me(
 
 # NOTE - Delete
 @router.delete("/me", status_code=status.HTTP_202_ACCEPTED, response_model=dict)
-async def delete_account(current_user: ActiveUser, db: DBSession):
-    current_user.is_active = False
-    current_user.is_deleted = True
-    db.add(current_user)
+async def delete_account(
+    current_user: ActiveUser,
+    db: DBSession,
+    code: str = Query(default="", max_length=12, description="The code from POST /auth/send-otp?purpose=action"),
+):
+    """Close the account: both profiles, and only with a code from the inbox.
+
+    It was one tap with an open session, and closed only the profile in use,
+    leaving the other one signed in and listed.
+    """
+    from sqlalchemy import update
+
+    from app.utils.utils import verify_otp
+
+    if not code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Enter the code we emailed you to confirm.")
+    if not await verify_otp(code, current_user.email):  # type: ignore
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid code. Please check it and try again.")
+    await db.execute(
+        update(BaseUser).where(BaseUser.email == current_user.email).values(is_active=False, is_deleted=True)
+    )
     await db.commit()
-    await db.refresh(current_user)
     return {"message": "Account deleted successfully"}
 
 

@@ -48,6 +48,15 @@ async def update_user(update_data: UserUpdate, db: AsyncSession, user: UserInDB)
     from app.utils.enums import AccountTypeEnum
 
     changes = {k: v for k, v in update_data.model_dump(exclude_unset=True).items() if k not in SYSTEM_FIELDS}
+    # The email carries sign-in codes and password resets, so it changes only
+    # through /auth/change-email, which confirms the new address first.
+    if "email" in changes:
+        if (changes["email"] or "").strip().lower() != (user.email or "").strip().lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="To change your email, use Change email so we can confirm the new address.",
+            )
+        changes.pop("email")
     if "username" in changes:
         from app.services import usernames
 

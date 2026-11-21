@@ -13,6 +13,7 @@ import { useCopy } from "@/hooks/useCopy";
 import apiService from "@/services/api";
 import { getLastChecked } from "@/utilities/backupCheck";
 import { getQueryParam } from "@/lib/navigation";
+import EmailCodeModal from "@/components/common/EmailCodeModal";
 
 function Secret({ label, value }: { label: string; value: string }) {
   const [shown, setShown] = useState(false);
@@ -69,6 +70,7 @@ function WalletRecovery() {
   const [seed, setSeed] = useState<string | null>(null);
   const [key, setKey] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
+  const [askCode, setAskCode] = useState(false);
 
   useEffect(() => {
     if (!accountId) return;
@@ -103,7 +105,9 @@ function WalletRecovery() {
         setError("Couldn't confirm who you are. Sign in again and retry.");
         return;
       }
-      const res = await apiService.login(user.email, password);
+      // Checks the password only. Signing in again here (as it did) emailed a
+      // new-device code on browsers the server didn't remember.
+      const res = await apiService.confirmPassword(password);
       if (!res.ok) {
         setError(
           res.status && res.status < 500 ? "That password is incorrect." : "We couldn't reach the server. Check your connection and try again."
@@ -198,6 +202,14 @@ function WalletRecovery() {
                 <Button type="submit" full className="mt-5" loading={busy} disabled={usesPin === null || (usesPin === false && !password)}>
                   <KeyRound size={16} /> {usesPin ? "Enter PIN" : "View keys"}
                 </Button>
+                {/* Google sign-ups have no Sheda password, and PINs get forgotten. */}
+                <button
+                  type="button"
+                  onClick={() => setAskCode(true)}
+                  className="mx-auto mt-4 block text-sm text-primary hover:underline"
+                >
+                  Email me a code instead
+                </button>
               </form>
             ) : (
               <>
@@ -219,6 +231,22 @@ function WalletRecovery() {
           </>
         )}
       </div>
+      {accountId && (
+        <EmailCodeModal
+          open={askCode}
+          title="Confirm it's you"
+          reason="Your recovery phrase and private key give full control of your wallet."
+          email={user?.email}
+          confirmLabel="View keys"
+          onClose={() => setAskCode(false)}
+          onCode={async (code) => {
+            const res = await apiService.verifyCode(code);
+            if (!res.ok) throw new Error("That code didn't work. Please check it and try again.");
+            setAskCode(false);
+            await loadSecrets(accountId);
+          }}
+        />
+      )}
       {accountId && (
         <BackupPrompt
           visible={showBackup}
