@@ -9,6 +9,7 @@ import Button from "@/components/ui/Button";
 import FeedbackModal, { type FeedbackType } from "@/components/ui/FeedbackModal";
 import Avatar from "@/components/common/Avatar";
 import MenuList, { type MenuItem } from "@/components/common/MenuList";
+import SignOutCheck from "@/components/SignOutCheck";
 import { useMode } from "@/contexts/ModeContext";
 import { useAuth } from "@/hooks/useShedaApi";
 import { useApi } from "@/contexts/ApiContext";
@@ -56,23 +57,22 @@ function Profile() {
     });
   };
 
-  const confirmLogout = () =>
-    setFeedback({
-      visible: true,
-      type: "warning",
-      title: "Logout",
-      message: "Are you sure you want to logout?",
-      actionLabel: "Logout",
-      onAction: async () => {
-        setFeedback({ visible: true, type: "loading", title: "Logging out...", message: "Please wait while we log you out." });
-        try {
-          await logout({ loading: false });
-          window.location.assign("/");
-        } catch (error: any) {
-          setFeedback({ visible: true, type: "error", title: "Error", message: error?.message || "Failed to logout. Please try again." });
-        }
-      },
-    });
+  // Logging out takes the wallet off this browser, so the dialog first
+  // checks it is backed up (and the backup password remembered).
+  const [logoutOpen, setLogoutOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const confirmLogout = () => setLogoutOpen(true);
+  const doLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await logout({ loading: false });
+      window.location.assign("/");
+    } catch (error: any) {
+      setLoggingOut(false);
+      setLogoutOpen(false);
+      setFeedback({ visible: true, type: "error", title: "Error", message: error?.message || "Failed to logout. Please try again." });
+    }
+  };
 
   const items: MenuItem[] = [
     { key: "settings", icon: Settings, label: "Settings", href: "/profile-setting" },
@@ -85,6 +85,7 @@ function Profile() {
   const name = user?.fullname || user?.username;
   return (
     <>
+      <SignOutCheck open={logoutOpen} busy={loggingOut} onCancel={() => setLogoutOpen(false)} onSignOut={doLogout} />
       <PageHeader title="My Profile" />
       <div className="mx-auto max-w-2xl pb-10">
         <div className="flex flex-col items-center px-5 py-6 text-center">
